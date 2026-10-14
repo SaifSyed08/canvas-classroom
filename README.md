@@ -37,6 +37,10 @@ After editing the code, hit the reload icon on the extension's card in `chrome:/
 
 - Everything runs as content scripts on `*.instructure.com` and uses Canvas's own API with your session.
   Nothing is sent anywhere else. Course names, colors and teachers are cached in `localStorage` under `gcx:`.
-- BetterCampus's two-week range ("Custom") is a premium feature, so the extension leaves BetterCampus on
-  "Month" and hides anything due more than 14 days out.
-- To turn it off, disable the extension in `chrome://extensions`. BetterCampus goes back to normal.
+- BetterCampus's two-week range ("Custom") is a premium feature. If BetterCampus is set to Day or Week,
+  the extension switches it to Month once (that setting sticks), then hides anything due more than 14 days out.
+- "Missing" (red) means Canvas flagged it missing. "Past due" means the date passed with nothing handed in,
+  which also covers in-class and on-paper work that hasn't been graded yet.
+- Courses that hide Modules still get Classwork, served from `/courses/:id?gcx=classwork`.
+- To turn it off, disable the extension in `chrome://extensions`. The rest of BetterCampus goes back to
+  normal; only the Month setting stays.

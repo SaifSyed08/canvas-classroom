@@ -242,11 +242,15 @@
       type: it.plannable_type,
       title: (it.plannable && (it.plannable.title || it.plannable.name)) || 'Untitled',
       due,
-      url: it.html_url || (it.plannable_type === 'planner_note' ? '/calendar' : '#'),
+      // Planner notes point at the JSON API; send them to the calendar instead.
+      url: it.plannable_type === 'planner_note' ? '/calendar' : it.html_url || '#',
       courseId: it.course_id || null,
       courseName: it.context_name || '',
       done,
+      // missing = past due with nothing handed in; flagged = Canvas itself calls it missing.
+      // In-class and on-paper work is past due without being flagged until it's graded.
       missing: !done && !!past,
+      flagged: !done && !!(s && s.missing),
       graded: !!(s && s.graded),
       late: !!(s && s.late),
       submitted: !!(s && s.submitted),
@@ -266,6 +270,7 @@
       courseName: c.name,
       done,
       missing: !done && !!(due && due < new Date()),
+      flagged: !done && !!s.missing,
       graded: s.workflow_state === 'graded',
       late: !!s.late,
       submitted: !!s.submitted_at,
@@ -273,15 +278,22 @@
   }
   async function planner(fromDays, toDays, courseId) {
     const now = Date.now();
-    let q = `/planner/items?start_date=${new Date(now + fromDays * DAY).toISOString()}&end_date=${new Date(now + toDays * DAY).toISOString()}&per_page=100`;
+    const end = toDays === HORIZON_DAYS ? horizonEnd() : new Date(now + toDays * DAY);
+    let q = `/planner/items?start_date=${new Date(now + fromDays * DAY).toISOString()}&end_date=${end.toISOString()}&per_page=100`;
     if (courseId) q += `&context_codes[]=course_${courseId}`;
     const items = await api(q, true);
     return items.filter((it) => WORK_TYPES.has(it.plannable_type)).map(normPlanner);
   }
 
+  // End of the two-week window: midnight after day 14. setDate keeps it right across DST.
+  function horizonEnd() {
+    const d = startOfDay(new Date());
+    d.setDate(d.getDate() + HORIZON_DAYS + 1);
+    return d;
+  }
   // Missing first (newest first), then upcoming work inside the horizon, soonest first.
   function dueSoon(items) {
-    const horizon = startOfDay(Date.now() + (HORIZON_DAYS + 1) * DAY);
+    const horizon = horizonEnd();
     const missing = items.filter((i) => i.missing).sort((a, b) => b.due - a.due);
     const upcoming = items.filter((i) => !i.done && !i.missing && i.due && i.due < horizon).sort((a, b) => a.due - b.due);
     return [...missing, ...upcoming];
@@ -290,8 +302,8 @@
   function dueGroupsHtml(items, limit, colorOf) {
     const groups = [];
     for (const it of items.slice(0, limit)) {
-      const label = it.missing ? 'Missing' : `Due ${dayName(it.due)}`;
-      const cls = it.missing ? 'missing' : dayDiff(it.due) <= 1 ? 'soon' : '';
+      const label = it.flagged ? 'Missing' : it.missing ? 'Past due' : `Due ${dayName(it.due)}`;
+      const cls = it.flagged ? 'missing' : it.missing ? '' : dayDiff(it.due) <= 1 ? 'soon' : '';
       let g = groups[groups.length - 1];
       if (!g || g.label !== label) groups.push((g = { label, cls, items: [] }));
       g.items.push(it);
@@ -336,7 +348,7 @@
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc(prettyName(c))}</span><span class="gcx-ri-sub">${esc(c.code)}</span></span></a>`,
       )
       .join('');
-    const avatar = me && me.avatar_url && !/avatar-50\.png/.test(me.avatar_url) ? `style="background-image:url('${esc(me.avatar_url)}')"` : '';
+    const avatarUrl = me && me.avatar_url && !/avatar-50\.png/.test(me.avatar_url) ? me.avatar_url : '';
     rail.innerHTML = `
       <div class="gcx-rail-top">
         <button class="gcx-burger" type="button" aria-pressed="${pinned}" title="${pinned ? 'Collapse menu' : 'Keep menu open'}">${svg('menu')}</button>
@@ -354,10 +366,11 @@
         ${item('calendar', '/calendar', 'calendar', 'Calendar')}
         ${item('inbox', '/conversations', 'inbox', 'Inbox', `<span class="gcx-badge" ${unread ? '' : 'hidden'}>${unread}</span>`)}
         <button class="gcx-ri gcx-account" type="button" title="Account">
-          <span class="gcx-me" ${avatar}>${avatar ? '' : esc((me && me.name ? me.name[0] : '?').toUpperCase())}</span>
+          <span class="gcx-me">${avatarUrl ? '' : esc((me && me.name ? me.name[0] : '?').toUpperCase())}</span>
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc((me && me.name) || 'Account')}</span><span class="gcx-ri-sub">Account &amp; settings</span></span>
         </button>
       </div>`;
+    if (avatarUrl) rail.querySelector('.gcx-me').style.backgroundImage = `url(${JSON.stringify(avatarUrl)})`;
   }
   let unread = 0;
   renderRail(COURSES);
@@ -419,12 +432,18 @@
       .map((a) => ({ label: tabLabel(a), href: a.getAttribute('href') || '' }))
       .filter((t) => t.href && t.label);
     const hasPeople = !tabs.length || tabs.some((t) => /\/users\/?$/.test(t.href));
+    // Canvas redirects a hidden tab back to course home, so courses without Modules
+    // reach Classwork through the home URL instead.
+    const hasModules = !tabs.length || tabs.some((t) => /\/modules\/?$/.test(t.href));
+    const classworkHref = hasModules ? `${base}/modules` : `${base}?gcx=classwork`;
     const others = tabs.filter((t) => {
       const r = t.href.replace(/^https?:\/\/[^/]+/, '').replace(base, '').split('?')[0];
       return !(CORE.home.test(r) || CORE.classwork.test(r) || CORE.people.test(r));
     });
 
-    const active = CORE.home.test(rest) || /^\/announcements/.test(rest)
+    const active = VIEW === 'classwork'
+      ? 'classwork'
+      : CORE.home.test(rest) || /^\/announcements/.test(rest)
       ? 'home'
       : /^\/(users|groups)/.test(rest)
         ? 'people'
@@ -436,7 +455,7 @@
       <a class="gcx-cbar-title" href="${base}"><span class="gcx-cbar-name">&nbsp;</span><span class="gcx-cbar-sub">&nbsp;</span></a>
       <nav class="gcx-tabs" aria-label="Course">
         <a class="gcx-tab${active === 'home' ? ' on' : ''}" href="${base}">Home</a>
-        <a class="gcx-tab${active === 'classwork' ? ' on' : ''}" href="${base}/modules">Classwork</a>
+        <a class="gcx-tab${active === 'classwork' ? ' on' : ''}" href="${classworkHref}">Classwork</a>
         ${hasPeople ? `<a class="gcx-tab${active === 'people' ? ' on' : ''}" href="${base}/users">People</a>` : ''}
       </nav>
       <div class="gcx-cbar-actions">
@@ -457,7 +476,7 @@
     const list = panel.querySelector('.gcx-more-list');
     const extras = [
       { label: 'Canvas home page', href: `${base}?gcx-original=1`, icon: 'home' },
-      { label: 'Canvas modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' },
+      ...(hasModules ? [{ label: 'Canvas modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' }] : []),
     ];
     let sel = 0;
     const drawList = () => {
@@ -506,8 +525,8 @@
     });
     document.addEventListener('keydown', (e) => {
       if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
-      const t = e.target;
-      if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      const t = e.composedPath()[0] || e.target;
+      if (!t.tagName || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       e.preventDefault();
       open(true);
     });
@@ -555,10 +574,12 @@
       <div class="gcx-banner"><div class="gcx-banner-tx"><h1>&nbsp;</h1><div>&nbsp;</div></div></div>
       <div class="gcx-home-cols">
         <aside class="gcx-card gcx-upc"><div class="gcx-upc-h">Upcoming</div><div class="gcx-upc-list">${skeleton(3)}</div>
-          <div class="gcx-upc-foot"><a href="/courses/${id}/modules">View all</a></div></aside>
+          <div class="gcx-upc-foot"><a class="gcx-upc-all" href="/courses/${id}/modules">View all</a></div></aside>
         <section class="gcx-stream">${`<div class="gcx-card gcx-ann">${skeleton(4)}</div>`.repeat(2)}</section>
       </div>`;
 
+    const classworkTab = document.querySelector('#gcx-cbar .gcx-tabs a:nth-child(2)');
+    if (classworkTab) view.querySelector('.gcx-upc-all').href = classworkTab.href;
     cPromise.then((c) => {
       view.style.setProperty('--c', c.color);
       const banner = view.querySelector('.gcx-banner');
@@ -593,7 +614,7 @@
         .map((a) => {
           const author = a.author || {};
           const when = a.posted_at ? new Date(a.posted_at) : null;
-          const av = author.avatar_image_url && !/avatar-50\.png/.test(author.avatar_image_url) ? `style="background-image:url('${esc(author.avatar_image_url)}')"` : '';
+          const av = author.avatar_image_url && !/avatar-50\.png/.test(author.avatar_image_url) ? `data-av="${esc(author.avatar_image_url)}"` : '';
           return `<article class="gcx-card gcx-ann">
             <div class="gcx-ann-head">
               <span class="gcx-ann-av" ${av}>${av ? '' : esc((author.display_name || '?')[0])}</span>
@@ -611,17 +632,22 @@
         .join('');
       if (anns.length >= 15) stream.append(el(`<a class="gcx-chip" style="align-self:center" href="/courses/${id}/announcements">Older announcements</a>`));
       stream.style.setProperty('--c', c.color);
+      stream.querySelectorAll('[data-av]').forEach((n) => (n.style.backgroundImage = `url(${JSON.stringify(n.dataset.av)})`));
       for (const art of stream.querySelectorAll('.gcx-ann')) {
         const body = art.querySelector('.gcx-ann-body');
         const toggle = art.querySelector('.gcx-ann-toggle');
-        if (body && body.scrollHeight > body.clientHeight + 4) {
+        toggle.addEventListener('click', () => {
+          const open = body.classList.toggle('open');
+          toggle.textContent = open ? 'Show less' : 'Show more';
+        });
+        // Images load after this runs, so measure again when each one arrives.
+        const measure = () => {
+          if (!toggle.hidden || body.scrollHeight <= body.clientHeight + 4) return;
           body.classList.add('clip');
           toggle.hidden = false;
-          toggle.addEventListener('click', () => {
-            const open = body.classList.toggle('open');
-            toggle.textContent = open ? 'Show less' : 'Show more';
-          });
-        }
+        };
+        measure();
+        body.querySelectorAll('img').forEach((img) => img.addEventListener('load', measure, { once: true }));
       }
     } catch (e) {
       showError(stream, 'announcements', `/courses/${id}/announcements`, e);
@@ -670,7 +696,7 @@
     try {
       [mods, groups] = await Promise.all([
         api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(() => null),
-        api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&per_page=50`, true).catch(() => []),
+        api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(() => []),
       ]);
       // Big modules come back without inline items.
       await Promise.all(
@@ -790,6 +816,10 @@
     filter.addEventListener('input', () => {
       const q = filter.value.trim().toLowerCase();
       view.querySelectorAll('.gcx-topic').forEach((sec, i) => {
+        if (sec.querySelector('.gcx-files-slot')) {
+          sec.style.display = q ? 'none' : '';
+          return;
+        }
         let any = !q;
         sec.querySelectorAll('.gcx-row').forEach((r) => {
           const hit = !q || (r.dataset.q || '').includes(q);
@@ -854,7 +884,7 @@
         planner(-120, 120),
         Promise.all(
           courses.map((c) =>
-            api(`/courses/${c.id}/assignments?bucket=undated&include[]=submission&per_page=50`)
+            api(`/courses/${c.id}/assignments?bucket=undated&include[]=submission&per_page=100`, true)
               // Undated tools, polls and grade placeholders aren't work; keep things you can hand in.
               .then((list) =>
                 list
@@ -901,7 +931,7 @@
       done: (i) => i.done,
     };
     const meta = (i) => {
-      if (tab === 'missing') return { text: `Due ${shortDate(i.due)}`, cls: 'missing' };
+      if (tab === 'missing') return i.flagged ? { text: `Missing · due ${shortDate(i.due)}`, cls: 'missing' } : { text: `Past due · ${shortDate(i.due)}`, cls: '' };
       if (tab === 'done') return { text: i.graded ? 'Graded' : i.submitted ? (i.late ? 'Turned in late' : 'Turned in') : 'Done', cls: i.graded ? 'graded' : '' };
       if (!i.due) return { text: '', cls: '' };
       return { text: dueText(i.due), cls: dayDiff(i.due) <= 1 ? 'soon' : '' };
@@ -1045,7 +1075,7 @@
       } else if (ch.matches('[data-todo-section]') && !ch.querySelector('a[href]') && /\d+%/.test(ch.textContent)) setHidden(ch, true);
     }
     // Two-week horizon: BetterCampus's free ranges are a day, a week or a month.
-    const horizon = startOfDay(Date.now() + (HORIZON_DAYS + 1) * DAY);
+    const horizon = horizonEnd();
     const now = new Date();
     for (const p of list.querySelectorAll('p')) {
       const m = p.textContent.match(DUE_RE);

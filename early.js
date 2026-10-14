@@ -22,7 +22,7 @@
   if (!q.has('gcx-original')) {
     const rest = course ? course[2] || '/' : '';
     if (path === '/' && q.get('gcx') === 'todo') view = 'todo';
-    else if (course && rest === '/') view = 'home';
+    else if (course && rest === '/') view = q.get('gcx') === 'classwork' ? 'classwork' : 'home';
     else if (course && /^\/modules\/?$/.test(rest)) view = 'classwork';
   }
   if (path === '/' && !view) html.classList.add('gcx-dash');
