@@ -916,7 +916,8 @@
         ['No due date', (i) => !i.due],
       ],
       missing: [
-        ['This week', (i) => i.due && i.due >= thisWeek],
+        ['Upcoming', (i) => i.due && i.due >= nextWeek],
+        ['This week', (i) => i.due && i.due >= thisWeek && i.due < nextWeek],
         ['Last week', (i) => i.due && i.due >= lastWeek && i.due < thisWeek],
         ['Earlier', (i) => i.due && i.due < lastWeek],
         ['No due date', (i) => !i.due],
