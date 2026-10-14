@@ -56,7 +56,7 @@ html.gcx-pinned #gcx-rail .gcx-burger { color: var(--gcx-text); }
 #gcx-rail .gcx-brand { margin-left: 12px; font-size: 22px; color: var(--gcx-text) !important; text-decoration: none !important; white-space: nowrap; }
 
 #gcx-rail .gcx-rail-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; padding-bottom: 8px; }
-html:not(.gcx-pinned) #gcx-rail:not(:hover) .gcx-rail-scroll { scrollbar-width: none; }
+html:not(.gcx-pinned) #gcx-rail:not(:hover):not(:has(:focus-visible)) .gcx-rail-scroll { scrollbar-width: none; }
 #gcx-rail .gcx-rail-bottom { flex: none; border-top: 1px solid var(--gcx-border); padding: 6px 0; }
 #gcx-rail .gcx-rail-sep { height: 1px; background: var(--gcx-border); margin: 8px 0; }
 #gcx-rail .gcx-rail-label { padding: 10px 0 6px 28px; font-size: 13px; font-weight: 600; color: var(--gcx-muted); white-space: nowrap; height: 16px; box-sizing: content-box; }

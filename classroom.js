@@ -249,7 +249,7 @@
       done,
       // missing = past due with nothing handed in; flagged = Canvas itself calls it missing.
       // In-class and on-paper work is past due without being flagged until it's graded.
-      missing: !done && !!past,
+      missing: !done && (!!past || !!(s && s.missing)),
       flagged: !done && !!(s && s.missing),
       graded: !!(s && s.graded),
       late: !!(s && s.late),
@@ -269,7 +269,7 @@
       courseId: c.id,
       courseName: c.name,
       done,
-      missing: !done && !!(due && due < new Date()),
+      missing: !done && (!!(due && due < new Date()) || !!s.missing),
       flagged: !done && !!s.missing,
       graded: s.workflow_state === 'graded',
       late: !!s.late,
@@ -294,7 +294,7 @@
   // Missing first (newest first), then upcoming work inside the horizon, soonest first.
   function dueSoon(items) {
     const horizon = horizonEnd();
-    const missing = items.filter((i) => i.missing).sort((a, b) => b.due - a.due);
+    const missing = items.filter((i) => i.missing).sort((a, b) => b.flagged - a.flagged || (b.due || 0) - (a.due || 0));
     const upcoming = items.filter((i) => !i.done && !i.missing && i.due && i.due < horizon).sort((a, b) => a.due - b.due);
     return [...missing, ...upcoming];
   }
@@ -707,7 +707,8 @@
           }),
       );
     } catch (e) {
-      return showError(view, 'classwork', `/courses/${id}/modules?gcx-original=1`, e);
+      const modulesShown = [...document.querySelectorAll('#section-tabs a')].some((a) => /\/modules\/?$/.test(a.getAttribute('href') || ''));
+      return showError(view, 'classwork', modulesShown ? `/courses/${id}/modules?gcx-original=1` : `/courses/${id}?gcx-original=1`, e);
     }
     const c = await cPromise;
     view.style.setProperty('--c', c.color);
@@ -818,6 +819,8 @@
       view.querySelectorAll('.gcx-topic').forEach((sec, i) => {
         if (sec.querySelector('.gcx-files-slot')) {
           sec.style.display = q ? 'none' : '';
+          const link = view.querySelector(`.gcx-toc a[href="#gcx-t${i}"]`);
+          if (link) link.style.display = q ? 'none' : '';
           return;
         }
         let any = !q;
@@ -913,9 +916,10 @@
         ['No due date', (i) => !i.due],
       ],
       missing: [
-        ['This week', (i) => i.due >= thisWeek],
-        ['Last week', (i) => i.due >= lastWeek && i.due < thisWeek],
-        ['Earlier', (i) => i.due < lastWeek],
+        ['This week', (i) => i.due && i.due >= thisWeek],
+        ['Last week', (i) => i.due && i.due >= lastWeek && i.due < thisWeek],
+        ['Earlier', (i) => i.due && i.due < lastWeek],
+        ['No due date', (i) => !i.due],
       ],
       done: [
         ['No due date', (i) => !i.due],
@@ -931,7 +935,10 @@
       done: (i) => i.done,
     };
     const meta = (i) => {
-      if (tab === 'missing') return i.flagged ? { text: `Missing · due ${shortDate(i.due)}`, cls: 'missing' } : { text: `Past due · ${shortDate(i.due)}`, cls: '' };
+      if (tab === 'missing') {
+        const when = i.due ? ` · ${shortDate(i.due)}` : '';
+        return i.flagged ? { text: `Missing${when}`, cls: 'missing' } : { text: `Past due${when}`, cls: '' };
+      }
       if (tab === 'done') return { text: i.graded ? 'Graded' : i.submitted ? (i.late ? 'Turned in late' : 'Turned in') : 'Done', cls: i.graded ? 'graded' : '' };
       if (!i.due) return { text: '', cls: '' };
       return { text: dueText(i.due), cls: dayDiff(i.due) <= 1 ? 'soon' : '' };
