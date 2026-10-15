@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Canvas Classroom settings</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 520px; margin: 48px auto; padding: 0 16px; color: #1f1f1f; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    p { color: #5f6368; margin: 0 0 20px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; }
+    input { width: 100%; box-sizing: border-box; height: 40px; padding: 0 12px; border: 1px solid #dadce0; border-radius: 8px; font: inherit; }
+    .row { display: flex; gap: 8px; margin-top: 12px; }
+    button { height: 38px; padding: 0 18px; border: 0; border-radius: 19px; background: #1a73e8; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    button.quiet { background: none; color: #1a73e8; border: 1px solid #dadce0; }
+    #status { margin-top: 14px; font-size: 14px; color: #188038; min-height: 1.5em; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #202124; color: #e8eaed; }
+      p { color: #9aa0a6; }
+      input { background: #303134; color: #e8eaed; border-color: #5f6368; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Ask anything</h1>
+  <p>The ✦ pill on the dashboard answers with OpenAI. The key stays in this extension's storage and is only sent to api.openai.com.</p>
+  <label for="key">OpenAI API key</label>
+  <input id="key" type="password" placeholder="sk-…" autocomplete="off">
+  <div class="row"><button id="save" type="button">Save key</button><button id="clear" class="quiet" type="button">Remove saved key</button></div>
+  <div id="status"></div>
+  <script src="options.js"></script>
+</body>
+</html>

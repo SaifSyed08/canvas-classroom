@@ -160,3 +160,7 @@ html.gcx .gcx-ask-suggest button:active { transform: scale(0.96); }
   html.gcx .gcx-ask .gcx-ask-pill, html.gcx .gcx-ask .gcx-ask-chat, html.gcx .gcx-ask .gcx-ask-star { transition-duration: 0.01s !important; }
   html.gcx .gcx-ask:not([data-state='idle']) .gcx-ask-star { transform: none; }
 }
+html.gcx .gcx-ask-keybtn {
+  display: inline-flex; align-items: center; height: 30px; margin-top: 8px; padding: 0 14px; border: 0; border-radius: 15px;
+  background: var(--gcx-link); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}

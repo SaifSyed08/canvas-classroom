@@ -116,7 +116,7 @@
         ['course_id'],
       ),
       run: async ({ course_id, bucket }) => {
-        const list = await api(`/courses/${course_id}/assignments?include[]=submission&order_by=due_at&per_page=100` + (bucket ? '&bucket=' + bucket : ''), true);
+        const list = await api(`/courses/${course_id}/assignments?include[]=submission&order_by=due_at&per_page=100` + (bucket ? '&bucket=' + encodeURIComponent(bucket) : ''), true);
         return list.map((a) => {
           const s = a.submission || {};
           return {
@@ -322,7 +322,7 @@
           if (folder) out = out.filter((f) => String(f.folder || '').toLowerCase().includes(folder.toLowerCase()));
           return out.length > 200 ? { note: `${out.length} files; showing the 200 newest. Narrow with search or folder.`, files: out.slice(0, 200) } : out;
         } catch (e) {
-          if (!/40[134]/.test(e.message)) throw e;
+          if (![401, 403, 404].includes(e.status)) throw e;
           const mods = await api(`/courses/${course_id}/modules?include[]=items&per_page=50`, true);
           let out = [];
           for (const m of mods)
@@ -357,7 +357,7 @@
       run: async ({ course_id }) => {
         const [classic, assigns] = await Promise.all([
           api(`/courses/${course_id}/quizzes?per_page=100`, true).catch((e) => {
-            if (/40[134]/.test(e.message)) return null;
+            if ([401, 403, 404].includes(e.status)) return null;
             throw e;
           }),
           api(`/courses/${course_id}/assignments?include[]=submission&per_page=100`, true),
@@ -441,7 +441,7 @@
           walk(view.view, 0);
           out.replies = lines.join('\n') || '(no replies yet)';
         } catch (e) {
-          out.replies = /403/.test(e.message) ? 'Hidden until Saif posts his own reply.' : 'Replies not available.';
+          out.replies = e.status === 403 ? 'Hidden until Saif posts his own reply.' : 'Replies not available.';
         }
         return out;
       },
@@ -556,6 +556,16 @@
     try {
       args = JSON.parse(call.arguments || '{}');
     } catch {}
+    // Arguments come from the model, which may have read text written by anyone (posts, files),
+    // so ids must be plain numbers and enums must be one of their values before they reach a URL.
+    const props = (t.parameters && t.parameters.properties) || {};
+    for (const [k, v] of Object.entries(args || {})) {
+      if (v == null || v === '') continue;
+      if (/(^|_)id$/.test(k) && !/^\d+$/.test(String(v)))
+        return { call_id: call.call_id, output: JSON.stringify({ error: `${k} must be a numeric Canvas id` }) };
+      if (props[k] && props[k].enum && !props[k].enum.includes(v))
+        return { call_id: call.call_id, output: JSON.stringify({ error: `${k} must be one of ${props[k].enum.join(', ')}` }) };
+    }
     try {
       const res = await t.run(args);
       let attach = null;
@@ -756,6 +766,9 @@
     let state = 'idle';
     let busy = false;
     let port = null;
+    // The question in flight: stop() marks it cancelled and settles its pending round itself,
+    // because disconnecting a port from this side never fires this side's onDisconnect.
+    let run = null;
     let typeTimer = 0;
     let leaveTimer = 0;
     let keyMode = false;
@@ -882,6 +895,7 @@
     });
     root.querySelector('.gcx-ask-new').addEventListener('click', () => {
       if (busy) stop();
+      if (run) run.discard = true;
       hist = { msgs: [], prev: null };
       saveHist();
       renderLog();
@@ -899,29 +913,23 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        if (keyMode) saveKey(input.value);
-        else if (!busy) ask(input.value);
+        if (!busy) {
+          keyMode = false;
+          ask(input.value);
+        }
       }
     });
 
+    // The key is typed into the extension's own options page, never into a field on the Canvas page.
     function showKeyPrompt(msg) {
       keyMode = true;
       root.classList.remove('empty');
-      log.innerHTML = `<div class="gcx-ask-msg bot err">${esc(msg)} Paste your OpenAI API key in the box above and press Enter. It's kept in this extension only.</div>`;
-      input.type = 'password';
-      input.value = '';
-      input.placeholder = 'Paste your OpenAI API key (sk-…)';
-      input.focus();
+      log.innerHTML = `<div class="gcx-ask-msg bot err">${esc(msg)} Add your OpenAI API key on the extension's settings page, then ask again.
+        <button type="button" class="gcx-ask-keybtn">Add key</button></div>`;
+      log.querySelector('.gcx-ask-keybtn').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'openOptions' }).catch(() => {}));
     }
-    async function saveKey(k) {
-      k = k.trim();
-      if (!/^sk-/.test(k)) return gcx.toast && gcx.toast("That doesn't look like an OpenAI key.");
-      await chrome.storage.local.set({ openaiKey: k });
+    function retryAfterKey() {
       keyMode = false;
-      input.type = 'text';
-      input.value = '';
-      input.placeholder = 'Ask about your classes';
-      gcx.toast && gcx.toast('Key saved');
       const last = hist.msgs[hist.msgs.length - 1];
       if (last && last.error) hist.msgs.pop();
       const q = hist.msgs.length && hist.msgs[hist.msgs.length - 1].role === 'user' ? hist.msgs.pop().text : '';
@@ -929,9 +937,19 @@
       renderLog();
       if (q) ask(q);
     }
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.openaiKey && changes.openaiKey.newValue && keyMode) {
+        gcx.toast && gcx.toast('Key saved');
+        retryAfterKey();
+      }
+    });
 
     // ----- one question: stream, run tools, repeat
     function stop() {
+      if (run) {
+        run.cancelled = true;
+        if (run.resolve) run.resolve({ type: 'stopped' });
+      }
       if (port) {
         try {
           port.disconnect();
@@ -979,8 +997,14 @@
 
       let finalId = null;
       let error = null;
+      const me = (run = { cancelled: false, discard: false, resolve: null });
       for (let round = 0; round < MAX_ROUNDS; round++) {
+        if (me.cancelled) {
+          if (!text) text = '_Stopped._';
+          break;
+        }
         const res = await new Promise((resolve) => {
+          me.resolve = resolve;
           try {
             port = chrome.runtime.connect({ name: 'gcx-ask' });
           } catch (e) {
@@ -996,6 +1020,7 @@
           port.onDisconnect.addListener(() => resolve({ type: 'stopped' }));
           port.postMessage(req);
         });
+        me.resolve = null;
         const p = port;
         port = null;
         try {
@@ -1026,8 +1051,14 @@
         req = { type: 'continue', instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
       }
       cancelAnimationFrame(raf);
+      if (run === me) run = null;
       setBusy(false);
       bot.classList.remove('live');
+      // "New chat" was pressed mid-answer: drop this answer instead of writing it into the new chat.
+      if (me.discard) {
+        bot.remove();
+        return;
+      }
       if (error) {
         bot.remove();
         if (error.code === 'nokey' || error.code === 'badkey') {

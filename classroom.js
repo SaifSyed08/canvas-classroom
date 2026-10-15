@@ -118,23 +118,36 @@
 
   // Bigger caches (assignments, classwork) go in extension storage: it isn't shared with
   // Canvas's own localStorage and has no 5 MB cap. Falls back to localStorage.
+  // Extension storage is shared by every Canvas site, so keys carry the site and the user.
   const CACHE_VERSION = 1;
+  const CACHE_DAYS = 30;
+  const cacheKey = (k) => `c:${location.origin}|${(store.get('me', null) || {}).id || 'anon'}|${k}`;
   const cache = {
     async get(k) {
       try {
-        const r = await chrome.storage.local.get('c:' + k);
-        const v = r['c:' + k];
-        return v && v.v === CACHE_VERSION ? v.d : null;
+        const r = await chrome.storage.local.get(cacheKey(k));
+        const v = r[cacheKey(k)];
+        return v && v.v === CACHE_VERSION && Date.now() - v.t < CACHE_DAYS * 864e5 ? v.d : null;
       } catch {
         return store.get('c:' + k, null);
       }
     },
     set(k, d) {
       try {
-        chrome.storage.local.set({ ['c:' + k]: { v: CACHE_VERSION, t: Date.now(), d } }).catch(() => {});
+        chrome.storage.local.set({ [cacheKey(k)]: { v: CACHE_VERSION, t: Date.now(), d } }).catch(() => {});
       } catch {
         store.set('c:' + k, d);
       }
+    },
+    // Drop entries nobody has refreshed in a month (old classes, other accounts).
+    async sweep() {
+      if (Date.now() - store.get('cacheSwept', 0) < 864e5) return;
+      store.set('cacheSwept', Date.now());
+      try {
+        const all = await chrome.storage.local.get(null);
+        const old = Object.keys(all).filter((k) => k.startsWith('c:') && (!all[k] || all[k].v !== CACHE_VERSION || Date.now() - all[k].t > CACHE_DAYS * 864e5));
+        if (old.length) await chrome.storage.local.remove(old);
+      } catch {}
     },
   };
   // Stale-while-revalidate: draw the cached copy at once, fetch, redraw only if it changed.
@@ -449,7 +462,7 @@
   coursesReady.then(renderRail);
   api('/users/self')
     .then((u) => {
-      me = { name: u.short_name || u.name, avatar_url: u.avatar_url };
+      me = { id: u.id, name: u.short_name || u.name, avatar_url: u.avatar_url };
       store.set('me', me);
       renderRail(COURSES);
     })
@@ -872,12 +885,10 @@
       if (x) {
         const list = links();
         const [gone] = list.splice(Number(x.dataset.i), 1);
-        const row = x.parentElement;
-        row.classList.add('gcx-out');
-        setTimeout(() => {
-          store.set(key, list);
-          draw();
-        }, 180);
+        store.set(key, list);
+        x.parentElement.classList.add('gcx-out');
+        clearTimeout(box.gcxRedraw);
+        box.gcxRedraw = setTimeout(() => draw(), 180);
         toast(`Removed ${gone.label}`);
         return;
       }
@@ -1210,7 +1221,9 @@
     const draw = (data, fromCache) => {
       const { topics, missing, dueThisWeek } = buildTopics(data);
       const scrollY = window.scrollY;
-      const q = drawn ? view.querySelector('.gcx-filter input').value : '';
+      const oldInput = drawn ? view.querySelector('.gcx-filter input') : null;
+      const q = oldInput ? oldInput.value : '';
+      const typing = oldInput && document.activeElement === oldInput ? [oldInput.selectionStart, oldInput.selectionEnd] : null;
       view.innerHTML = `
       <div class="gcx-cw-head">
         <a class="gcx-chip" href="/courses/${id}/grades">${svg('grade', 20)}${c && c.score != null ? `Grade · ${esc(c.letter ? c.letter + ' · ' : '')}${esc(+c.score.toFixed(2))}%` : 'Grades'}</a>
@@ -1248,6 +1261,11 @@
         const input = view.querySelector('.gcx-filter input');
         input.value = q;
         input.dispatchEvent(new Event('input'));
+      }
+      if (typing) {
+        const input = view.querySelector('.gcx-filter input');
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(...typing);
       }
       const filesTopic = view.querySelector('.gcx-files-topic');
       if (filesTopic && !filesTopic.classList.contains('closed')) loadFiles();
@@ -1600,19 +1618,38 @@
     const name = (me && me.name ? me.name.split(' ')[0] : '') || 'there';
     const wel = el(`<div class="gcx-welcome"><div class="gcx-welcome-tx"><h1 class="gcx-hello"></h1><div class="gcx-welcome-sub">&nbsp;</div></div><div class="gcx-ask-slot"></div></div>`);
     anchor.before(wel);
-    wel.querySelector('.gcx-hello').textContent = greeting(name, null);
     const lastVisit = store.get('lastVisit', 0);
     store.set('lastVisit', Date.now());
-    welcomeCtx = { name, lastVisit, wel, titled: false };
+    welcomeCtx = { name, lastVisit, wel, titled: false, fromCache: false };
+    // Wait briefly for the cached work list so the greeting is picked once, not twice.
+    setTimeout(() => {
+      if (welcomeCtx.titled) return;
+      welcomeCtx.titled = true;
+      wel.querySelector('.gcx-hello').textContent = greeting(name, null, lastVisit);
+    }, 350);
   }
   let welcomeCtx = null;
   function updateWelcome(items, fromCache) {
     if (!welcomeCtx) return;
     const { wel, name } = welcomeCtx;
     // The title is picked once (from cached work when there is some) so it doesn't jump.
+    const hello = wel.querySelector('.gcx-hello');
     if (!welcomeCtx.titled) {
       welcomeCtx.titled = true;
-      wel.querySelector('.gcx-hello').textContent = greeting(name, items, welcomeCtx.lastVisit);
+      welcomeCtx.fromCache = fromCache;
+      hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
+      welcomeCtx.refs = greetRefs;
+    } else if (!fromCache && welcomeCtx.fromCache && welcomeCtx.refs.length) {
+      // The greeting came from the saved list. If the work it mentions is no longer open
+      // (handed in since, or now missing), pick again from the fresh list.
+      welcomeCtx.fromCache = false;
+      const open = new Set(items.filter((i) => !i.done && !i.missing).map((i) => i.key));
+      const flagged = items.some((i) => i.flagged);
+      if (welcomeCtx.refs.some((k) => (k === 'flagged' ? !flagged : !open.has(k)))) {
+        hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
+        welcomeCtx.refs = greetRefs;
+        reveal(hello);
+      }
     }
     const sub = wel.querySelector('.gcx-welcome-sub');
     const text = welcomeSub(items);
@@ -1644,7 +1681,9 @@
   // Lots of ways to say hello. Most specific wins: something due within hours, a holiday,
   // something due today, a long absence, late night. Otherwise a random pick from time of day,
   // weekday and season, never the same one twice in a row.
+  let greetRefs = []; // keys of the work items (or 'flagged') the last greeting talked about
   function greeting(n, items, lastVisit = 0) {
+    greetRefs = [];
     const now = new Date();
     const h = now.getHours();
     const wd = now.getDay();
@@ -1657,6 +1696,7 @@
     const short = (t) => (t.length > 34 ? t.slice(0, 32).trim() + '…' : t);
 
     if (next && hoursLeft < 6) {
+      greetRefs = [next.key];
       const left = hoursLeft < 1 ? `${Math.max(1, Math.round(hoursLeft * 60))} minutes` : `${Math.round(hoursLeft)} hour${Math.round(hoursLeft) === 1 ? '' : 's'}`;
       return pick([`${short(next.title)} is due in ${left}, ${n}.`, `Clock's ticking, ${n}: ${short(next.title)} in ${left}.`, `${n}, heads up: ${short(next.title)} is due in ${left}.`]);
     }
@@ -1689,6 +1729,7 @@
     if (holiday) return pick(holiday);
 
     const dueToday = open.filter((i) => dayDiff(i.due) === 0);
+    if (dueToday.length) greetRefs = dueToday.map((i) => i.key);
     if (dueToday.length)
       return pick(
         dueToday.length === 1
@@ -1696,7 +1737,8 @@
           : [`${dueToday.length} things due today, ${n}.`, `Busy day, ${n}: ${dueToday.length} due today.`],
       );
     const flagged = (items || []).filter((i) => i.flagged).length;
-    if (flagged && Math.random() < 0.5) return pick([`Let's catch up, ${n}.`, `A little catching up to do, ${n}.`]);
+    if (flagged && Math.random() < 0.5) greetRefs = ['flagged'];
+    if (greetRefs[0] === 'flagged') return pick([`Let's catch up, ${n}.`, `A little catching up to do, ${n}.`]);
 
     const away = lastVisit ? (Date.now() - lastVisit) / 864e5 : 0;
     if (away > 7) return pick([`Long time no see, ${n}!`, `It's been a minute, ${n}. Welcome back!`]);
@@ -1706,7 +1748,10 @@
     }
     if (h >= 0 && h < 4) return pick([`Burning the midnight oil, ${n}?`, `Up late, ${n}?`, `Night owl mode, ${n}.`, `Still up, ${n}? Don't forget to sleep.`]);
     if (items && !open.some((i) => i.due < horizonEnd()) && !flagged && Math.random() < 0.6) return pick([`All clear, ${n}!`, `Nothing due for two weeks, ${n}. Nice.`]);
-    if (next && dayDiff(next.due) === 1 && Math.random() < 0.5) return `${short(next.title)} is due tomorrow, ${n}.`;
+    if (next && dayDiff(next.due) === 1 && Math.random() < 0.5) {
+      greetRefs = [next.key];
+      return `${short(next.title)} is due tomorrow, ${n}.`;
+    }
 
     const pool = [`Welcome back, ${n}!`, `Hey ${n}!`, `Hi ${n}, ready to learn?`, `Let's get to it, ${n}.`];
     if (h >= 4 && h < 12) pool.push(`Good morning, ${n}!`, `Morning, ${n}!`, `Rise and shine, ${n}!`, `Fresh start, ${n}.`);
@@ -1834,9 +1879,11 @@
       btn.type = 'button';
       btn.addEventListener('click', () => {
         bcExpanded = !bcExpanded;
-        capBcTodo(panel);
-        if (bcExpanded) items.slice(BC_CAP).forEach((n) => n.setAttribute('data-gcx-new', ''));
-        else items.forEach((n) => n.removeAttribute('data-gcx-new'));
+        // BetterCampus may have re-rendered since this button was made; work on the live list.
+        const sr = btn.getRootNode();
+        if (sr && sr.getElementById) applyBcTodo(sr);
+        const live = sr && sr.getElementById ? [...sr.querySelectorAll('.group')].map((g) => g.parentElement) : [];
+        live.forEach((n) => n.toggleAttribute('data-gcx-new', bcExpanded));
       });
     }
     if (panel.nextElementSibling !== btn) panel.after(btn);
@@ -1972,6 +2019,7 @@
 
   // ---------------------------------------------------------------- boot
   if (html.classList.contains('gcx-dash')) mountWelcome();
+  (window.requestIdleCallback || setTimeout)(() => cache.sweep(), { timeout: 5000 });
   if (COURSE_ID) {
     const cPromise = renderCourseBar();
     if (VIEW === 'home' || VIEW === 'classwork') {

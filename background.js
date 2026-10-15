@@ -91,6 +91,13 @@ const IMAGE = /^(png|jpe?g|gif|webp)$/;
 async function readFile(att) {
   const ext = (String(att.name).match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
   if (att.size && att.size > MAX_FILE) return { text: `${att.name} is ${Math.round(att.size / 1e6)} MB, too big to read here.` };
+  // Only Canvas and its file storage, never a URL the model was talked into.
+  let host = '';
+  try {
+    const u = new URL(att.url);
+    host = u.protocol === 'https:' ? u.hostname : '';
+  } catch {}
+  if (!/(^|\.)(instructure\.com|inscloudgate\.net|amazonaws\.com)$/.test(host)) return { text: `Can't download ${att.name} from that address.` };
   const r = await fetch(att.url, { credentials: 'include' });
   if (!r.ok) return { text: `Couldn't download ${att.name} (HTTP ${r.status}).` };
   const buf = new Uint8Array(await r.arrayBuffer());
@@ -167,6 +174,11 @@ async function stream(port, body, signal) {
   }
   port.postMessage(calls.length ? { type: 'tool_calls', response_id: id, calls } : { type: 'done', response_id: id });
 }
+
+// The pill's "Add key" button: the key is entered on options.html, not on the Canvas page.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && msg.type === 'openOptions') chrome.runtime.openOptionsPage();
+});
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'gcx-ask') return;

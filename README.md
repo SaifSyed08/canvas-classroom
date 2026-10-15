@@ -59,16 +59,18 @@ The background worker reads `config.local.json` (git-ignored) from this folder:
 { "openaiKey": "sk-..." }
 ```
 
-Without it, the pill asks for a key the first time and keeps it in the extension's storage. The key
-stays in the extension's background worker and is never handed to the Canvas page.
+Without it, the pill shows an **Add key** button that opens the extension's settings page (also under
+Details → Extension options), where the key is saved in the extension's storage. Either way the key is
+only read by the extension's background worker; it is never typed into or handed to the Canvas page.
 
 ## Notes
 
 - Everything else runs as content scripts on `*.instructure.com` and uses Canvas's own API with your
   session. Questions you ask (and the Canvas data the assistant looks up to answer them) go to OpenAI.
-- Assignments, Classwork, files and announcements are cached in the extension's storage. Pages draw the
-  cached copy at once, show "Updating" while they refresh, and redraw only if something changed. Opening
-  any page of a class warms its Classwork cache. Smaller things (course names, colors, rail icons, pinned
+- Assignments, Classwork, files and announcements are cached in the extension's storage, per Canvas site
+  and per user, and dropped after 30 days without a refresh. Pages draw the cached copy at once, refresh
+  in the background (Classwork and To-do show "Updating" while they do), and redraw only if something
+  changed. Opening any page of a class warms its Classwork cache. Smaller things (course names, colors, rail icons, pinned
   links) live in `localStorage` under `gcx:`.
 - BetterCampus's two-week range ("Custom") is a premium feature. If BetterCampus is set to Day or Week,
   the extension switches it to Month once (that setting sticks), then hides anything due more than 14 days out.
