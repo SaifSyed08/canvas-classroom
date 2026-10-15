@@ -1,26 +1,43 @@
 {
   "manifest_version": 3,
   "name": "Canvas Classroom",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Google Classroom-style layout for Canvas. Runs on top of BetterCampus.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
+  "permissions": ["storage", "unlimitedStorage"],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://*.instructure.com/*",
+    "https://*.inscloudgate.net/*",
+    "https://*.amazonaws.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://*.instructure.com/*"],
       "exclude_matches": ["https://canvadocs.instructure.com/*", "https://*.inscloudgate.net/*"],
-      "css": ["classroom.css"],
+      "css": ["classroom.css", "fileview.css", "ai.css"],
       "js": ["early.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["https://*.instructure.com/*"],
       "exclude_matches": ["https://canvadocs.instructure.com/*", "https://*.inscloudgate.net/*"],
-      "js": ["classroom.js"],
+      "js": ["classroom.js", "fileview.js", "ai.js"],
       "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["viewer/*"],
+      "matches": ["https://*.instructure.com/*"],
+      "use_dynamic_url": true
     }
   ]
 }

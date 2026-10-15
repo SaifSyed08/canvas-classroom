@@ -26,6 +26,24 @@
     else if (course && /^\/modules\/?$/.test(rest)) view = 'classwork';
   }
   if (path === '/' && !view) html.classList.add('gcx-dash');
+
+  // Page transitions: the page we came from leaves a direction ('left'/'right' between
+  // course tabs, 'in' when opening a class) and the view transition CSS reads it.
+  try {
+    const nav = JSON.parse(sessionStorage.getItem('gcx:nav') || 'null');
+    sessionStorage.removeItem('gcx:nav');
+    if (nav && Date.now() - nav.t < 15000) html.dataset.gcxNav = nav.dir;
+  } catch {}
+  // Opt both pages in to cross-document view transitions. Lives in the page (not the
+  // extension stylesheet) so Chrome counts it as the page's own.
+  const vt = document.createElement('style');
+  vt.id = 'gcx-vt';
+  vt.textContent = '@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }';
+  html.append(vt);
+  addEventListener('pagereveal', (e) => {
+    if (e.viewTransition) e.viewTransition.finished.finally(() => delete html.dataset.gcxNav);
+    else delete html.dataset.gcxNav;
+  });
   if (view) {
     html.classList.add('gcx-takeover');
     html.dataset.gcxView = view;
