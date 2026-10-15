@@ -1,0 +1,206 @@
+// Service worker for the "Ask anything" pill. It holds the OpenAI key and talks to the
+// Responses API, so the key never reaches the page. ai.js (content script) runs the tool
+// loop: it sends the conversation over a port, gets streamed text or tool calls back,
+// runs the tools against Canvas with the page's session, and sends the results here.
+// Files are downloaded here because Canvas redirects downloads to other hosts.
+
+const MODEL = 'gpt-6.1-sol';
+const REASONING = { effort: 'low' };
+const MAX_FILE = 25e6;
+const MAX_TEXT = 24000;
+
+async function getKey() {
+  try {
+    const r = await fetch(chrome.runtime.getURL('config.local.json'));
+    if (r.ok) {
+      const k = (await r.json()).openaiKey;
+      if (k) return k;
+    }
+  } catch {}
+  const { openaiKey } = await chrome.storage.local.get('openaiKey');
+  return openaiKey || '';
+}
+
+// ---------------------------------------------------------------- files
+const decode = (s) =>
+  s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&amp;/g, '&');
+const clip = (s, n = MAX_TEXT) => (s && s.length > n ? s.slice(0, n) + '\n…(cut off)' : s);
+
+// .docx and .pptx are zip files of XML; pull the text out of them.
+async function unzip(buf) {
+  const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--)
+    if (v.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  if (eocd < 0) throw new Error('not a zip');
+  const count = v.getUint16(eocd + 10, true);
+  let p = v.getUint32(eocd + 16, true);
+  const out = {};
+  const td = new TextDecoder();
+  for (let n = 0; n < count && v.getUint32(p, true) === 0x02014b50; n++) {
+    const method = v.getUint16(p + 10, true);
+    const csize = v.getUint32(p + 20, true);
+    const nameLen = v.getUint16(p + 28, true);
+    const extraLen = v.getUint16(p + 30, true);
+    const commentLen = v.getUint16(p + 32, true);
+    const local = v.getUint32(p + 42, true);
+    const name = td.decode(buf.subarray(p + 46, p + 46 + nameLen));
+    out[name] = async () => {
+      const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
+      const data = buf.subarray(start, start + csize);
+      if (method !== 8) return td.decode(data);
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return new Response(stream).text();
+    };
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+}
+async function officeText(buf, ext) {
+  const z = await unzip(buf);
+  const xmlText = (xml, para) =>
+    decode(xml.replace(new RegExp(`</${para}>`, 'g'), '\n').replace(/<w:tab\/>/g, '\t').replace(/<[^>]+>/g, '')).replace(/\n{3,}/g, '\n\n').trim();
+  if (ext === 'docx' && z['word/document.xml']) return xmlText(await z['word/document.xml'](), 'w:p');
+  if (ext === 'pptx') {
+    const slides = Object.keys(z)
+      .filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
+      .sort((a, b) => +a.match(/\d+/)[0] - +b.match(/\d+/)[0]);
+    const parts = [];
+    for (const [i, k] of slides.entries()) parts.push(`--- Slide ${i + 1} ---\n` + xmlText(await z[k](), 'a:p'));
+    return parts.join('\n\n');
+  }
+  return null;
+}
+function b64(buf) {
+  let s = '';
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+const TEXTY = /^(txt|md|csv|tsv|json|html?|xml|py|java|js|ts|c|cpp|h|r|rmd|m|tex|sql|ipynb|css|sh)$/;
+const IMAGE = /^(png|jpe?g|gif|webp)$/;
+
+// Downloads a Canvas file (its verifier URL needs no cookies) and turns it into either
+// text for the tool output or a file/image part for a follow-up message.
+async function readFile(att) {
+  const ext = (String(att.name).match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+  if (att.size && att.size > MAX_FILE) return { text: `${att.name} is ${Math.round(att.size / 1e6)} MB, too big to read here.` };
+  const r = await fetch(att.url, { credentials: 'include' });
+  if (!r.ok) return { text: `Couldn't download ${att.name} (HTTP ${r.status}).` };
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const mime = att.mime || r.headers.get('content-type') || '';
+  if (ext === 'pdf' || /pdf/.test(mime))
+    return {
+      text: `${att.name} is attached below as a PDF.`,
+      part: { type: 'input_file', filename: att.name.replace(/[^\w.\- ]+/g, '_'), file_data: `data:application/pdf;base64,${b64(buf)}` },
+    };
+  if (ext === 'docx' || ext === 'pptx') {
+    const t = await officeText(buf, ext).catch(() => null);
+    return { text: t ? clip(`${att.name} (converted to text):\n\n${t}`) : `Couldn't read ${att.name}.` };
+  }
+  if (IMAGE.test(ext) || /^image\//.test(mime))
+    return { text: `${att.name} is attached below as an image.`, part: { type: 'input_image', image_url: `data:${mime || 'image/png'};base64,${b64(buf)}` } };
+  if (TEXTY.test(ext) || /^text\//.test(mime)) {
+    let t = new TextDecoder().decode(buf);
+    if (/^html?$/.test(ext)) t = decode(t.replace(/<(script|style)[\s\S]*?<\/\1>/gi, '').replace(/<[^>]+>/g, ' ')).replace(/\s{3,}/g, '\n\n');
+    return { text: clip(`${att.name}:\n\n${t}`) };
+  }
+  return { text: `${att.name} is a .${ext || '?'} file, which can't be read here. Link it instead.` };
+}
+
+// ---------------------------------------------------------------- Responses API stream
+async function stream(port, body, signal) {
+  const key = await getKey();
+  if (!key) return port.postMessage({ type: 'error', code: 'nokey', message: 'No OpenAI key set.' });
+  const r = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: MODEL, reasoning: REASONING, stream: true, ...body }),
+    signal,
+  });
+  if (!r.ok) {
+    let msg = `OpenAI error ${r.status}`;
+    try {
+      msg = (await r.json()).error.message || msg;
+    } catch {}
+    const code = r.status === 401 ? 'badkey' : /previous response/i.test(msg) ? 'noprev' : 'http';
+    return port.postMessage({ type: 'error', code, message: msg });
+  }
+  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '';
+  let id = null;
+  const calls = [];
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let cut;
+    while ((cut = buf.indexOf('\n\n')) >= 0) {
+      const chunk = buf.slice(0, cut);
+      buf = buf.slice(cut + 2);
+      const data = chunk
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim())
+        .join('');
+      if (!data || data === '[DONE]') continue;
+      let ev;
+      try {
+        ev = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (ev.type === 'response.created') id = ev.response.id;
+      else if (ev.type === 'response.output_text.delta') port.postMessage({ type: 'delta', text: ev.delta });
+      else if (ev.type === 'response.output_item.added' && ev.item.type === 'function_call') port.postMessage({ type: 'tool_start', name: ev.item.name });
+      else if (ev.type === 'response.output_item.done' && ev.item.type === 'function_call')
+        calls.push({ call_id: ev.item.call_id, name: ev.item.name, arguments: ev.item.arguments });
+      else if (ev.type === 'response.failed' || ev.type === 'error')
+        return port.postMessage({ type: 'error', code: 'failed', message: (ev.response && ev.response.error && ev.response.error.message) || ev.message || 'The model failed.' });
+    }
+  }
+  port.postMessage(calls.length ? { type: 'tool_calls', response_id: id, calls } : { type: 'done', response_id: id });
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'gcx-ask') return;
+  const ctrl = new AbortController();
+  port.onDisconnect.addListener(() => ctrl.abort());
+  port.onMessage.addListener(async (msg) => {
+    try {
+      if (msg.type === 'start') {
+        const body = { instructions: msg.instructions, tools: msg.tools, input: msg.input };
+        if (msg.previous_response_id) body.previous_response_id = msg.previous_response_id;
+        await stream(port, body, ctrl.signal);
+      } else if (msg.type === 'continue') {
+        const input = [];
+        const parts = [];
+        for (const o of msg.outputs) {
+          let output = o.output;
+          if (o.attach) {
+            const f = await readFile(o.attach).catch((e) => ({ text: `Couldn't read ${o.attach.name}: ${e.message}` }));
+            output = JSON.stringify({ ...JSON.parse(output || '{}'), content: f.text });
+            if (f.part) parts.push(f.part);
+          }
+          input.push({ type: 'function_call_output', call_id: o.call_id, output });
+        }
+        if (parts.length) input.push({ role: 'user', content: [{ type: 'input_text', text: '(Attached file contents for the tool call above.)' }, ...parts] });
+        await stream(port, { instructions: msg.instructions, tools: msg.tools, input, previous_response_id: msg.previous_response_id }, ctrl.signal);
+      } else if (msg.type === 'ping') {
+        port.postMessage({ type: 'pong', hasKey: !!(await getKey()), model: MODEL });
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        try {
+          port.postMessage({ type: 'error', code: 'net', message: e.message });
+        } catch {}
+      }
+    }
+  });
+});
