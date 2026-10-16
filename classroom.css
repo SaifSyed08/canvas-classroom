@@ -485,7 +485,7 @@ html.gcx-dash .ic-DashboardCard:nth-child(n+6) { animation-delay: 200ms; }
 .gcx-link:hover .gcx-link-x, .gcx-link-x:focus-visible { opacity: 1; }
 .gcx-link-x:hover { background: color-mix(in srgb, var(--gcx-text) 10%, transparent); color: var(--gcx-text); }
 .gcx-link.gcx-pop { animation: gcx-pop-in 0.3s cubic-bezier(.2,.7,.2,1.3) both; }
-.gcx-link.gcx-out { animation: gcx-pop-out 0.18s ease forwards; }
+.gcx-link.gcx-out { animation: gcx-pop-out 0.18s ease forwards; pointer-events: none; }
 .gcx-picker { width: 340px; max-height: 440px; display: flex; flex-direction: column; overflow: hidden; }
 .gcx-picker .gcx-more-search input[type="text"] {
   flex: 1; height: 46px; border: 0 !important; outline: 0 !important; box-shadow: none !important; background: none !important;

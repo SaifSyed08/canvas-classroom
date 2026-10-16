@@ -913,10 +913,7 @@
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
-        if (!busy) {
-          keyMode = false;
-          ask(input.value);
-        }
+        if (!busy) ask(input.value);
       }
     });
 
@@ -960,6 +957,15 @@
     async function ask(q) {
       q = String(q || '').trim();
       if (!q || busy) return;
+      // A pasted API key must never become chat text (history, or a message to OpenAI).
+      if (/^sk-[\w-]{10,}/.test(q)) {
+        input.value = '';
+        showKeyPrompt("Keys don't go in the chat.");
+        return;
+      }
+      keyMode = false;
+      // Created first so Stop / New chat work even while the course list is still loading.
+      const me = (run = { cancelled: false, discard: false, resolve: null });
       input.value = '';
       setState('open');
       hist.msgs.push({ role: 'user', text: q });
@@ -990,6 +996,7 @@
       };
 
       const instr = await instructions();
+      if (me.cancelled && !text) text = '_Stopped._';
       const history = hist.msgs.slice(-12, -1).filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text }));
       let req = hist.prev
         ? { type: 'start', instructions: instr, tools: TOOL_DEFS, previous_response_id: hist.prev, input: [{ role: 'user', content: q }] }
@@ -997,7 +1004,6 @@
 
       let finalId = null;
       let error = null;
-      const me = (run = { cancelled: false, discard: false, resolve: null });
       for (let round = 0; round < MAX_ROUNDS; round++) {
         if (me.cancelled) {
           if (!text) text = '_Stopped._';

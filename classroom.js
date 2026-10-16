@@ -121,7 +121,16 @@
   // Extension storage is shared by every Canvas site, so keys carry the site and the user.
   const CACHE_VERSION = 1;
   const CACHE_DAYS = 30;
-  const cacheKey = (k) => `c:${location.origin}|${(store.get('me', null) || {}).id || 'anon'}|${k}`;
+  // Canvas writes the signed-in user's id into an inline ENV script, so the key always matches
+  // whoever is logged in now (not whoever was last seen in localStorage).
+  const PAGE_USER = (() => {
+    for (const sc of document.scripts) {
+      const m = !sc.src && sc.textContent.match(/"current_user_id":"(\d+)"/);
+      if (m) return m[1];
+    }
+    return null;
+  })();
+  const cacheKey = (k) => `c:${location.origin}|${PAGE_USER || 'anon'}|${k}`;
   const cache = {
     async get(k) {
       try {
@@ -883,10 +892,15 @@
     box.addEventListener('click', (e) => {
       const x = e.target.closest('.gcx-link-x');
       if (x) {
+        const row = x.parentElement;
+        if (row.classList.contains('gcx-out')) return;
+        const href = row.querySelector('a').getAttribute('href');
         const list = links();
-        const [gone] = list.splice(Number(x.dataset.i), 1);
+        const at = list.findIndex((l) => l.href === href);
+        if (at < 0) return;
+        const [gone] = list.splice(at, 1);
         store.set(key, list);
-        x.parentElement.classList.add('gcx-out');
+        row.classList.add('gcx-out');
         clearTimeout(box.gcxRedraw);
         box.gcxRedraw = setTimeout(() => draw(), 180);
         toast(`Removed ${gone.label}`);
@@ -1622,9 +1636,11 @@
     store.set('lastVisit', Date.now());
     welcomeCtx = { name, lastVisit, wel, titled: false, fromCache: false };
     // Wait briefly for the cached work list so the greeting is picked once, not twice.
+    // If nothing arrives in time, show a plain greeting; the first real data may still re-pick it.
     setTimeout(() => {
       if (welcomeCtx.titled) return;
       welcomeCtx.titled = true;
+      welcomeCtx.provisional = true;
       wel.querySelector('.gcx-hello').textContent = greeting(name, null, lastVisit);
     }, 350);
   }
@@ -1639,13 +1655,28 @@
       welcomeCtx.fromCache = fromCache;
       hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
       welcomeCtx.refs = greetRefs;
-    } else if (!fromCache && welcomeCtx.fromCache && welcomeCtx.refs.length) {
-      // The greeting came from the saved list. If the work it mentions is no longer open
-      // (handed in since, or now missing), pick again from the fresh list.
+    } else if (welcomeCtx.provisional) {
+      // The placeholder greeting knew nothing about his work; pick once more with it.
+      welcomeCtx.provisional = false;
+      welcomeCtx.fromCache = fromCache;
+      hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
+      welcomeCtx.refs = greetRefs;
+      reveal(hello);
+    } else if (!fromCache && welcomeCtx.fromCache) {
+      // The greeting came from the saved list. If what it talked about changed (work handed in,
+      // now missing, new work due today, or new work when it said "all clear"), pick again.
       welcomeCtx.fromCache = false;
-      const open = new Set(items.filter((i) => !i.done && !i.missing).map((i) => i.key));
+      const now = new Date();
+      const openItems = items.filter((i) => !i.done && !i.missing);
+      const open = new Set(openItems.map((i) => i.key));
       const flagged = items.some((i) => i.flagged);
-      if (welcomeCtx.refs.some((k) => (k === 'flagged' ? !flagged : !open.has(k)))) {
+      const todayKeys = openItems.filter((i) => i.due && i.due >= now && dayDiff(i.due) === 0).map((i) => i.key);
+      const refs = welcomeCtx.refs || [];
+      const stale = refs.some((k) =>
+        k === 'flagged' ? !flagged : k === 'clear' ? openItems.some((i) => i.due && i.due >= now && i.due < horizonEnd()) || flagged : !open.has(k),
+      );
+      const newToday = refs[0] !== 'clear' && refs[0] !== 'flagged' && refs.length && todayKeys.length > refs.length && todayKeys.some((k) => !refs.includes(k));
+      if (stale || newToday) {
         hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
         welcomeCtx.refs = greetRefs;
         reveal(hello);
@@ -1747,7 +1778,10 @@
       if (Math.random() < 0.5) return pick([`Back already, ${n}?`, `Hi again, ${n}!`, `Welcome back, ${n}!`]);
     }
     if (h >= 0 && h < 4) return pick([`Burning the midnight oil, ${n}?`, `Up late, ${n}?`, `Night owl mode, ${n}.`, `Still up, ${n}? Don't forget to sleep.`]);
-    if (items && !open.some((i) => i.due < horizonEnd()) && !flagged && Math.random() < 0.6) return pick([`All clear, ${n}!`, `Nothing due for two weeks, ${n}. Nice.`]);
+    if (items && !open.some((i) => i.due < horizonEnd()) && !flagged && Math.random() < 0.6) {
+      greetRefs = ['clear'];
+      return pick([`All clear, ${n}!`, `Nothing due for two weeks, ${n}. Nice.`]);
+    }
     if (next && dayDiff(next.due) === 1 && Math.random() < 0.5) {
       greetRefs = [next.key];
       return `${short(next.title)} is due tomorrow, ${n}.`;
@@ -1878,12 +1912,15 @@
       btn.id = 'gcx-bc-more';
       btn.type = 'button';
       btn.addEventListener('click', () => {
-        bcExpanded = !bcExpanded;
         // BetterCampus may have re-rendered since this button was made; work on the live list.
         const sr = btn.getRootNode();
-        if (sr && sr.getElementById) applyBcTodo(sr);
-        const live = sr && sr.getElementById ? [...sr.querySelectorAll('.group')].map((g) => g.parentElement) : [];
-        live.forEach((n) => n.toggleAttribute('data-gcx-new', bcExpanded));
+        if (!sr || !sr.getElementById) return;
+        const rows = () => [...sr.querySelectorAll('.group')].map((g) => g.parentElement);
+        const wasCapped = new Set(rows().filter((n) => n.hasAttribute('data-gcx-cap')));
+        bcExpanded = !bcExpanded;
+        applyBcTodo(sr);
+        // Fade in only the rows that just appeared.
+        rows().forEach((n) => n.toggleAttribute('data-gcx-new', bcExpanded && wasCapped.has(n)));
       });
     }
     if (panel.nextElementSibling !== btn) panel.after(btn);
