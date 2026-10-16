@@ -22,23 +22,28 @@ BetterCampus still supplies the grade badges, the to-do sidebar and its theme co
     by folder. Includes a grade chip and a filter box. Open/closed state is remembered per course.
   - The original Canvas pages are still reachable from the More panel (or add `?gcx-original=1`).
 - **To-do** (`/?gcx=todo`): all courses' work in Assigned / Missing / Done tabs with a class filter.
-- **Dashboard**: a "Welcome back"-style greeting that changes with the time of day, weekday, season,
-  holidays, how long you've been away and what's due soon, plus a one-line summary of the week.
-  Next to it, the ✦ button asks questions about your classes (see below).
+- **Dashboard**: a big greeting ("Boo! Saif", "Happy Friday, Saif!", "Exam 2 is due today, Saif.") picked from
+  the time of day, weekday, season, holidays, how long you've been away and what's due soon. Next to it,
+  the **?** button asks questions about your classes (see below). The gear next to them (also **Settings**
+  at the bottom of the rail) turns the greeting and the ? button on or off, sets the greeting's tone
+  (Calm, Normal, or Extra with emoji), and turns on **confetti when you submit** something, which goes
+  seasonal around Halloween, Thanksgiving, Christmas, New Year, Valentine's, St. Patrick's and the Fourth.
   Cards show the course name and instructor over the image; below that, work for the next two weeks is
   grouped under labels like "Missing", "Due Today" and "Due Friday", three at a time. Each card has an
   email-the-instructor button. The card "+" and action icons, the "Dashboard" header menu, the streak,
   the progress ring, the Day/Week/Month picker, the premium Sync button, the Announcements and Completed
   tabs and the footer links are gone. The BetterCampus to-do list is cut off at two weeks and shows six
   items before "Show more"; Add Task, Recent Feedback and View Grades stay below it.
-- **Ask anything** (✦ next to the greeting): hover it and it opens into a pill; click and type. It answers
-  from your Canvas: courses, assignments, grades, feedback, modules, files (it can read PDFs, slides and
-  docs), announcements, quizzes, discussions, pages, the syllabus, people and the inbox. It's read-only.
-  The chat stays open while the pointer is near it and tucks away when you move off.
+- **Ask anything** (the ? next to the greeting): hover it and it rolls open into a pill; click and type.
+  The pill grows into the chat, with the history above the input. It answers from your Canvas: courses,
+  assignments, grades, feedback, modules, files (it can read PDFs, slides and docs), announcements,
+  quizzes, discussions, pages, the syllabus, people and the inbox. It's read-only. Move the pointer away
+  and it tucks back into the circle, with a one-line preview beside it while an answer is coming in.
 - **Files**: clicking a course file opens it over the page (PDFs with zoom and page count; slides and
   documents in Canvas's viewer) instead of leaving the page. Back, download, share and zoom are in the
   top bar; Esc or browser Back closes it. Ctrl/Cmd-click still opens the normal page.
-- **Motion**: pages slide left/right between course tabs, opening a class zooms in, lists stagger in,
+- **Motion**: pages slide left/right between course tabs (the tab underline slides with them), opening a
+  class eases the page up while the course name crossfades in the top bar, lists stagger in,
   sections expand and collapse smoothly, loaded content fades in over shimmer placeholders, and switching
   BetterCampus between dark and light mode crossfades. All of it turns off with the OS "reduce motion"
   setting.
@@ -79,3 +84,4 @@ only read by the extension's background worker; it is never typed into or handed
 - Courses that hide Modules still get Classwork, served from `/courses/:id?gcx=classwork`.
 - To turn it off, disable the extension in `chrome://extensions`. The rest of BetterCampus goes back to
   normal; only the Month setting stays.
+- The greeting uses Fredoka (SIL Open Font License, `fonts/OFL.txt`), bundled with the extension.

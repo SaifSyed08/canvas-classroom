@@ -32,7 +32,11 @@
   try {
     const nav = JSON.parse(sessionStorage.getItem('gcx:nav') || 'null');
     sessionStorage.removeItem('gcx:nav');
-    if (nav && Date.now() - nav.t < 15000) html.dataset.gcxNav = nav.dir;
+    if (nav && Date.now() - nav.t < 15000) {
+      html.dataset.gcxNav = nav.dir;
+      // Which course tab he came from, so the underline can slide over from it.
+      if (course && String(nav.course) === course[1] && nav.from >= 0) html.dataset.gcxFrom = nav.from;
+    }
   } catch {}
   // Opt both pages in to cross-document view transitions. Lives in the page (not the
   // extension stylesheet) so Chrome counts it as the page's own.

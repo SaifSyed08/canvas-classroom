@@ -43,6 +43,7 @@
     chevron: 'M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z',
     list: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
     check: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
+    gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
     sync: 'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z',
     more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
     add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
@@ -458,6 +459,7 @@
       <div class="gcx-rail-bottom">
         ${item('calendar', '/calendar', 'calendar', 'Calendar')}
         ${item('inbox', '/conversations', 'inbox', 'Inbox', `<span class="gcx-badge" ${unread ? '' : 'hidden'}>${unread}</span>`)}
+        <button class="gcx-ri gcx-settings-btn" type="button" title="Settings" aria-haspopup="dialog"><span class="gcx-ri-ic">${svg('gear')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">Settings</span></span></button>
         <button class="gcx-ri gcx-account" type="button" title="Account">
           <span class="gcx-me">${avatarUrl ? '' : esc((me && me.name ? me.name[0] : '?').toUpperCase())}</span>
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc((me && me.name) || 'Account')}</span><span class="gcx-ri-sub">Account &amp; settings</span></span>
@@ -491,6 +493,10 @@
       openLookPicker(dots.closest('.gcx-ri-course'), e);
       return;
     }
+    if (e.target.closest('.gcx-settings-btn')) {
+      openSettings(e.target.closest('.gcx-settings-btn'));
+      return;
+    }
     if (e.target.closest('.gcx-burger')) {
       const on = !html.classList.contains('gcx-pinned');
       html.classList.toggle('gcx-pinned', on);
@@ -507,7 +513,7 @@
 
   // Icon + color for a course's rail avatar, picked from a little panel next to the cursor.
   const LOOK_ICONS = ['', 'science', 'biotech', 'psych', 'calc', 'chart', 'code', 'book', 'pen', 'globe', 'palette', 'music', 'sport', 'leaf', 'bolt', 'star', 'heart', 'school', 'people', 'quiz'];
-  const LOOK_COLORS = ['', '#d93025', '#e8710a', '#f9ab00', '#188038', '#12a4af', '#1a73e8', '#4f46e5', '#9334e6', '#c2185b', '#5f6368', '#202124'];
+  const LOOK_COLORS = ['', '#d93025', '#e8710a', '#f9ab00', '#188038', '#12a4af', '#1a73e8', '#9334e6', '#c2185b', '#5f6368'];
   function openLookPicker(item, ev) {
     document.querySelector('.gcx-look')?.remove();
     const id = Number(item.dataset.id);
@@ -515,23 +521,20 @@
     if (!c) return;
     const looks = store.get('looks', {});
     const look = { ...(looks[id] || {}) };
-    const pop = el(`<div class="gcx-look gcx-pop-panel" role="dialog" aria-label="Customize ${esc(prettyName(c))}">
-      <div class="gcx-look-h"><span class="gcx-look-prev"></span><div><b>${esc(prettyName(c))}</b><span>Icon and color in the menu</span></div></div>
-      <div class="gcx-look-lbl">Icon</div>
-      <div class="gcx-look-icons">${LOOK_ICONS.map((k) => `<button type="button" data-icon="${k}" title="${k || 'Letter'}">${k ? svg(k, 20) : `<span>${esc(initial(c))}</span>`}</button>`).join('')}</div>
-      <div class="gcx-look-lbl">Color</div>
-      <div class="gcx-look-colors">${LOOK_COLORS.map((k) => `<button type="button" data-color="${k}" title="${k || 'Course color'}" style="--sw:${k || c.color}">${k ? '' : svg('sync', 14)}</button>`).join('')}</div>
-      <button type="button" class="gcx-look-reset">Reset</button>
+    // Just icons and one thin row of colors. The letter and the course color are the "reset".
+    const pop = el(`<div class="gcx-look gcx-pop-panel" role="dialog" aria-label="Icon for ${esc(prettyName(c))}">
+      <div class="gcx-look-icons">${LOOK_ICONS.map((k) => `<button type="button" data-icon="${k}" title="${k || 'Letter'}" aria-label="${k || 'Letter'}">${k ? svg(k, 18) : `<span>${esc(initial(c))}</span>`}</button>`).join('')}</div>
+      <div class="gcx-look-colors">${LOOK_COLORS.map((k) => `<button type="button" data-color="${k}" title="${k || 'Course color'}" aria-label="${k || 'Course color'}" style="--sw:${k || c.color}"></button>`).join('')}</div>
     </div>`);
     document.body.append(pop);
     html.classList.add('gcx-rail-hold');
-    const W = 280;
+    const W = pop.offsetWidth;
     const H = pop.offsetHeight;
     pop.style.left = Math.min(ev.clientX + 14, window.innerWidth - W - 12) + 'px';
     pop.style.top = Math.max(12, Math.min(ev.clientY - 40, window.innerHeight - H - 12)) + 'px';
     const paint = () => {
       const color = look.color || c.color;
-      for (const n of [pop.querySelector('.gcx-look-prev'), ...rail.querySelectorAll(`.gcx-ri-course[data-id="${id}"] .gcx-av`)]) {
+      for (const n of rail.querySelectorAll(`.gcx-ri-course[data-id="${id}"] .gcx-av`)) {
         n.innerHTML = avatarInner(c, look);
         n.style.background = color;
       }
@@ -551,10 +554,6 @@
       if (!b) return;
       if (b.dataset.icon != null) look.icon = b.dataset.icon || undefined;
       else if (b.dataset.color != null) look.color = b.dataset.color || undefined;
-      else if (b.classList.contains('gcx-look-reset')) {
-        delete look.icon;
-        delete look.color;
-      }
       b.classList.remove('gcx-bump');
       void b.offsetWidth;
       b.classList.add('gcx-bump');
@@ -628,11 +627,12 @@
           : '';
 
     const bar = el(`<div id="gcx-cbar">
-      <a class="gcx-cbar-title" href="${base}"><span class="gcx-cbar-name">&nbsp;</span><span class="gcx-cbar-sub">&nbsp;</span></a>
+      <a class="gcx-cbar-title" href="${base}"><span class="gcx-cbar-name"><span class="gcx-skel gcx-skel-name"></span></span><span class="gcx-cbar-sub"><span class="gcx-skel gcx-skel-sub"></span></span></a>
       <nav class="gcx-tabs" aria-label="Course">
         <a class="gcx-tab${active === 'home' ? ' on' : ''}" href="${base}">Home</a>
         <a class="gcx-tab${active === 'classwork' ? ' on' : ''}" href="${classworkHref}">Classwork</a>
         ${hasPeople ? `<a class="gcx-tab${active === 'people' ? ' on' : ''}" href="${base}/users">People</a>` : ''}
+        <span class="gcx-tabs-ink"></span>
       </nav>
       <div class="gcx-cbar-actions">
         <button class="gcx-more-btn" type="button" aria-expanded="false" aria-haspopup="true" title="Search everything else in this course (/)">
@@ -645,6 +645,35 @@
       </div>
     </div>`);
     document.getElementById('wrapper').prepend(bar);
+    // Same course as the last page: paint the title from cache now so it doesn't blink during
+    // the page transition, and slide the tab underline over from the tab he came from.
+    // Until the name is known the title shows shimmer placeholders; the real text fades in.
+    const paintTitle = (c) => {
+      bar.style.setProperty('--c', c.color);
+      const name = prettyName(c) || c.code || 'Course';
+      const sub = [c.code, teacherLine(c)].filter(Boolean).join(' · ');
+      const title = bar.querySelector('.gcx-cbar-title');
+      const wasLoading = !!title.querySelector('.gcx-skel');
+      if (!wasLoading && title.textContent === name + sub) return;
+      bar.querySelector('.gcx-cbar-name').textContent = name;
+      bar.querySelector('.gcx-cbar-sub').textContent = sub;
+      if (wasLoading) reveal(title);
+    };
+    const cachedCourse = COURSES && COURSES.find((x) => x.id === id);
+    if (cachedCourse) paintTitle(cachedCourse);
+    const ink = bar.querySelector('.gcx-tabs-ink');
+    const tabEls = [...bar.querySelectorAll('.gcx-tab')];
+    const onTab = bar.querySelector('.gcx-tab.on');
+    const placeInk = (t) => (ink.style.cssText = t ? `left:${t.offsetLeft + 10}px;width:${t.offsetWidth - 20}px;opacity:1` : 'opacity:0');
+    const fromTab = tabEls[Number(html.dataset.gcxFrom)];
+    if (fromTab && onTab && fromTab !== onTab) {
+      ink.classList.add('still');
+      placeInk(fromTab);
+      void ink.offsetWidth;
+      ink.classList.remove('still');
+      requestAnimationFrame(() => placeInk(onTab));
+    } else placeInk(onTab);
+    addEventListener('resize', debounce(() => placeInk(bar.querySelector('.gcx-tab.on')), 100));
 
     const panel = bar.querySelector('.gcx-more');
     const btn = bar.querySelector('.gcx-more-btn');
@@ -708,9 +737,7 @@
     });
 
     const c = await courseById(id);
-    bar.style.setProperty('--c', c.color);
-    bar.querySelector('.gcx-cbar-name').textContent = prettyName(c) || c.code || 'Course';
-    bar.querySelector('.gcx-cbar-sub').textContent = [c.code, teacherLine(c)].filter(Boolean).join(' · ');
+    paintTitle(c);
     document.querySelector('#gcx-rail .gcx-ri-course.on')?.style.setProperty('--c', c.color);
     return c;
   }
@@ -946,6 +973,11 @@
       input.focus();
       const add = (o) => {
         const l = links();
+        if (l.some((x) => x.href === o.href)) {
+          close();
+          toast(`${o.label} is already pinned`);
+          return;
+        }
         l.push({ label: o.label, href: o.href, icon: o.icon });
         store.set(key, l);
         close();
@@ -1625,43 +1657,57 @@
     document.querySelectorAll('.gcx-card-body[data-color]').forEach(fillCardDue);
   }
 
-  // ----- "Welcome back, Saif!" with a line that knows what's going on
+  // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
+  const prefs = () => ({ greeting: true, tone: 'normal', ask: true, confetti: true, ...store.get('prefs', {}) });
   function mountWelcome() {
     const anchor = document.getElementById('dashboard_header_container');
     if (!anchor || document.querySelector('.gcx-welcome')) return;
     const name = (me && me.name ? me.name.split(' ')[0] : '') || 'there';
-    const wel = el(`<div class="gcx-welcome"><div class="gcx-welcome-tx"><h1 class="gcx-hello"></h1><div class="gcx-welcome-sub">&nbsp;</div></div><div class="gcx-ask-slot"></div></div>`);
+    const wel = el(`<div class="gcx-welcome"><h1 class="gcx-hello"></h1>
+      <div class="gcx-ask-slot"></div>
+      <button type="button" class="gcx-welcome-gear" title="Dashboard settings" aria-label="Dashboard settings" aria-haspopup="dialog">${svg('gear', 20)}</button></div>`);
     anchor.before(wel);
     const lastVisit = store.get('lastVisit', 0);
     store.set('lastVisit', Date.now());
-    welcomeCtx = { name, lastVisit, wel, titled: false, fromCache: false };
-    // Wait briefly for the cached work list so the greeting is picked once, not twice.
+    welcomeCtx = { name, lastVisit, wel, titled: false, fromCache: false, items: null };
+    wel.querySelector('.gcx-welcome-gear').addEventListener('click', (e) => openSettings(e.currentTarget));
+    applyWelcomePrefs();
     // If nothing arrives in time, show a plain greeting; the first real data may still re-pick it.
     setTimeout(() => {
       if (welcomeCtx.titled) return;
       welcomeCtx.titled = true;
       welcomeCtx.provisional = true;
-      wel.querySelector('.gcx-hello').textContent = greeting(name, null, lastVisit);
+      setHello(greeting(name, null, lastVisit), false);
     }, 350);
   }
   let welcomeCtx = null;
-  function updateWelcome(items, fromCache) {
+  function setHello(text, animate) {
+    const hello = welcomeCtx.wel.querySelector('.gcx-hello');
+    hello.textContent = text;
+    welcomeCtx.refs = greetRefs;
+    if (animate) reveal(hello);
+  }
+  function applyWelcomePrefs() {
     if (!welcomeCtx) return;
-    const { wel, name } = welcomeCtx;
-    // The title is picked once (from cached work when there is some) so it doesn't jump.
-    const hello = wel.querySelector('.gcx-hello');
+    const p = prefs();
+    welcomeCtx.wel.classList.toggle('no-hello', !p.greeting);
+    welcomeCtx.wel.classList.toggle('no-ask', !p.ask);
+  }
+  function updateWelcome(items, fromCache, failed = false) {
+    if (!welcomeCtx) return;
+    const { name } = welcomeCtx;
+    if (!failed) welcomeCtx.items = items;
     if (!welcomeCtx.titled) {
       welcomeCtx.titled = true;
       welcomeCtx.fromCache = fromCache;
-      hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
-      welcomeCtx.refs = greetRefs;
+      setHello(greeting(name, failed ? null : items, welcomeCtx.lastVisit), false);
+    } else if (failed) {
+      // Leave whatever is showing; an empty list would read as "all clear".
     } else if (welcomeCtx.provisional) {
       // The placeholder greeting knew nothing about his work; pick once more with it.
       welcomeCtx.provisional = false;
       welcomeCtx.fromCache = fromCache;
-      hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
-      welcomeCtx.refs = greetRefs;
-      reveal(hello);
+      setHello(greeting(name, items, welcomeCtx.lastVisit), true);
     } else if (!fromCache && welcomeCtx.fromCache) {
       // The greeting came from the saved list. If what it talked about changed (work handed in,
       // now missing, new work due today, or new work when it said "all clear"), pick again.
@@ -1675,52 +1721,32 @@
       const stale = refs.some((k) =>
         k === 'flagged' ? !flagged : k === 'clear' ? openItems.some((i) => i.due && i.due >= now && i.due < horizonEnd()) || flagged : !open.has(k),
       );
-      const newToday = refs[0] !== 'clear' && refs[0] !== 'flagged' && refs.length && todayKeys.length > refs.length && todayKeys.some((k) => !refs.includes(k));
-      if (stale || newToday) {
-        hello.textContent = greeting(name, items, welcomeCtx.lastVisit);
-        welcomeCtx.refs = greetRefs;
-        reveal(hello);
-      }
+      // Anything due today that the greeting didn't mention outranks what it did say.
+      const newToday = todayKeys.some((k) => !refs.includes(k));
+      if (stale || newToday) setHello(greeting(name, items, welcomeCtx.lastVisit), true);
     }
-    const sub = wel.querySelector('.gcx-welcome-sub');
-    const text = welcomeSub(items);
-    if (sub.textContent !== text) {
-      sub.textContent = text;
-      if (!fromCache) reveal(sub);
-    }
-  }
-  function welcomeSub(items) {
-    const now = new Date();
-    const open = items.filter((i) => !i.done && !i.missing && i.due && i.due >= now);
-    const flagged = items.filter((i) => i.flagged).length;
-    const today = open.filter((i) => dayDiff(i.due) === 0).length;
-    const week = open.filter((i) => i.due < weekStart(1)).length;
-    const next = open.sort((a, b) => a.due - b.due)[0];
-    const bits = [];
-    if (today) bits.push(`${today} due today`);
-    else if (week) bits.push(`${week} due this week`);
-    if (flagged) bits.push(`${flagged} missing`);
-    if (next) {
-      const day = dayName(next.due).replace(/^(Today|Tomorrow)$/, (w) => w.toLowerCase());
-      bits.push(`next up: ${next.title}, ${day} at ${timeOf(next.due)}`);
-    }
-    if (!bits.length) return 'Nothing due in the next two weeks. Enjoy it.';
-    const s = bits.join(' · ');
-    return s[0].toUpperCase() + s.slice(1);
   }
 
-  // Lots of ways to say hello. Most specific wins: something due within hours, a holiday,
-  // something due today, a long absence, late night. Otherwise a random pick from time of day,
-  // weekday and season, never the same one twice in a row.
-  let greetRefs = []; // keys of the work items (or 'flagged') the last greeting talked about
+  // Most specific wins: something due within hours, a holiday, something due today, a long
+  // absence, late night. Otherwise a random pick from time of day, weekday and season, never the
+  // same line twice in a row. Tone: 'calm' (plain), 'normal', 'extra' (emoji, sillier lines).
+  let greetRefs = []; // keys of the work items ('flagged', 'clear') the last greeting talked about
   function greeting(n, items, lastVisit = 0) {
     greetRefs = [];
+    const tone = prefs().tone;
+    const calm = tone === 'calm';
+    const extra = tone === 'extra';
     const now = new Date();
     const h = now.getHours();
     const wd = now.getDay();
     const m = now.getMonth() + 1;
     const d = now.getDate();
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+    // [text, emoji] pairs: the emoji only shows in the extra tone.
+    const say = (pairs) => {
+      const [t, e] = pick(pairs);
+      return extra && e ? `${t} ${e}` : t;
+    };
     const open = (items || []).filter((i) => !i.done && !i.missing && i.due && i.due >= now).sort((a, b) => a.due - b.due);
     const next = open[0];
     const hoursLeft = next ? (next.due - now) / 36e5 : Infinity;
@@ -1728,84 +1754,281 @@
 
     if (next && hoursLeft < 6) {
       greetRefs = [next.key];
-      const left = hoursLeft < 1 ? `${Math.max(1, Math.round(hoursLeft * 60))} minutes` : `${Math.round(hoursLeft)} hour${Math.round(hoursLeft) === 1 ? '' : 's'}`;
-      return pick([`${short(next.title)} is due in ${left}, ${n}.`, `Clock's ticking, ${n}: ${short(next.title)} in ${left}.`, `${n}, heads up: ${short(next.title)} is due in ${left}.`]);
+      const left = hoursLeft < 1 ? `${Math.max(1, Math.round(hoursLeft * 60))} min` : `${Math.round(hoursLeft)} hr`;
+      if (calm) return `${short(next.title)} is due in ${left}.`;
+      return say([
+        [`${short(next.title)} is due in ${left}, ${n}.`, '⏰'],
+        [`Clock's ticking, ${n}: ${short(next.title)} in ${left}.`, '🔥'],
+        [`${n}, heads up: ${short(next.title)} in ${left}.`, '⏳'],
+      ]);
     }
 
-    // Fixed and floating holidays.
     const nthWeekday = (month, weekday, nth) => {
       const x = new Date(now.getFullYear(), month - 1, 1);
-      const first = (weekday - x.getDay() + 7) % 7 + 1;
-      return first + (nth - 1) * 7;
+      return ((weekday - x.getDay() + 7) % 7) + 1 + (nth - 1) * 7;
     };
-    const thanksgiving = nthWeekday(11, 4, 4);
+    const tg = nthWeekday(11, 4, 4); // Thanksgiving
     const holiday =
-      (m === 1 && d === 1 && [`Happy New Year, ${n}!`, `New year, new semester, ${n}.`]) ||
-      (m === 1 && d <= 7 && [`Happy New Year, ${n}! Welcome back.`]) ||
-      (m === 2 && d === 14 && [`Happy Valentine's Day, ${n}!`]) ||
-      (m === 3 && d === 17 && [`Happy St. Patrick's Day, ${n}!`]) ||
-      (m === 3 && d >= 9 && d <= 20 && wd >= 1 && wd <= 5 && h < 4 && [`Spring break soon, ${n}?`]) ||
-      (m === 4 && d === 1 && [`Welcome back, ${n}! (No pranks here.)`]) ||
-      (m === 7 && d === 4 && [`Happy Fourth of July, ${n}!`]) ||
-      (m === 10 && d === 31 && [`Happy Halloween, ${n}!`, `Trick or treat, ${n}!`]) ||
-      (m === 10 && d >= 24 && [`Spooky season, ${n}.`, `Halloween's almost here, ${n}!`, `Boo! Welcome back, ${n}.`]) ||
-      (m === 11 && d === thanksgiving && [`Happy Thanksgiving, ${n}!`]) ||
-      (m === 11 && d > thanksgiving - 5 && d < thanksgiving && [`Thanksgiving break is close, ${n}.`, `Almost turkey time, ${n}!`]) ||
-      (m === 11 && d > thanksgiving && d <= thanksgiving + 3 && [`Hope the break was good, ${n}!`]) ||
-      (m === 12 && d >= 24 && d <= 25 && [`Merry Christmas, ${n}!`, `Happy holidays, ${n}!`]) ||
-      (m === 12 && d === 31 && [`Last day of the year, ${n}!`]) ||
-      (((m === 12 && d <= 16) || (m === 5 && d <= 14)) && [`Finals season, ${n}. You've got this.`, `Home stretch, ${n}!`, `Deep breaths, ${n}. Finals are almost done.`]) ||
-      (((m === 8 && d >= 24) || (m === 1 && d >= 12 && d <= 20)) && [`Welcome to the new semester, ${n}!`, `Fresh semester, ${n}. Let's go.`]) ||
+      (m === 1 && d === 1 && [[`Happy New Year, ${n}!`, '🎉'], [`New year, ${n}. Let's go.`, '🥳']]) ||
+      (m === 2 && d === 14 && [[`Happy Valentine's Day, ${n}!`, '💘']]) ||
+      (m === 3 && d === 17 && [[`Happy St. Patrick's Day, ${n}!`, '☘️']]) ||
+      (m === 4 && d === 1 && [[`Nice try, ${n}. No pranks here.`, '🃏']]) ||
+      (m === 7 && d === 4 && [[`Happy Fourth, ${n}!`, '🎆']]) ||
+      (m === 10 && d === 31 && [[`Happy Halloween, ${n}!`, '🎃'], [`Trick or treat, ${n}!`, '🍬'], [`Boo! ${n}`, '👻']]) ||
+      (m === 10 && d >= 24 && [[`Boo! ${n}`, '👻'], [`Spooky season, ${n}.`, '🎃'], [`Almost Halloween, ${n}!`, '🦇']]) ||
+      (m === 11 && d === tg && [[`Happy Thanksgiving, ${n}!`, '🦃']]) ||
+      (m === 11 && d > tg - 5 && d < tg && [[`Almost turkey time, ${n}!`, '🦃'], [`Break's close, ${n}.`, '🥧']]) ||
+      (m === 12 && d >= 24 && d <= 25 && [[`Merry Christmas, ${n}!`, '🎄'], [`Happy holidays, ${n}!`, '🎁']]) ||
+      (m === 12 && d === 31 && [[`Last day of the year, ${n}!`, '🎆']]) ||
+      (((m === 12 && d <= 16) || (m === 5 && d <= 14)) && [[`Finals season, ${n}. You've got this.`, '💪'], [`Home stretch, ${n}!`, '🏁']]) ||
+      (((m === 8 && d >= 24) || (m === 1 && d >= 12 && d <= 20)) && [[`New semester, ${n}!`, '📚'], [`Fresh start, ${n}.`, '✨']]) ||
       null;
-    if (holiday) return pick(holiday);
+    // Calm keeps only the real holidays (one day), said plainly.
+    const bigDay = (m === 1 && d === 1) || (m === 7 && d === 4) || (m === 10 && d === 31) || (m === 11 && d === tg) || (m === 12 && d >= 24 && d <= 25);
+    if (holiday && (!calm || bigDay)) return calm ? holiday[0][0].replace(/!$/, '.') : say(holiday);
 
     const dueToday = open.filter((i) => dayDiff(i.due) === 0);
-    if (dueToday.length) greetRefs = dueToday.map((i) => i.key);
-    if (dueToday.length)
-      return pick(
+    if (dueToday.length) {
+      greetRefs = dueToday.map((i) => i.key);
+      if (calm) return dueToday.length === 1 ? `${short(dueToday[0].title)} is due today.` : `${dueToday.length} things are due today.`;
+      return say(
         dueToday.length === 1
-          ? [`${short(dueToday[0].title)} is due today, ${n}.`, `One thing due today, ${n}. You've got it.`]
-          : [`${dueToday.length} things due today, ${n}.`, `Busy day, ${n}: ${dueToday.length} due today.`],
+          ? [[`${short(dueToday[0].title)} is due today, ${n}.`, '📌'], [`One thing due today, ${n}. You've got it.`, '💪']]
+          : [[`${dueToday.length} things due today, ${n}.`, '📌'], [`Busy day, ${n}: ${dueToday.length} due today.`, '🏃']],
       );
+    }
     const flagged = (items || []).filter((i) => i.flagged).length;
-    if (flagged && Math.random() < 0.5) greetRefs = ['flagged'];
-    if (greetRefs[0] === 'flagged') return pick([`Let's catch up, ${n}.`, `A little catching up to do, ${n}.`]);
+    if (flagged && !calm && Math.random() < 0.5) {
+      greetRefs = ['flagged'];
+      return say([[`Let's catch up, ${n}.`, '🧹'], [`A little catching up to do, ${n}.`, '📝']]);
+    }
 
     const away = lastVisit ? (Date.now() - lastVisit) / 864e5 : 0;
-    if (away > 7) return pick([`Long time no see, ${n}!`, `It's been a minute, ${n}. Welcome back!`]);
-    if (away > 2) return pick([`Good to see you again, ${n}!`, `Welcome back, ${n}! Here's what you missed.`]);
-    if (lastVisit && Date.now() - lastVisit < 10 * 6e4) {
-      if (Math.random() < 0.5) return pick([`Back already, ${n}?`, `Hi again, ${n}!`, `Welcome back, ${n}!`]);
-    }
-    if (h >= 0 && h < 4) return pick([`Burning the midnight oil, ${n}?`, `Up late, ${n}?`, `Night owl mode, ${n}.`, `Still up, ${n}? Don't forget to sleep.`]);
+    if (away > 7) return calm ? `Welcome back, ${n}.` : say([[`Long time no see, ${n}!`, '👋'], [`It's been a minute, ${n}!`, '👀']]);
+    if (away > 2 && !calm) return say([[`Good to see you, ${n}!`, '👋'], [`Missed you, ${n}.`, '🫶']]);
+    if (lastVisit && Date.now() - lastVisit < 10 * 6e4 && !calm && Math.random() < 0.5) return say([[`Back already, ${n}?`, '😄'], [`Hi again, ${n}!`, '👋']]);
+    if (h < 4 && !calm) return say([[`Up late, ${n}?`, '🌙'], [`Night owl mode, ${n}.`, '🦉'], [`Still up, ${n}? Get some sleep.`, '😴']]);
     if (items && !open.some((i) => i.due < horizonEnd()) && !flagged && Math.random() < 0.6) {
       greetRefs = ['clear'];
-      return pick([`All clear, ${n}!`, `Nothing due for two weeks, ${n}. Nice.`]);
+      return calm ? `Nothing due for two weeks, ${n}.` : say([[`All clear, ${n}!`, '😎'], [`Nothing due for two weeks, ${n}.`, '🏖️']]);
     }
     if (next && dayDiff(next.due) === 1 && Math.random() < 0.5) {
       greetRefs = [next.key];
-      return `${short(next.title)} is due tomorrow, ${n}.`;
+      return calm ? `${short(next.title)} is due tomorrow.` : say([[`${short(next.title)} is due tomorrow, ${n}.`, '📅']]);
     }
 
-    const pool = [`Welcome back, ${n}!`, `Hey ${n}!`, `Hi ${n}, ready to learn?`, `Let's get to it, ${n}.`];
-    if (h >= 4 && h < 12) pool.push(`Good morning, ${n}!`, `Morning, ${n}!`, `Rise and shine, ${n}!`, `Fresh start, ${n}.`);
-    else if (h < 17) pool.push(`Good afternoon, ${n}!`, `Afternoon, ${n}!`, `How's the day going, ${n}?`);
-    else if (h < 21) pool.push(`Good evening, ${n}!`, `Evening, ${n}!`, `Winding down, ${n}?`);
-    else pool.push(`Late night session, ${n}?`, `Good evening, ${n}!`, `One more thing before bed, ${n}?`);
-    if (wd === 1) pool.push(`Happy Monday, ${n}!`, `New week, ${n}. Let's go.`);
-    if (wd === 3) pool.push(`Halfway through the week, ${n}!`);
-    if (wd === 5) pool.push(`Happy Friday, ${n}!`, `Almost the weekend, ${n}!`);
-    if (wd === 0 || wd === 6) pool.push(`Happy ${now.toLocaleDateString(undefined, { weekday: 'long' })}, ${n}!`, `Weekend study session, ${n}?`);
-    if (m >= 9 && m <= 11) pool.push(`Cozy fall vibes, ${n}.`, `Happy fall, ${n}!`);
-    if (m === 12 || m <= 2) pool.push(`Stay warm, ${n}!`);
-    if (m >= 3 && m <= 5) pool.push(`Happy spring, ${n}!`);
-    if (m >= 6 && m <= 8) pool.push(`Summer session, ${n}?`);
+    let pool;
+    if (calm) {
+      pool = [[`Welcome back, ${n}.`], [`Hello, ${n}.`], [h >= 4 && h < 12 ? `Good morning, ${n}.` : h < 17 ? `Good afternoon, ${n}.` : `Good evening, ${n}.`]];
+    } else {
+      pool = [[`Hey ${n}!`, '👋'], [`Hi ${n}!`, '😊'], [`Welcome back, ${n}!`, '👋'], [`Let's get to it, ${n}.`, '💪']];
+      if (h >= 4 && h < 12) pool.push([`Good morning, ${n}!`, '☀️'], [`Morning, ${n}!`, '☕'], [`Rise and shine, ${n}!`, '🌅']);
+      else if (h < 17) pool.push([`Good afternoon, ${n}!`, '🌤️'], [`Afternoon, ${n}!`, '🙌']);
+      else pool.push([`Good evening, ${n}!`, '🌙'], [`Evening, ${n}!`, '✨']);
+      if (wd === 1) pool.push([`Happy Monday, ${n}!`, '💼'], [`New week, ${n}. Let's go.`, '🚀']);
+      if (wd === 3) pool.push([`Halfway there, ${n}!`, '⛰️']);
+      if (wd === 5) pool.push([`Happy Friday, ${n}!`, '🎉'], [`Almost the weekend, ${n}!`, '🙌']);
+      if (wd === 0 || wd === 6) pool.push([`Happy ${now.toLocaleDateString(undefined, { weekday: 'long' })}, ${n}!`, '🛋️']);
+      if (m >= 9 && m <= 11) pool.push([`Cozy fall vibes, ${n}.`, '🍂']);
+      if (m === 12 || m <= 2) pool.push([`Stay warm, ${n}!`, '❄️']);
+      if (m >= 3 && m <= 5) pool.push([`Happy spring, ${n}!`, '🌷']);
+      if (extra)
+        pool.push([`Let's gooo, ${n}!`, '🚀'], [`${n} has entered the chat.`, '😎'], [`Main character energy, ${n}.`, '✨'], [`Big brain time, ${n}.`, '🧠'], [`You're doing great, ${n}.`, '🌟']);
+    }
     const last = store.get('lastHello', '');
-    const choices = pool.filter((p) => p !== last);
-    const out = pick(choices.length ? choices : pool);
-    store.set('lastHello', out);
-    return out;
+    const choices = pool.filter((p) => p[0] !== last);
+    const chosen = pick(choices.length ? choices : pool);
+    store.set('lastHello', chosen[0]);
+    return extra && chosen[1] ? `${chosen[0]} ${chosen[1]}` : chosen[0];
   }
+
+  // ----- Settings popover (dashboard gear, and Settings at the bottom of the rail)
+  function openSettings(anchor) {
+    document.querySelector('.gcx-settings')?.remove();
+    const p = prefs();
+    const toggle = (k, label, sub) =>
+      `<label class="gcx-set-row"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="checkbox" class="gcx-switch" data-k="${k}" ${p[k] ? 'checked' : ''}></label>`;
+    const pop = el(`<div class="gcx-settings gcx-pop-panel" role="dialog" aria-label="Settings">
+      ${toggle('greeting', 'Greeting', 'The hello at the top of the dashboard')}
+      <div class="gcx-set-tone" role="radiogroup" aria-label="Greeting style">${['calm', 'normal', 'extra']
+        .map((t) => `<button type="button" role="radio" data-tone="${t}" aria-checked="${p.tone === t}">${t === 'calm' ? 'Calm' : t === 'normal' ? 'Normal' : 'Extra 🎉'}</button>`)
+        .join('')}</div>
+      ${toggle('ask', 'Ask anything', 'The ? pill next to the greeting')}
+      ${toggle('confetti', 'Confetti', 'When you submit something. Look out for holidays.')}
+      <button type="button" class="gcx-set-try">Try it</button>
+    </div>`);
+    document.body.append(pop);
+    const r = anchor.getBoundingClientRect();
+    const left = r.left > window.innerWidth / 2 ? r.right - pop.offsetWidth : r.left;
+    pop.style.left = Math.max(12, Math.min(left, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+    pop.style.top = (r.bottom + 8 + pop.offsetHeight > window.innerHeight ? Math.max(12, r.top - pop.offsetHeight - 8) : r.bottom + 8) + 'px';
+    pop.style.transformOrigin = r.left > window.innerWidth / 2 ? 'top right' : 'bottom left';
+    if (anchor.closest('#gcx-rail')) html.classList.add('gcx-rail-hold');
+    const save = (patch) => {
+      store.set('prefs', { ...prefs(), ...patch });
+      applyWelcomePrefs();
+      window.dispatchEvent(new CustomEvent('gcx:prefs'));
+    };
+    const syncTone = () => pop.querySelector('.gcx-set-tone').classList.toggle('off', !prefs().greeting);
+    syncTone();
+    pop.addEventListener('change', (e) => {
+      const k = e.target.dataset.k;
+      if (k) save({ [k]: e.target.checked });
+      syncTone();
+    });
+    pop.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-tone]');
+      if (t) {
+        save({ tone: t.dataset.tone });
+        pop.querySelectorAll('[data-tone]').forEach((b) => b.setAttribute('aria-checked', String(b === t)));
+        if (welcomeCtx) setHello(greeting(welcomeCtx.name, welcomeCtx.items, welcomeCtx.lastVisit), true);
+      }
+      if (e.target.closest('.gcx-set-try')) confetti();
+    });
+    const close = () => {
+      pop.classList.add('gcx-out');
+      html.classList.remove('gcx-rail-hold');
+      setTimeout(() => pop.remove(), 160);
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    const outside = (e) => {
+      if (!pop.contains(e.target) && !anchor.contains(e.target)) close();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  // ----- Confetti when he submits something (seasonal on certain days)
+  function confettiTheme() {
+    const now = new Date();
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    const x = new Date(now.getFullYear(), 10, 1);
+    const tg = ((4 - x.getDay() + 7) % 7) + 1 + 21;
+    if (m === 10 && d >= 15) return ['🎃', '👻', '🦇', '🍬', '🕷️'];
+    if (m === 11 && d >= tg - 6 && d <= tg + 3) return ['🦃', '🍂', '🥧', '🌽'];
+    if ((m === 12 && d === 31) || (m === 1 && d <= 2)) return ['🎉', '🥳', '✨', '🍾'];
+    if (m === 12 && d <= 26) return ['🎅', '🎄', '❄️', '🎁', '⛄'];
+    if (m === 2 && d >= 7 && d <= 14) return ['❤️', '💖', '💌', '🌹'];
+    if (m === 3 && d === 17) return ['☘️', '🍀'];
+    if (m === 7 && d === 4) return ['🎆', '🇺🇸', '✨'];
+    return null;
+  }
+  function confetti() {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const emoji = confettiTheme();
+    const cv = document.createElement('canvas');
+    cv.className = 'gcx-confetti';
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = innerWidth * dpr;
+    cv.height = innerHeight * dpr;
+    document.body.append(cv);
+    const ctx = cv.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const colors = ['#1a73e8', '#d93025', '#f9ab00', '#188038', '#9334e6', '#e8710a', '#12a4af'];
+    const parts = Array.from({ length: emoji ? 70 : 140 }, (_, i) => {
+      const fromLeft = i % 2 === 0;
+      return {
+        x: fromLeft ? -10 : innerWidth + 10,
+        y: innerHeight * (0.55 + Math.random() * 0.3),
+        vx: (fromLeft ? 1 : -1) * (6 + Math.random() * 9),
+        vy: -(11 + Math.random() * 9),
+        r: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.3,
+        w: 6 + Math.random() * 6,
+        h: 8 + Math.random() * 8,
+        c: colors[i % colors.length],
+        e: emoji && Math.random() < 0.75 ? emoji[i % emoji.length] : null,
+        s: 22 + Math.random() * 14,
+      };
+    });
+    const t0 = performance.now();
+    const frame = (t) => {
+      const age = t - t0;
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      ctx.globalAlpha = Math.max(0, Math.min(1, (3200 - age) / 700));
+      for (const p of parts) {
+        p.vy += 0.38;
+        p.vx *= 0.985;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.r += p.vr;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.r);
+        if (p.e) {
+          ctx.font = `${p.s}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText(p.e, 0, 0);
+        } else {
+          ctx.fillStyle = p.c;
+          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2)));
+        }
+        ctx.restore();
+      }
+      if (age < 3200) requestAnimationFrame(frame);
+      else cv.remove();
+    };
+    requestAnimationFrame(frame);
+  }
+  // Classic submissions reload the page, so leave a note and celebrate on the next load.
+  // Newer Canvas pages submit in place, so also watch briefly for their "Submitted" message.
+  function watchSubmissions() {
+    const mark = () => {
+      try {
+        sessionStorage.setItem('gcx:celebrate', String(Date.now()));
+      } catch {}
+    };
+    let celebrated = false;
+    const celebrate = () => {
+      if (celebrated || !prefs().confetti) return;
+      celebrated = true;
+      try {
+        sessionStorage.removeItem('gcx:celebrate');
+      } catch {}
+      confetti();
+    };
+    try {
+      const t = Number(sessionStorage.getItem('gcx:celebrate'));
+      if (t && Date.now() - t < 60000) setTimeout(celebrate, 600);
+      else if (t) sessionStorage.removeItem('gcx:celebrate');
+    } catch {}
+    document.addEventListener(
+      'submit',
+      (e) => {
+        const f = e.target;
+        if (f && (f.id === 'submit_assignment_form' || /\/(submissions|quiz_submissions)(\/|$|\?)/.test(f.getAttribute('action') || ''))) mark();
+      },
+      true,
+    );
+    document.addEventListener(
+      'click',
+      (e) => {
+        const b = e.target.closest && e.target.closest('button, input[type="submit"]');
+        if (!b || !/^\s*(submit( assignment| quiz)?|turn in)\s*$/i.test(b.textContent || b.value || '')) return;
+        mark();
+        const until = Date.now() + 20000;
+        const mo = new MutationObserver(() => {
+          if (Date.now() > until) return mo.disconnect();
+          const ok = [...document.querySelectorAll('[role="alert"], [role="status"], .flashalert-message, #flash_message_holder, [data-testid*="status" i]')].some((n) =>
+            /\b(submitted|submission (was )?successful)\b/i.test(n.textContent),
+          );
+          if (ok) {
+            mo.disconnect();
+            celebrate();
+          }
+        });
+        mo.observe(document.body, { childList: true, subtree: true, characterData: true });
+        setTimeout(() => mo.disconnect(), 20000);
+      },
+      true,
+    );
+  }
+
 
   // BetterCampus's to-do sidebar lives in an open shadow root. Hide the streak, the
   // progress ring and the Day/Week/Month picker, and cut the list off at two weeks.
@@ -1961,7 +2184,7 @@
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
   window.gcx = {
     api, esc, el, svg, ICONS, store, debounce, coursesReady, courseById, prettyName, planner, toast,
-    COURSE_ID, VIEW, getMe: () => me,
+    COURSE_ID, VIEW, getMe: () => me, prefs, confetti,
   };
 
   // ---------------------------------------------------------------- motion
@@ -1989,7 +2212,7 @@
     else if (to && from && to.i >= 0 && from.i >= 0 && to.i !== from.i) dir = to.i > from.i ? 'left' : 'right';
     else if (from && !to) dir = 'out';
     try {
-      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, t: Date.now() }));
+      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, t: Date.now(), from: from ? from.i : -1, course: from ? from.course : null }));
     } catch {}
   });
   // The attribute only matters while the page transition runs.
@@ -2056,6 +2279,7 @@
 
   // ---------------------------------------------------------------- boot
   if (html.classList.contains('gcx-dash')) mountWelcome();
+  watchSubmissions();
   (window.requestIdleCallback || setTimeout)(() => cache.sweep(), { timeout: 5000 });
   if (COURSE_ID) {
     const cPromise = renderCourseBar();
@@ -2083,7 +2307,7 @@
       console.warn('[canvas-classroom] planner', e);
       dashItems = [];
       document.querySelectorAll('.gcx-card-due-wrap').forEach((w) => (w.innerHTML = `<div class="gcx-due-none">Couldn't load assignments.</div>`));
-      updateWelcome([], false);
+      updateWelcome([], false, true);
     });
     const run = debounce(enhanceCards, 80);
     run();
