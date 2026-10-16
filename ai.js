@@ -1,4 +1,4 @@
-// "Ask anything" pill: a star in a circle that opens into a small chat about his classes.
+// "Ask anything" pill: a question mark in a circle that opens into a small chat about his classes.
 // The model runs in background.js (it holds the OpenAI key); this file draws the pill,
 // keeps the history (sessionStorage, per tab) and runs the read-only Canvas tools.
 (() => {
@@ -729,39 +729,58 @@
   let hist = loadHist();
 
   // ---------------------------------------------------------------- UI
-  const STAR = 'M12 1.5c.4 0 .73.28.8.67.86 4.67 4.36 8.17 9.03 9.03a.81.81 0 0 1 0 1.6c-4.67.86-8.17 4.36-9.03 9.03a.81.81 0 0 1-1.6 0c-.86-4.67-4.36-8.17-9.03-9.03a.81.81 0 0 1 0-1.6C6.84 10.34 10.34 6.84 11.2 2.17c.07-.39.4-.67.8-.67z';
+  // A bold question mark, drawn as a path so it takes the text color.
+  const QMARK =
+    'M11.07 16.5h2.36v2.4h-2.36zM12 4.6c2.7 0 4.65 1.7 4.65 4.05 0 1.6-.8 2.66-2.3 3.62-1.1.7-1.36 1.12-1.36 2.08v.35h-2.28v-.5c0-1.6.62-2.48 2-3.37 1.12-.72 1.56-1.27 1.56-2.12 0-1.07-.92-1.85-2.27-1.85-1.4 0-2.33.86-2.43 2.2H7.3c.12-2.6 2.03-4.46 4.7-4.46z';
   const ICON = {
     send: 'M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a.99.99 0 0 0-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z',
     stop: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
     plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
   };
   const icon = (d, s = 20) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true"><path d="${d}"/></svg>`;
-  const HINT = 'Ask anything…';
   const SUGGEST = ["What's due this week?", 'How are my grades looking?', 'Summarize the latest announcements', "What's on my next exam?"];
-  const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const OPEN_W = 'min(440px, calc(100vw - 160px))';
+  const HOVER_W = 200;
+  const ROW = 48; // height of the input row, and of the closed circle
+
+  // Plain text of the start of an answer, for the little preview next to the closed circle.
+  const previewText = (t) =>
+    String(t || '')
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^\s*(?:[-*+•]|\d+\.)\s+/gm, '')
+      .replace(/[*_`#>|]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
   function mountAsk(slot) {
-    if (!slot || slot.querySelector('.gcx-ask')) return;
-    const gid = 'gcx-ask-g' + Math.random().toString(36).slice(2, 7);
+    if (!slot || slot.querySelector('.gcx-ask')) return null;
+    // Everything this pill listens to on the page goes away with it (prefs can turn it off).
+    const ac = new AbortController();
+    const on = (target, type, fn, opts = {}) => target.addEventListener(type, fn, { ...opts, signal: ac.signal });
+
     const root = gcx.el(`<div class="gcx-ask" data-state="idle">
-      <div class="gcx-ask-pill" role="button" tabindex="0" aria-label="Ask anything about your classes" aria-expanded="false">
-        <span class="gcx-ask-star"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f8cff"/><stop offset=".55" stop-color="#9b72f2"/><stop offset="1" stop-color="#e46fa8"/></linearGradient></defs><path fill="url(#${gid})" d="${STAR}"/></svg></span>
-        <span class="gcx-ask-hint" aria-hidden="true"></span>
-        <input class="gcx-ask-input" type="text" autocomplete="off" spellcheck="false" placeholder="Ask about your classes" aria-label="Ask about your classes" tabindex="-1">
-        <button class="gcx-ask-send" type="button" tabindex="-1" aria-label="Send">${icon(ICON.send, 18)}</button>
-      </div>
-      <div class="gcx-ask-chat" aria-live="polite">
-        <div class="gcx-ask-top"><span>Ask anything</span><button class="gcx-ask-new" type="button" title="Start a new chat">${icon(ICON.plus, 16)}New chat</button></div>
+      <div class="gcx-ask-box" aria-live="polite">
+        <div class="gcx-ask-top"><button class="gcx-ask-new" type="button" title="Start a new chat" tabindex="-1">${icon(ICON.plus, 16)}New chat</button></div>
         <div class="gcx-ask-log"></div>
+        <div class="gcx-ask-row" role="button" tabindex="0" aria-label="Ask anything about your classes" aria-expanded="false">
+          <span class="gcx-ask-hint" aria-hidden="true">Ask anything…</span>
+          <input class="gcx-ask-input" type="text" autocomplete="off" spellcheck="false" placeholder="Ask about your classes" aria-label="Ask about your classes" tabindex="-1">
+          <button class="gcx-ask-send" type="button" tabindex="-1" aria-label="Send">${icon(ICON.send, 16)}</button>
+        </div>
+        <span class="gcx-ask-icon">${icon(QMARK, 22)}</span>
       </div>
+      <div class="gcx-ask-peek" aria-hidden="true"><span class="gcx-ask-pdot"></span><span class="gcx-ask-ptext"></span></div>
     </div>`);
     slot.append(root);
-    const pill = root.querySelector('.gcx-ask-pill');
-    const hint = root.querySelector('.gcx-ask-hint');
+    const box = root.querySelector('.gcx-ask-box');
+    const row = root.querySelector('.gcx-ask-row');
     const input = root.querySelector('.gcx-ask-input');
     const sendBtn = root.querySelector('.gcx-ask-send');
-    const chat = root.querySelector('.gcx-ask-chat');
+    const newBtn = root.querySelector('.gcx-ask-new');
+    const top = root.querySelector('.gcx-ask-top');
     const log = root.querySelector('.gcx-ask-log');
+    const peek = root.querySelector('.gcx-ask-peek');
+    const peekText = root.querySelector('.gcx-ask-ptext');
 
     let state = 'idle';
     let busy = false;
@@ -769,80 +788,100 @@
     // The question in flight: stop() marks it cancelled and settles its pending round itself,
     // because disconnecting a port from this side never fires this side's onDisconnect.
     let run = null;
-    let typeTimer = 0;
     let leaveTimer = 0;
     let keyMode = false;
+    let unseen = false; // an answer finished while the chat was closed
+    let live = ''; // what the preview shows while an answer is in progress
+
+    // Size: the box grows left (width) and down (height) from the closed circle. Height is
+    // measured from the content so it can animate; the log scrolls past a cap.
+    const maxH = () => Math.min(Math.round(innerHeight * 0.62), 560);
+    function fit() {
+      if (state === 'idle') {
+        box.style.width = box.style.height = '';
+        return;
+      }
+      if (state === 'hover') {
+        box.style.width = HOVER_W + 'px';
+        box.style.height = ROW + 'px';
+        return;
+      }
+      box.style.width = OPEN_W;
+      const want = top.offsetHeight + log.scrollHeight + ROW + 2;
+      box.style.height = Math.min(maxH(), Math.max(ROW + 120, want)) + 'px';
+    }
+    const ro = new ResizeObserver(() => state === 'open' && fit());
+    ro.observe(log);
 
     const setState = (s) => {
       if (s === state) return;
       state = s;
       root.dataset.state = s;
-      pill.setAttribute('aria-expanded', String(s === 'open'));
-      input.tabIndex = sendBtn.tabIndex = s === 'open' ? 0 : -1;
-      if (s === 'hover') typeHint();
-      else stopTyping();
+      row.setAttribute('aria-expanded', String(s === 'open'));
+      input.tabIndex = sendBtn.tabIndex = newBtn.tabIndex = s === 'open' ? 0 : -1;
       if (s === 'open') {
+        unseen = false;
         renderLog();
+        fit();
         requestAnimationFrame(() => {
-          if (!root.contains(document.activeElement) || document.activeElement === pill) input.focus({ preventScroll: true });
+          fit();
+          if (!root.contains(document.activeElement) || document.activeElement === row) input.focus({ preventScroll: true });
           log.scrollTop = log.scrollHeight;
         });
-      }
+      } else fit();
       if (s === 'idle' && root.contains(document.activeElement)) document.activeElement.blur();
+      updatePeek();
     };
-    function typeHint() {
-      stopTyping();
-      if (reduced()) {
-        hint.textContent = HINT;
-        return;
-      }
-      let n = 0;
-      const step = () => {
-        hint.textContent = HINT.slice(0, n);
-        if (n++ < HINT.length) typeTimer = setTimeout(step, n === 1 ? 260 : 34);
-      };
-      step();
-    }
-    function stopTyping() {
-      clearTimeout(typeTimer);
-      hint.textContent = '';
-    }
-    const keepOpen = () => busy || (document.activeElement === input && input.value.trim()) || keyMode;
 
-    // Hover in: pill (or straight to the chat if there's history).
-    pill.addEventListener('pointerenter', () => {
+    // The little preview beside the closed circle: what's happening, or the start of the answer.
+    function updatePeek() {
+      const show = state === 'idle' && (busy || unseen) && !!live;
+      if (show) peekText.textContent = live;
+      root.classList.toggle('peek', show);
+      root.classList.toggle('peek-done', show && !busy);
+    }
+    on(peek, 'pointerenter', () => setState('open'));
+
+    // Typing something unsent is the one thing that holds it open.
+    const keepOpen = () => document.activeElement === input && !!input.value.trim();
+
+    on(box, 'pointerenter', () => {
       clearTimeout(leaveTimer);
-      if (state === 'idle') setState(hist.msgs.length ? 'open' : 'hover');
+      leaveTimer = 0;
+      if (state === 'idle') setState(hist.msgs.length || busy ? 'open' : 'hover');
     });
-    pill.addEventListener('click', (e) => {
-      if (e.target.closest('.gcx-ask-send')) return;
+    on(box, 'click', (e) => {
+      if (e.target.closest('.gcx-ask-send, .gcx-ask-new, .gcx-ask-log button, .gcx-ask-log a')) return;
       if (state !== 'open') setState('open');
-      else input.focus();
+      else if (!e.target.closest('.gcx-ask-log')) input.focus();
     });
-    pill.addEventListener('keydown', (e) => {
-      if ((e.key === 'Enter' || e.key === ' ') && e.target === pill) {
+    on(row, 'keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && e.target === row) {
         e.preventDefault();
         setState('open');
       }
     });
-    root.addEventListener('focusin', () => {
+    on(root, 'focusin', (e) => {
       clearTimeout(leaveTimer);
-      if (state !== 'open') setState('open');
-    });
-    root.addEventListener('focusout', () => {
-      setTimeout(() => {
-        if (!root.contains(document.activeElement) && !root.matches(':hover') && !keepOpen()) setState('idle');
-      }, 0);
+      leaveTimer = 0;
+      if (state !== 'open' && e.target !== row) setState('open');
     });
 
-    // Leaving the general area (pill + chat + a margin) collapses it, unless he's mid-question.
-    const PAD = 56;
-    const inside = (x, y) =>
-      [pill, state === 'open' ? chat : null].filter(Boolean).some((n) => {
-        const r = n.getBoundingClientRect();
-        return x >= r.left - PAD && x <= r.right + PAD && y >= r.top - PAD && y <= r.bottom + PAD;
-      });
-    document.addEventListener(
+    // Leaving the area (the box plus a margin) for a moment closes it, answer streaming or not.
+    const PAD = 60;
+    const inside = (x, y) => {
+      const r = box.getBoundingClientRect();
+      return x >= r.left - PAD && x <= r.right + PAD && y >= r.top - PAD && y <= r.bottom + PAD;
+    };
+    const scheduleClose = (ms) => {
+      if (leaveTimer) return;
+      leaveTimer = setTimeout(() => {
+        leaveTimer = 0;
+        if (!keepOpen()) setState('idle');
+      }, ms);
+    };
+    on(
+      document,
       'pointermove',
       (e) => {
         if (state === 'idle') return;
@@ -851,23 +890,15 @@
           leaveTimer = 0;
           return;
         }
-        if (state === 'hover' && !pill.matches(':hover')) {
-          clearTimeout(leaveTimer);
-          leaveTimer = setTimeout(() => setState('idle'), 120);
-          return;
-        }
-        if (leaveTimer || keepOpen()) return;
-        leaveTimer = setTimeout(() => {
-          leaveTimer = 0;
-          if (!keepOpen()) setState('idle');
-        }, 450);
+        if (keepOpen()) return;
+        scheduleClose(state === 'hover' ? 150 : 400);
       },
       { passive: true },
     );
-    document.documentElement.addEventListener('pointerleave', () => {
-      if (state !== 'idle' && !keepOpen()) leaveTimer = setTimeout(() => setState('idle'), 450);
+    on(document.documentElement, 'pointerleave', () => {
+      if (state !== 'idle' && !keepOpen()) scheduleClose(400);
     });
-    document.addEventListener('keydown', (e) => {
+    on(document, 'keydown', (e) => {
       if (e.key === 'Escape' && state !== 'idle' && (root.contains(document.activeElement) || state === 'open')) {
         if (busy) stop();
         setState('idle');
@@ -889,14 +920,16 @@
       root.classList.remove('empty');
       log.innerHTML = hist.msgs.map(msgHtml).join('');
     }
-    log.addEventListener('click', (e) => {
+    on(log, 'click', (e) => {
       const b = e.target.closest('.gcx-ask-suggest button');
       if (b) ask(b.textContent);
     });
-    root.querySelector('.gcx-ask-new').addEventListener('click', () => {
+    on(newBtn, 'click', () => {
       if (busy) stop();
       if (run) run.discard = true;
       hist = { msgs: [], prev: null };
+      live = '';
+      unseen = false;
       saveHist();
       renderLog();
       input.value = '';
@@ -906,11 +939,12 @@
     function setBusy(b) {
       busy = b;
       root.classList.toggle('busy', b);
-      sendBtn.innerHTML = icon(b ? ICON.stop : ICON.send, 18);
+      sendBtn.innerHTML = icon(b ? ICON.stop : ICON.send, 16);
       sendBtn.setAttribute('aria-label', b ? 'Stop' : 'Send');
+      updatePeek();
     }
-    sendBtn.addEventListener('click', () => (busy ? stop() : ask(input.value)));
-    input.addEventListener('keydown', (e) => {
+    on(sendBtn, 'click', () => (busy ? stop() : ask(input.value)));
+    on(input, 'keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         if (!busy) ask(input.value);
@@ -924,6 +958,7 @@
       log.innerHTML = `<div class="gcx-ask-msg bot err">${esc(msg)} Add your OpenAI API key on the extension's settings page, then ask again.
         <button type="button" class="gcx-ask-keybtn">Add key</button></div>`;
       log.querySelector('.gcx-ask-keybtn').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'openOptions' }).catch(() => {}));
+      fit();
     }
     function retryAfterKey() {
       keyMode = false;
@@ -934,18 +969,30 @@
       renderLog();
       if (q) ask(q);
     }
-    chrome.storage.onChanged.addListener((changes, area) => {
+    const onKeyChange = (changes, area) => {
       if (area === 'local' && changes.openaiKey && changes.openaiKey.newValue && keyMode) {
         gcx.toast && gcx.toast('Key saved');
         retryAfterKey();
       }
-    });
+    };
+    chrome.storage.onChanged.addListener(onKeyChange);
+
+    root.gcxDestroy = () => {
+      if (busy) stop();
+      if (run) run.discard = true;
+      ac.abort();
+      ro.disconnect();
+      clearTimeout(leaveTimer);
+      chrome.storage.onChanged.removeListener(onKeyChange);
+      root.remove();
+    };
 
     // ----- one question: stream, run tools, repeat
     function stop() {
       if (run) {
         run.cancelled = true;
         if (run.resolve) run.resolve({ type: 'stopped' });
+      if (run.onCancel) run.onCancel();
       }
       if (port) {
         try {
@@ -958,14 +1005,17 @@
       q = String(q || '').trim();
       if (!q || busy) return;
       // A pasted API key must never become chat text (history, or a message to OpenAI).
-      if (/^sk-[\w-]{10,}/.test(q)) {
+      if (/sk-[\w-]{20,}/.test(q)) {
         input.value = '';
         showKeyPrompt("Keys don't go in the chat.");
         return;
       }
       keyMode = false;
       // Created first so Stop / New chat work even while the course list is still loading.
-      const me = (run = { cancelled: false, discard: false, resolve: null });
+      const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
+      const cancelled = new Promise((r) => (me.onCancel = r));
+      live = 'Thinking…';
+      unseen = false;
       input.value = '';
       setState('open');
       hist.msgs.push({ role: 'user', text: q });
@@ -985,9 +1035,15 @@
       const paint = () => {
         raf = 0;
         bot.innerHTML = md(text) + (busy ? '<span class="gcx-ask-caret"></span>' : '');
+        live = previewText(text).slice(0, 140) || live;
+        updatePeek();
         scroll();
       };
       const status = (s) => {
+        if (!text) {
+          live = s + '…';
+          updatePeek();
+        }
         if (text) {
           // Text came before a tool call: keep it and show the status under it.
           bot.innerHTML = md(text) + `<div class="gcx-ask-status"><span class="gcx-ask-dot"></span><span>${esc(s)}</span></div>`;
@@ -995,7 +1051,8 @@
         scroll();
       };
 
-      const instr = await instructions();
+      // The course list can take a few seconds on a fresh page; Stop shouldn't wait for it.
+      const instr = await Promise.race([instructions(), cancelled.then(() => null)]);
       if (me.cancelled && !text) text = '_Stopped._';
       const history = hist.msgs.slice(-12, -1).filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text }));
       let req = hist.prev
@@ -1052,7 +1109,8 @@
         }
         // tool_calls
         if (text && !/\n$/.test(text)) text += '\n\n';
-        const outputs = await Promise.all(res.calls.map(runTool));
+        const outputs = await Promise.race([Promise.all(res.calls.map(runTool)), cancelled.then(() => null)]);
+        if (!outputs) continue; // stopped while tools ran; the loop head ends the turn
         status('Thinking');
         req = { type: 'continue', instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
       }
@@ -1081,6 +1139,11 @@
       saveHist();
       renderLog();
       log.scrollTop = log.scrollHeight;
+      // Finished while closed: leave the start of the answer in the preview until he looks.
+      const last = hist.msgs[hist.msgs.length - 1];
+      live = last ? previewText(last.text).slice(0, 140) : '';
+      if (state !== 'open') unseen = true;
+      updatePeek();
       if (state === 'open' && document.activeElement !== input && root.matches(':hover')) input.focus({ preventScroll: true });
     }
 
@@ -1089,15 +1152,26 @@
   }
   gcx.mountAsk = mountAsk;
 
-  // The dashboard's welcome row has a slot for it (classroom.js adds it).
-  const slot = document.querySelector('.gcx-ask-slot');
-  if (slot) mountAsk(slot);
-  else if (gcx.VIEW === '' && location.pathname === '/') {
+  // The dashboard's welcome row has a slot for it (classroom.js adds it). Settings can turn it off.
+  const askOn = () => (gcx.store.get('prefs', {}) || {}).ask !== false;
+  let mounted = null;
+  const sync = () => {
+    if (!askOn()) {
+      if (mounted) mounted.gcxDestroy();
+      mounted = null;
+      return;
+    }
+    if (mounted && mounted.isConnected) return;
+    const s = document.querySelector('.gcx-ask-slot');
+    if (s) mounted = mountAsk(s) || s.querySelector('.gcx-ask');
+  };
+  window.addEventListener('gcx:prefs', sync);
+  sync();
+  if (!mounted && gcx.VIEW === '' && location.pathname === '/') {
     const mo = new MutationObserver(() => {
-      const s = document.querySelector('.gcx-ask-slot');
-      if (s) {
+      if (document.querySelector('.gcx-ask-slot')) {
         mo.disconnect();
-        mountAsk(s);
+        sync();
       }
     });
     mo.observe(document.body, { childList: true, subtree: true });
