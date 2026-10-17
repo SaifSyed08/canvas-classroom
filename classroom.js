@@ -494,7 +494,7 @@
       return;
     }
     if (e.target.closest('.gcx-settings-btn')) {
-      openSettings(e.target.closest('.gcx-settings-btn'));
+      openCombinedSettings(e.target.closest('.gcx-settings-btn'));
       return;
     }
     if (e.target.closest('.gcx-burger')) {
@@ -566,6 +566,8 @@
       setTimeout(() => pop.remove(), 160);
       document.removeEventListener('mousedown', outside, true);
       document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('pointermove', onMove);
+      clearTimeout(leaveTimer);
     };
     const outside = (e) => {
       if (!pop.contains(e.target) && !e.target.closest?.('.gcx-ri-dots')) close();
@@ -573,8 +575,22 @@
     const onKey = (e) => {
       if (e.key === 'Escape') close();
     };
+    // Moving the pointer well away from both the panel and the rail closes it, like the chat.
+    let leaveTimer = 0;
+    const onMove = (e) => {
+      const near = (n, m) => {
+        const r = n.getBoundingClientRect();
+        return e.clientX > r.left - m && e.clientX < r.right + m && e.clientY > r.top - m && e.clientY < r.bottom + m;
+      };
+      const over = near(pop, 40) || near(item, 8);
+      if (over) {
+        clearTimeout(leaveTimer);
+        leaveTimer = 0;
+      } else if (!leaveTimer) leaveTimer = setTimeout(close, 350);
+    };
     document.addEventListener('mousedown', outside, true);
     document.addEventListener('keydown', onKey, true);
+    document.addEventListener('pointermove', onMove, { passive: true });
     pop.querySelector('.gcx-look-icons button.on, .gcx-look-icons button')?.focus({ preventScroll: true });
   }
 
@@ -762,9 +778,13 @@
     void n.offsetWidth;
     n.classList.add('gcx-in');
   };
+  // The first fill of a box fades in; later refreshes (fresh data after the cached copy) just swap.
   const swapIn = (box, markup) => {
+    const first = !box.dataset.filled;
+    box.dataset.filled = '1';
     box.innerHTML = markup;
-    reveal(box);
+    if (first) reveal(box);
+    else box.classList.remove('gcx-stagger');
   };
 
   // Announcement HTML comes from Canvas (already sanitized server-side); strip embeds so the preview stays light.
@@ -869,9 +889,30 @@
           })
           .join(''),
       );
-      stream.classList.add('gcx-stagger');
+      if (stream.dataset.filled === '1' && !stream.dataset.staggered) {
+        stream.dataset.staggered = '1';
+        stream.classList.add('gcx-stagger');
+      }
       if (anns.length >= 15) stream.append(el(`<a class="gcx-chip" style="align-self:center" href="/courses/${id}/announcements">Older announcements</a>`));
       stream.querySelectorAll('[data-av]').forEach((n) => (n.style.backgroundImage = `url(${JSON.stringify(n.dataset.av)})`));
+      if (prefs().annReveal && !stream.dataset.revealed && 'IntersectionObserver' in window) {
+        stream.dataset.revealed = '1';
+        const later = [...stream.querySelectorAll('.gcx-ann')].slice(5);
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (!e.isIntersecting) continue;
+              e.target.classList.add('gcx-shown');
+              io.unobserve(e.target);
+            }
+          },
+          { rootMargin: '0px 0px -8% 0px' },
+        );
+        later.forEach((n) => {
+          n.classList.add('gcx-reveal');
+          io.observe(n);
+        });
+      }
       for (const art of stream.querySelectorAll('.gcx-ann')) {
         const body = art.querySelector('.gcx-ann-body');
         const toggle = art.querySelector('.gcx-ann-toggle');
@@ -1406,10 +1447,7 @@
     });
     if (c) view.style.setProperty('--c', c.color);
     try {
-      await swr('cw:' + id, () => fetchClasswork(id), (d, fromCache) => {
-        draw(d, fromCache);
-        if (!fromCache) reveal(view.querySelector('.gcx-cw-head'));
-      });
+      await swr('cw:' + id, () => fetchClasswork(id), (d, fromCache) => draw(d, fromCache));
       const badge = view.querySelector('.gcx-sync');
       if (badge) badge.hidden = true;
     } catch (e) {
@@ -1524,6 +1562,7 @@
       list.sort((a, b) => order * ((a.due ? +a.due : order * Infinity) - (b.due ? +b.due : order * Infinity)));
       const groups = bucketsFor[tab].map(([label, fn]) => [label, list.filter(fn)]).filter(([, l]) => l.length);
       const body = view.querySelector('.gcx-todo-body');
+      if (!anim) body.classList.remove('gcx-slide-left', 'gcx-slide-right', 'gcx-in', 'gcx-stagger');
       const closed = new Set([...body.querySelectorAll('.gcx-grp.closed')].map((g) => g.dataset.label));
       const keepClosed = !anim && body.dataset.tab === tab;
       body.dataset.tab = tab;
@@ -1590,7 +1629,6 @@
           const first = !items;
           items = data;
           draw(first ? 'fade' : '');
-          if (!fromCache && !first) reveal(view.querySelector('.gcx-seg'));
         },
         reviveItems,
       );
@@ -1658,20 +1696,33 @@
   }
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
-  const prefs = () => ({ greeting: true, tone: 'normal', ask: true, confetti: true, ...store.get('prefs', {}) });
+  const PREF_DEFAULTS = { greeting: true, tone: 'normal', font: 'fredoka', ask: true, confetti: true, motion: true, annReveal: true };
+  const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
+  const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
   function mountWelcome() {
     const anchor = document.getElementById('dashboard_header_container');
     if (!anchor || document.querySelector('.gcx-welcome')) return;
     const name = (me && me.name ? me.name.split(' ')[0] : '') || 'there';
-    const wel = el(`<div class="gcx-welcome"><h1 class="gcx-hello"></h1>
-      <div class="gcx-ask-slot"></div>
-      <button type="button" class="gcx-welcome-gear" title="Dashboard settings" aria-label="Dashboard settings" aria-haspopup="dialog">${svg('gear', 20)}</button></div>`);
+    const wel = el(`<div class="gcx-welcome"><h1 class="gcx-hello"></h1><div class="gcx-ask-slot"></div></div>`);
     anchor.before(wel);
     const lastVisit = store.get('lastVisit', 0);
     store.set('lastVisit', Date.now());
     welcomeCtx = { name, lastVisit, wel, titled: false, fromCache: false, items: null };
-    wel.querySelector('.gcx-welcome-gear').addEventListener('click', (e) => openSettings(e.currentTarget));
     applyWelcomePrefs();
+    // One greeting per browsing session (a fresh one after a few hours), so it doesn't change on
+    // every visit to the dashboard. It's still re-picked if the work it mentions changed.
+    let saved = null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem('gcx:hello') || 'null');
+    } catch {}
+    if (saved && saved.tone === prefs().tone && Date.now() - saved.t < 3 * 36e5) {
+      welcomeCtx.titled = true;
+      welcomeCtx.fromCache = true;
+      greetRefs = saved.refs || [];
+      greetKind = saved.kind || '';
+      setHello(saved.text, false, saved.t);
+      return;
+    }
     // If nothing arrives in time, show a plain greeting; the first real data may still re-pick it.
     setTimeout(() => {
       if (welcomeCtx.titled) return;
@@ -1681,12 +1732,17 @@
     }, 350);
   }
   let welcomeCtx = null;
-  function setHello(text, animate) {
+  function setHello(text, animate, since = Date.now()) {
     const hello = welcomeCtx.wel.querySelector('.gcx-hello');
     hello.textContent = text;
     welcomeCtx.refs = greetRefs;
     welcomeCtx.kind = greetKind;
     if (animate) reveal(hello);
+    // A placeholder picked without his work list isn't worth keeping for the session.
+    if (welcomeCtx.provisional) return;
+    try {
+      sessionStorage.setItem('gcx:hello', JSON.stringify({ text, refs: greetRefs, kind: greetKind, tone: prefs().tone, t: since }));
+    } catch {}
   }
   function applyWelcomePrefs() {
     if (!welcomeCtx) return;
@@ -1707,6 +1763,7 @@
     } else if (welcomeCtx.provisional) {
       // The placeholder greeting knew nothing about his work; pick once more with it.
       welcomeCtx.provisional = false;
+      greetRefs = [];
       welcomeCtx.fromCache = fromCache;
       setHello(greeting(name, items, welcomeCtx.lastVisit), true);
     } else if (!fromCache && welcomeCtx.fromCache) {
@@ -1849,55 +1906,96 @@
     return extra && chosen[1] ? `${chosen[0]} ${chosen[1]}` : chosen[0];
   }
 
-  // ----- Settings popover (dashboard gear, and Settings at the bottom of the rail)
+  // ----- Settings. They live in a "Classroom" tab inside BetterCampus's own settings panel
+  // (its gear on the to-do list, or Settings in our rail). A popover is the fallback when
+  // BetterCampus's panel can't be opened.
+  const FONTS = [
+    ['fredoka', 'Rounded'],
+    ['poppins', 'Bold'],
+    ['playfair', 'Serif'],
+    ['caveat', 'Handwritten'],
+    ['grotesk', 'Grotesk'],
+    ['canvas', 'Plain'],
+  ];
+  function settingsHtml() {
+    const p = prefs();
+    const toggle = (k, label, sub) =>
+      `<label class="gcx-set-row"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="checkbox" class="gcx-switch" data-k="${k}" ${p[k] ? 'checked' : ''}></label>`;
+    return `
+      <div class="gcx-set-h">Dashboard</div>
+      <div class="gcx-set-card">
+        ${toggle('greeting', 'Greeting', 'The hello at the top of the dashboard')}
+        <div class="gcx-set-sub" data-needs="greeting">
+          <div class="gcx-set-lbl">Style</div>
+          <div class="gcx-set-tone" role="radiogroup" aria-label="Greeting style">${['calm', 'normal', 'extra']
+            .map((t) => `<button type="button" role="radio" data-tone="${t}" aria-checked="${p.tone === t}">${t === 'calm' ? 'Calm' : t === 'normal' ? 'Normal' : 'Extra 🎉'}</button>`)
+            .join('')}</div>
+          <div class="gcx-set-lbl">Font</div>
+          <div class="gcx-set-fonts" role="radiogroup" aria-label="Greeting font">${FONTS.map(
+            ([k, label]) => `<button type="button" role="radio" data-font="${k}" aria-checked="${p.font === k}"><span class="gcx-font-${k}">Aa</span><small>${label}</small></button>`,
+          ).join('')}</div>
+        </div>
+        ${toggle('ask', 'Ask anything', 'The AI button next to the greeting')}
+      </div>
+      <div class="gcx-set-h">Motion</div>
+      <div class="gcx-set-card">
+        ${toggle('motion', 'Page animations', 'Slides between tabs, pages easing in')}
+        ${toggle('annReveal', 'Reveal announcements as you scroll', 'Past the first five, each one eases in when it comes into view')}
+      </div>
+      <div class="gcx-set-h">Fun</div>
+      <div class="gcx-set-card">
+        ${toggle('confetti', 'Confetti when you submit', 'Goes seasonal on holidays')}
+        <div class="gcx-set-row gcx-set-try-row"><button type="button" class="gcx-set-try">Try confetti</button></div>
+        <div class="gcx-set-row gcx-set-soon"><span><b>Walking characters</b><small>OpenPets friends wandering your screen</small></span><span class="gcx-soon">Soon</span></div>
+      </div>`;
+  }
+  function bindSettings(box) {
+    const save = (patch) => {
+      store.set('prefs', { ...prefs(), ...patch });
+      applyWelcomePrefs();
+      applyFontPref();
+      html.classList.toggle('gcx-still', !prefs().motion);
+      window.dispatchEvent(new CustomEvent('gcx:prefs'));
+    };
+    const sync = () => box.querySelectorAll('[data-needs]').forEach((n) => n.classList.toggle('off', !prefs()[n.dataset.needs]));
+    sync();
+    box.addEventListener('change', (e) => {
+      const k = e.target.dataset && e.target.dataset.k;
+      if (k) save({ [k]: e.target.checked });
+      sync();
+    });
+    box.addEventListener('click', (e) => {
+      const t = e.target.closest('[data-tone]');
+      const f = e.target.closest('[data-font]');
+      if (t) {
+        save({ tone: t.dataset.tone });
+        box.querySelectorAll('[data-tone]').forEach((b) => b.setAttribute('aria-checked', String(b === t)));
+        if (welcomeCtx) setHello(greeting(welcomeCtx.name, welcomeCtx.items, welcomeCtx.lastVisit), true);
+      } else if (f) {
+        save({ font: f.dataset.font });
+        box.querySelectorAll('[data-font]').forEach((b) => b.setAttribute('aria-checked', String(b === f)));
+        if (welcomeCtx) reveal(welcomeCtx.wel.querySelector('.gcx-hello'));
+      } else if (e.target.closest('.gcx-set-try')) confetti();
+    });
+  }
+
   let closeSettings = null;
   function openSettings(anchor) {
-    // The gear (or rail Settings) toggles it.
+    // The rail button toggles it.
     if (closeSettings) {
       const same = closeSettings.anchor === anchor;
       closeSettings();
       if (same) return;
     }
-    const p = prefs();
-    const toggle = (k, label, sub) =>
-      `<label class="gcx-set-row"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="checkbox" class="gcx-switch" data-k="${k}" ${p[k] ? 'checked' : ''}></label>`;
-    const pop = el(`<div class="gcx-settings gcx-pop-panel" role="dialog" aria-label="Settings">
-      ${toggle('greeting', 'Greeting', 'The hello at the top of the dashboard')}
-      <div class="gcx-set-tone" role="radiogroup" aria-label="Greeting style">${['calm', 'normal', 'extra']
-        .map((t) => `<button type="button" role="radio" data-tone="${t}" aria-checked="${p.tone === t}">${t === 'calm' ? 'Calm' : t === 'normal' ? 'Normal' : 'Extra 🎉'}</button>`)
-        .join('')}</div>
-      ${toggle('ask', 'Ask anything', 'The ? pill next to the greeting')}
-      ${toggle('confetti', 'Confetti', 'When you submit something. Look out for holidays.')}
-      <button type="button" class="gcx-set-try">Try it</button>
-    </div>`);
+    const pop = el(`<div class="gcx-settings gcx-pop-panel" role="dialog" aria-label="Classroom settings">${settingsHtml()}</div>`);
     document.body.append(pop);
+    bindSettings(pop);
     const r = anchor.getBoundingClientRect();
-    const left = r.left > window.innerWidth / 2 ? r.right - pop.offsetWidth : r.left;
+    const left = r.left > window.innerWidth / 2 ? r.right - pop.offsetWidth : r.right + 8;
     pop.style.left = Math.max(12, Math.min(left, window.innerWidth - pop.offsetWidth - 12)) + 'px';
-    pop.style.top = (r.bottom + 8 + pop.offsetHeight > window.innerHeight ? Math.max(12, r.top - pop.offsetHeight - 8) : r.bottom + 8) + 'px';
-    pop.style.transformOrigin = r.left > window.innerWidth / 2 ? 'top right' : 'bottom left';
+    pop.style.top = Math.max(12, Math.min(r.top, window.innerHeight - pop.offsetHeight - 12)) + 'px';
+    pop.style.transformOrigin = 'bottom left';
     if (anchor.closest('#gcx-rail')) html.classList.add('gcx-rail-hold');
-    const save = (patch) => {
-      store.set('prefs', { ...prefs(), ...patch });
-      applyWelcomePrefs();
-      window.dispatchEvent(new CustomEvent('gcx:prefs'));
-    };
-    const syncTone = () => pop.querySelector('.gcx-set-tone').classList.toggle('off', !prefs().greeting);
-    syncTone();
-    pop.addEventListener('change', (e) => {
-      const k = e.target.dataset.k;
-      if (k) save({ [k]: e.target.checked });
-      syncTone();
-    });
-    pop.addEventListener('click', (e) => {
-      const t = e.target.closest('[data-tone]');
-      if (t) {
-        save({ tone: t.dataset.tone });
-        pop.querySelectorAll('[data-tone]').forEach((b) => b.setAttribute('aria-checked', String(b === t)));
-        if (welcomeCtx) setHello(greeting(welcomeCtx.name, welcomeCtx.items, welcomeCtx.lastVisit), true);
-      }
-      if (e.target.closest('.gcx-set-try')) confetti();
-    });
     const close = (refocus) => {
       closeSettings = null;
       pop.classList.add('gcx-out');
@@ -1920,6 +2018,196 @@
     document.addEventListener('keydown', onKey, true);
     anchor.setAttribute('aria-expanded', 'true');
     pop.querySelector('.gcx-switch').focus({ preventScroll: true });
+  }
+
+  // BetterCampus renders its settings panel in the shadow root of <test-element>. We add a
+  // "Classroom" tab to its tab strip; picking it hides BetterCampus's content and shows ours.
+  const bc = { sr: null, pending: false, active: false, panel: null, hidden: null, dimmed: [] };
+  const bcBar = () => bc.sr && bc.sr.querySelector('[data-tab-id="popup:themes"]')?.parentElement;
+  const bcGear = () => {
+    const sr = document.querySelector('bettercampus-todo-list')?.shadowRoot;
+    const head = sr && sr.getElementById('bettercanvas-todo-list')?.children[1];
+    const btns = head ? [...head.querySelectorAll('button')].filter((b) => !b.textContent.trim()) : [];
+    return btns[btns.length - 1] || null;
+  };
+  function bcDeactivate() {
+    if (!bc.active) return;
+    bc.active = false;
+    bc.panel?.remove();
+    bc.panel = null;
+    if (bc.hidden) bc.hidden.style.display = '';
+    bc.hidden = null;
+    bc.dimmed.forEach((n) => (n.style.opacity = ''));
+    bc.dimmed = [];
+    const mine = bc.sr && bc.sr.querySelector('[data-gcx-tab]');
+    if (mine) mine.classList.remove('gcx-on');
+  }
+  function bcActivate() {
+    const bar = bcBar();
+    if (!bar) return;
+    const header = bar.parentElement.parentElement;
+    const col = header.parentElement;
+    const content = [...col.children].find((c) => c !== header && !c.classList.contains('gcx-bc-panel'));
+    if (!content) return;
+    bc.active = true;
+    bar.querySelector('[data-gcx-tab]').classList.add('gcx-on');
+    // BetterCampus's own active tab and its underline step back while ours is showing.
+    bc.dimmed = [...bar.querySelectorAll('[data-tab-id]'), ...[...(bar.parentElement.children[1]?.children || [])]];
+    bc.dimmed.forEach((n) => (n.style.opacity = n.hasAttribute('data-tab-id') ? '0.6' : '0'));
+    if (!bc.panel || !bc.panel.isConnected) {
+      bc.panel = document.createElement('div');
+      bc.panel.className = 'gcx-bc-panel';
+      bc.panel.innerHTML = `<div class="gcx-bc-panel-in">${settingsHtml()}</div>`;
+      bindSettings(bc.panel);
+      content.after(bc.panel);
+    }
+    bc.hidden = content;
+    content.style.display = 'none';
+  }
+  function bcInject() {
+    const bar = bcBar();
+    if (!bar) {
+      bcDeactivate();
+      return;
+    }
+    if (!bc.sr.getElementById('gcx-set-css')) {
+      const st = document.createElement('style');
+      st.id = 'gcx-set-css';
+      st.textContent = SETTINGS_CSS;
+      bc.sr.append(st);
+    }
+    if (!bar.querySelector('[data-gcx-tab]')) {
+      const b = document.createElement('button');
+      b.dataset.gcxTab = '1';
+      b.type = 'button';
+      b.className = 'pointer-events-auto transition-opacity duration-200 gcx-bc-tab';
+      b.textContent = 'Classroom';
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bcActivate();
+      });
+      bar.append(b);
+    }
+    if (!bar.dataset.gcxWired) {
+      bar.dataset.gcxWired = '1';
+      bar.addEventListener('click', (e) => e.target.closest('[data-tab-id]') && bcDeactivate(), true);
+    }
+    if (bc.pending) {
+      bc.pending = false;
+      bcActivate();
+    } else if (bc.active && (!bc.panel || !bc.panel.isConnected)) bcActivate();
+  }
+  function hookBcSettings() {
+    let tries = 0;
+    const find = () => {
+      const host = document.querySelector('test-element');
+      if (host && host.shadowRoot) {
+        bc.sr = host.shadowRoot;
+        new MutationObserver(debounce(bcInject, 60)).observe(bc.sr, { childList: true, subtree: true });
+        bcInject();
+      } else if (tries++ < 20) setTimeout(find, 750);
+    };
+    find();
+  }
+  // Rail "Settings": open BetterCampus's panel on our tab. Its gear only exists on the dashboard,
+  // so elsewhere go there first and open it on arrival.
+  function openCombinedSettings(anchor) {
+    if (bcBar()) {
+      bc.pending = true;
+      bcInject();
+      return;
+    }
+    const gear = bcGear();
+    if (gear) {
+      bc.pending = true;
+      gear.click();
+      return;
+    }
+    if (location.pathname !== '/' || VIEW) {
+      try {
+        sessionStorage.setItem('gcx:open-settings', String(Date.now()));
+      } catch {}
+      location.href = '/';
+      return;
+    }
+    openSettings(anchor);
+  }
+  function openSettingsOnArrival() {
+    let t = 0;
+    try {
+      t = Number(sessionStorage.getItem('gcx:open-settings'));
+      sessionStorage.removeItem('gcx:open-settings');
+    } catch {}
+    if (!t || Date.now() - t > 20000) return;
+    let n = 0;
+    const tryOpen = () => {
+      const gear = bcGear();
+      if (gear) {
+        bc.pending = true;
+        gear.click();
+      } else if (n++ < 30) setTimeout(tryOpen, 300);
+      else openSettings(rail.querySelector('.gcx-settings-btn'));
+    };
+    tryOpen();
+  }
+
+  const SETTINGS_CSS = `
+    .gcx-bc-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 24px; animation: gcx-set-in .28s cubic-bezier(.16,.84,.3,1) both; }
+    .gcx-bc-panel-in { max-width: 640px; }
+    @keyframes gcx-set-in { from { opacity: 0; transform: translateY(8px); } }
+    .gcx-bc-tab { opacity: .6; position: relative; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+    .gcx-bc-tab:hover { opacity: 1; }
+    .gcx-bc-tab.gcx-on { opacity: 1; }
+    .gcx-bc-tab.gcx-on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -10px; height: 3px; border-radius: 3px; background: currentColor; }
+    .gcx-set-h { font-size: 13px; font-weight: 600; opacity: .6; margin: 18px 4px 8px; }
+    .gcx-set-h:first-child { margin-top: 4px; }
+    .gcx-set-card { border-radius: 16px; background: var(--gcx-card, #fff); border: 1px solid var(--gcx-border, #e4e4e7); overflow: hidden; }
+    .gcx-settings .gcx-set-card { border: 0; border-radius: 0; background: none; }
+    .gcx-set-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; margin: 0; font-weight: 400; }
+    .gcx-set-row + .gcx-set-row, .gcx-set-sub + .gcx-set-row, .gcx-set-row + .gcx-set-sub { border-top: 1px solid var(--gcx-border, #e4e4e7); }
+    .gcx-set-row:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-set-row > span:first-child { flex: 1; min-width: 0; }
+    .gcx-set-row b { display: block; font-weight: 600; font-size: 14px; color: var(--gcx-text, #18181b); }
+    .gcx-set-row small { display: block; font-size: 12px; color: var(--gcx-muted, #71717a); line-height: 1.35; margin-top: 1px; }
+    .gcx-switch { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 36px !important; height: 20px !important; margin: 0 !important;
+      border-radius: 10px; background: var(--gcx-border, #d4d4d8); cursor: pointer; transition: background-color .18s ease; border: 0 !important; }
+    .gcx-switch::after { content: ''; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff;
+      box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .18s cubic-bezier(.2,.7,.2,1.3); }
+    .gcx-switch:checked { background: var(--gcx-link, #4f46e5); }
+    .gcx-switch:checked::after { transform: translateX(16px); }
+    .gcx-set-sub { padding: 4px 16px 14px; transition: opacity .15s ease; }
+    .gcx-set-sub.off { opacity: .4; pointer-events: none; }
+    .gcx-set-lbl { font-size: 12px; font-weight: 600; color: var(--gcx-muted, #71717a); margin: 8px 0 6px; }
+    .gcx-set-tone { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-set-tone button { flex: 1; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--gcx-muted, #71717a); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .gcx-set-tone button[aria-checked="true"] { background: var(--gcx-card, #fff); color: var(--gcx-text, #18181b); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+    .gcx-set-fonts { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .gcx-set-fonts button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px; border: 1px solid var(--gcx-border, #e4e4e7);
+      border-radius: 10px; background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
+    .gcx-set-fonts button:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-set-fonts button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); background: color-mix(in srgb, var(--gcx-link, #4f46e5) 8%, transparent); }
+    .gcx-set-fonts span { font-size: 22px; line-height: 1.1; }
+    .gcx-set-fonts small { font-size: 10px; color: var(--gcx-muted, #71717a); }
+    .gcx-font-fredoka { font-family: 'GCX Fredoka', sans-serif; font-weight: 700; }
+    .gcx-font-poppins { font-family: 'GCX Poppins', sans-serif; font-weight: 800; }
+    .gcx-font-playfair { font-family: 'GCX Playfair', serif; font-weight: 800; }
+    .gcx-font-caveat { font-family: 'GCX Caveat', cursive; font-weight: 700; }
+    .gcx-font-grotesk { font-family: 'GCX Grotesk', sans-serif; font-weight: 700; }
+    .gcx-font-canvas { font-family: inherit; font-weight: 700; }
+    .gcx-set-try-row { cursor: default; padding-top: 0; border-top: 0 !important; }
+    .gcx-set-try-row:hover { background: none; }
+    .gcx-set-try { height: 30px; padding: 0 14px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 15px; background: none; color: var(--gcx-link, #4f46e5); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .gcx-set-try:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-set-soon { cursor: default; opacity: .7; }
+    .gcx-set-soon:hover { background: none; }
+    .gcx-soon { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); color: var(--gcx-muted, #71717a); }
+  `;
+  // The fallback popover needs the same styles on the page itself.
+  {
+    const st = document.createElement('style');
+    st.id = 'gcx-set-css';
+    st.textContent = SETTINGS_CSS;
+    document.head.append(st);
   }
 
   // ----- Confetti when he submits something (seasonal on certain days)
@@ -2312,7 +2600,16 @@
   });
 
   // ---------------------------------------------------------------- boot
-  if (html.classList.contains('gcx-dash')) mountWelcome();
+  applyFontPref();
+  html.classList.toggle('gcx-still', !prefs().motion);
+  // Elements ease in one by one after a page change; stop once the page has settled so later
+  // refreshes and redraws don't replay it.
+  setTimeout(() => html.classList.remove('gcx-enter'), 1600);
+  if (html.classList.contains('gcx-dash')) {
+    mountWelcome();
+    openSettingsOnArrival();
+  }
+  hookBcSettings();
   watchSubmissions();
   (window.requestIdleCallback || setTimeout)(() => cache.sweep(), { timeout: 5000 });
   if (COURSE_ID) {

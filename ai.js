@@ -729,9 +729,6 @@
   let hist = loadHist();
 
   // ---------------------------------------------------------------- UI
-  // A bold question mark, drawn as a path so it takes the text color.
-  const QMARK =
-    'M11.07 16.5h2.36v2.4h-2.36zM12 4.6c2.7 0 4.65 1.7 4.65 4.05 0 1.6-.8 2.66-2.3 3.62-1.1.7-1.36 1.12-1.36 2.08v.35h-2.28v-.5c0-1.6.62-2.48 2-3.37 1.12-.72 1.56-1.27 1.56-2.12 0-1.07-.92-1.85-2.27-1.85-1.4 0-2.33.86-2.43 2.2H7.3c.12-2.6 2.03-4.46 4.7-4.46z';
   const ICON = {
     send: 'M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a.99.99 0 0 0-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z',
     stop: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
@@ -767,7 +764,7 @@
           <input class="gcx-ask-input" type="text" autocomplete="off" spellcheck="false" placeholder="Ask about your classes" aria-label="Ask about your classes" tabindex="-1">
           <button class="gcx-ask-send" type="button" tabindex="-1" aria-label="Send">${icon(ICON.send, 16)}</button>
         </div>
-        <span class="gcx-ask-icon">${icon(QMARK, 22)}</span>
+        <span class="gcx-ask-icon"><span class="gcx-ask-ai">AI</span></span>
       </div>
       <div class="gcx-ask-peek" aria-hidden="true"><span class="gcx-ask-pdot"></span><span class="gcx-ask-ptext"></span></div>
     </div>`);
@@ -960,7 +957,14 @@
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         if (!busy) ask(input.value);
+      } else if (e.key === 'Escape') {
+        if (busy) stop();
+        setState('idle');
+        input.blur();
       }
+      // Typing here is for the chat only: page-level keyboard shortcuts (Canvas's, BetterCampus's)
+      // were swallowing the space bar.
+      e.stopPropagation();
     });
 
     // The key is typed into the extension's own options page, never into a field on the Canvas page.

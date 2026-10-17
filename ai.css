@@ -1,6 +1,6 @@
-/* "Ask anything" (ai.js). A question mark in a circle outline. On hover the circle stretches
-   left into a pill and the mark rolls to its left end (one turn, tied to the travel); the hint
-   fades up. Asking grows the same box down into a chat: history on top, input row at the
+/* "Ask anything" (ai.js). An "AI" mark in a frosted, tinted circle (no outline, no shadow). On
+   hover the circle stretches left into a pill and the mark rolls to its left end (one turn, tied
+   to the travel); the hint fades up. Asking grows the same box down into a chat: history on top, input row at the
    bottom. Closed while an answer runs, a small preview sits beside the circle. Scoped under html.gcx. */
 
 html.gcx .gcx-ask {
@@ -15,16 +15,20 @@ html.gcx .gcx-ask {
 html.gcx .gcx-ask-box {
   position: absolute; right: 0; top: 0; width: 48px; height: 48px; box-sizing: border-box;
   display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden;
-  border: 1px solid var(--gcx-border); border-radius: 24px; background: transparent; cursor: pointer;
+  border: 0; border-radius: 24px; cursor: pointer;
+  --ask-fill: color-mix(in srgb, var(--gcx-link) 13%, color-mix(in srgb, var(--gcx-card) 62%, transparent));
+  background: var(--ask-fill);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5);
   transition: width var(--ask-dur) var(--ask-ease), height var(--ask-dur) var(--ask-ease),
-    border-radius var(--ask-dur) var(--ask-ease), background-color 0.2s ease, box-shadow 0.25s ease, border-color 0.2s ease;
+    border-radius var(--ask-dur) var(--ask-ease), background-color 0.2s ease;
 }
-html.gcx .gcx-ask[data-state='idle'] .gcx-ask-box:hover { border-color: color-mix(in srgb, var(--gcx-text) 35%, var(--gcx-border)); }
-html.gcx .gcx-ask:not([data-state='idle']) .gcx-ask-box {
-  background: var(--gcx-card);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+html.gcx .gcx-ask[data-state='idle'] .gcx-ask-box:hover { --ask-fill: color-mix(in srgb, var(--gcx-link) 18%, color-mix(in srgb, var(--gcx-card) 62%, transparent)); }
+/* Open, the glass gets a little more solid so the chat stays readable over the cards. */
+html.gcx .gcx-ask[data-state='open'] .gcx-ask-box {
+  --ask-fill: color-mix(in srgb, var(--gcx-link) 9%, color-mix(in srgb, var(--gcx-card) 80%, transparent));
+  border-radius: 22px; cursor: default;
+  transition: width 0.42s cubic-bezier(.2,.8,.2,1), height 0.42s cubic-bezier(.2,.8,.2,1), border-radius 0.42s ease, background-color 0.2s ease;
 }
-html.gcx .gcx-ask[data-state='open'] .gcx-ask-box { border-radius: 22px; cursor: default; }
 
 /* The mark is pinned to the box's bottom-left corner, so it travels left as the box widens
    (and down as it grows). The turn runs on the same clock as the travel. */
@@ -32,9 +36,13 @@ html.gcx .gcx-ask-icon {
   position: absolute; left: 12px; bottom: 12px; width: 22px; height: 22px; display: block; pointer-events: none;
   color: var(--gcx-text); transition: transform var(--ask-dur) var(--ask-ease);
 }
-html.gcx .gcx-ask-icon svg { display: block; fill: currentColor; }
+html.gcx .gcx-ask-ai {
+  display: grid; place-items: center; width: 22px; height: 22px;
+  font-family: 'GCX Fredoka', ui-rounded, sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 0.02em; line-height: 1;
+  color: var(--gcx-link);
+}
 html.gcx .gcx-ask:not([data-state='idle']) .gcx-ask-icon { transform: rotate(-1turn); }
-html.gcx .gcx-ask[data-state='open'] .gcx-ask-icon { color: var(--gcx-muted); }
+html.gcx .gcx-ask[data-state='open'] .gcx-ask-ai { color: color-mix(in srgb, var(--gcx-link) 75%, var(--gcx-muted)); }
 
 /* ---------- bottom row: hint (hover) or input + send (open) */
 html.gcx .gcx-ask-row { position: relative; flex: none; height: 46px; order: 3; outline: none; }
@@ -145,7 +153,8 @@ html.gcx .gcx-ask-keybtn {
 html.gcx .gcx-ask-peek {
   position: absolute; right: 56px; top: 50%; max-width: 220px; height: 28px; box-sizing: border-box;
   display: flex; align-items: center; gap: 7px; padding: 0 11px; border-radius: 14px; cursor: pointer;
-  background: var(--gcx-card); border: 1px solid var(--gcx-border); color: var(--gcx-muted); font-size: 12.5px; white-space: nowrap;
+  background: color-mix(in srgb, var(--gcx-link) 10%, color-mix(in srgb, var(--gcx-card) 70%, transparent));
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 0; color: var(--gcx-muted); font-size: 12.5px; white-space: nowrap;
   opacity: 0; visibility: hidden; transform: translate(6px, -50%);
   transition: opacity 0.2s ease, transform 0.3s var(--ask-soft), visibility 0s 0.2s;
 }

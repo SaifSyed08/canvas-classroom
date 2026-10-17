@@ -40,10 +40,17 @@
   } catch {}
   // Opt both pages in to cross-document view transitions. Lives in the page (not the
   // extension stylesheet) so Chrome counts it as the page's own.
+  let still = false;
+  try {
+    still = (JSON.parse(localStorage.getItem('gcx:prefs') || '{}') || {}).motion === false;
+  } catch {}
+  if (still) html.classList.add('gcx-still');
+  // Page pieces ease in one by one, except when sliding between a course's tabs.
+  if (!still && html.dataset.gcxNav !== 'left' && html.dataset.gcxNav !== 'right') html.classList.add('gcx-enter');
   const vt = document.createElement('style');
   vt.id = 'gcx-vt';
   vt.textContent = '@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }';
-  html.append(vt);
+  if (!still) html.append(vt);
   addEventListener('pagereveal', (e) => {
     if (e.viewTransition) e.viewTransition.finished.finally(() => delete html.dataset.gcxNav);
     else delete html.dataset.gcxNav;
