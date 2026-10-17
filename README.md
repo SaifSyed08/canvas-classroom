@@ -24,17 +24,18 @@ BetterCampus still supplies the grade badges, the to-do sidebar and its theme co
 - **To-do** (`/?gcx=todo`): all courses' work in Assigned / Missing / Done tabs with a class filter.
 - **Dashboard**: a big greeting ("Boo! Saif", "Happy Friday, Saif!", "Exam 2 is due today, Saif.") picked from
   the time of day, weekday, season, holidays, how long you've been away and what's due soon. Next to it,
-  the **?** button asks questions about your classes (see below). The gear next to them (also **Settings**
-  at the bottom of the rail) turns the greeting and the ? button on or off, sets the greeting's tone
-  (Calm, Normal, or Extra with emoji), and turns on **confetti when you submit** something, which goes
-  seasonal around Halloween, Thanksgiving, Christmas, New Year, Valentine's, St. Patrick's and the Fourth.
+  the **AI** button asks questions about your classes (see below). Settings are a **Classroom** tab in
+  BetterCampus's own settings (its gear, top right of the to-do list): greeting on or off, its tone (Calm,
+  Normal, or Extra with emoji) and font, the AI button and its Ctrl + Space shortcut, page animations,
+  announcements easing in as you scroll, and **confetti when you submit** something, which goes seasonal
+  around Halloween, Thanksgiving, Christmas, New Year, Valentine's, St. Patrick's and the Fourth.
   Cards show the course name and instructor over the image; below that, work for the next two weeks is
   grouped under labels like "Missing", "Due Today" and "Due Friday", three at a time. Each card has an
   email-the-instructor button. The card "+" and action icons, the "Dashboard" header menu, the streak,
   the progress ring, the Day/Week/Month picker, the premium Sync button, the Announcements and Completed
   tabs and the footer links are gone. The BetterCampus to-do list is cut off at two weeks and shows six
   items before "Show more"; Add Task, Recent Feedback and View Grades stay below it.
-- **Ask anything** (the ? next to the greeting): hover it and it rolls open into a pill; click and type.
+- **Ask anything** (the AI button next to the greeting): hover it and it rolls open into a pill; click and type.
   The pill grows into the chat, with the history above the input. It answers from your Canvas: courses,
   assignments, grades, feedback, modules, files (it can read PDFs, slides and docs), announcements,
   quizzes, discussions, pages, the syllabus, people and the inbox. It's read-only. Move the pointer away

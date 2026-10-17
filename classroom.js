@@ -459,7 +459,6 @@
       <div class="gcx-rail-bottom">
         ${item('calendar', '/calendar', 'calendar', 'Calendar')}
         ${item('inbox', '/conversations', 'inbox', 'Inbox', `<span class="gcx-badge" ${unread ? '' : 'hidden'}>${unread}</span>`)}
-        <button class="gcx-ri gcx-settings-btn" type="button" title="Settings" aria-haspopup="dialog"><span class="gcx-ri-ic">${svg('gear')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">Settings</span></span></button>
         <button class="gcx-ri gcx-account" type="button" title="Account">
           <span class="gcx-me">${avatarUrl ? '' : esc((me && me.name ? me.name[0] : '?').toUpperCase())}</span>
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc((me && me.name) || 'Account')}</span><span class="gcx-ri-sub">Account &amp; settings</span></span>
@@ -491,10 +490,6 @@
       e.preventDefault();
       e.stopPropagation();
       openLookPicker(dots.closest('.gcx-ri-course'), e);
-      return;
-    }
-    if (e.target.closest('.gcx-settings-btn')) {
-      openCombinedSettings(e.target.closest('.gcx-settings-btn'));
       return;
     }
     if (e.target.closest('.gcx-burger')) {
@@ -1906,9 +1901,8 @@
     return extra && chosen[1] ? `${chosen[0]} ${chosen[1]}` : chosen[0];
   }
 
-  // ----- Settings. They live in a "Classroom" tab inside BetterCampus's own settings panel
-  // (its gear on the to-do list, or Settings in our rail). A popover is the fallback when
-  // BetterCampus's panel can't be opened.
+  // ----- Settings live in a "Classroom" tab inside BetterCampus's own settings panel (its gear,
+  // top right of the dashboard's to-do list).
   const FONTS = [
     ['fredoka', 'Rounded'],
     ['poppins', 'Bold'],
@@ -1980,57 +1974,10 @@
     });
   }
 
-  let closeSettings = null;
-  function openSettings(anchor) {
-    // The rail button toggles it.
-    if (closeSettings) {
-      const same = closeSettings.anchor === anchor;
-      closeSettings();
-      if (same) return;
-    }
-    const pop = el(`<div class="gcx-settings gcx-pop-panel" role="dialog" aria-label="Classroom settings">${settingsHtml()}</div>`);
-    document.body.append(pop);
-    bindSettings(pop);
-    const r = anchor.getBoundingClientRect();
-    const left = r.left > window.innerWidth / 2 ? r.right - pop.offsetWidth : r.right + 8;
-    pop.style.left = Math.max(12, Math.min(left, window.innerWidth - pop.offsetWidth - 12)) + 'px';
-    pop.style.top = Math.max(12, Math.min(r.top, window.innerHeight - pop.offsetHeight - 12)) + 'px';
-    pop.style.transformOrigin = 'bottom left';
-    if (anchor.closest('#gcx-rail')) html.classList.add('gcx-rail-hold');
-    const close = (refocus) => {
-      closeSettings = null;
-      pop.classList.add('gcx-out');
-      html.classList.remove('gcx-rail-hold');
-      anchor.setAttribute('aria-expanded', 'false');
-      setTimeout(() => pop.remove(), 160);
-      document.removeEventListener('mousedown', outside, true);
-      document.removeEventListener('keydown', onKey, true);
-      if (refocus) anchor.focus({ preventScroll: true });
-    };
-    close.anchor = anchor;
-    closeSettings = close;
-    const outside = (e) => {
-      if (!pop.contains(e.target) && !anchor.contains(e.target)) close();
-    };
-    const onKey = (e) => {
-      if (e.key === 'Escape') close(true);
-    };
-    document.addEventListener('mousedown', outside, true);
-    document.addEventListener('keydown', onKey, true);
-    anchor.setAttribute('aria-expanded', 'true');
-    pop.querySelector('.gcx-switch').focus({ preventScroll: true });
-  }
-
   // BetterCampus renders its settings panel in the shadow root of <test-element>. We add a
   // "Classroom" tab to its tab strip; picking it hides BetterCampus's content and shows ours.
-  const bc = { sr: null, pending: false, active: false, panel: null, hidden: null, dimmed: [] };
+  const bc = { sr: null, active: false, panel: null, hidden: null, dimmed: [] };
   const bcBar = () => bc.sr && bc.sr.querySelector('[data-tab-id="popup:themes"]')?.parentElement;
-  const bcGear = () => {
-    const sr = document.querySelector('bettercampus-todo-list')?.shadowRoot;
-    const head = sr && sr.getElementById('bettercanvas-todo-list')?.children[1];
-    const btns = head ? [...head.querySelectorAll('button')].filter((b) => !b.textContent.trim()) : [];
-    return btns[btns.length - 1] || null;
-  };
   function bcDeactivate() {
     if (!bc.active) return;
     bc.active = false;
@@ -2093,10 +2040,7 @@
       bar.dataset.gcxWired = '1';
       bar.addEventListener('click', (e) => e.target.closest('[data-tab-id]') && bcDeactivate(), true);
     }
-    if (bc.pending) {
-      bc.pending = false;
-      bcActivate();
-    } else if (bc.active && (!bc.panel || !bc.panel.isConnected)) bcActivate();
+    if (bc.active && (!bc.panel || !bc.panel.isConnected)) bcActivate();
   }
   function hookBcSettings() {
     let tries = 0;
@@ -2110,48 +2054,6 @@
     };
     find();
   }
-  // Rail "Settings": open BetterCampus's panel on our tab. Its gear only exists on the dashboard,
-  // so elsewhere go there first and open it on arrival.
-  function openCombinedSettings(anchor) {
-    if (bcBar()) {
-      bc.pending = true;
-      bcInject();
-      return;
-    }
-    const gear = bcGear();
-    if (gear) {
-      bc.pending = true;
-      gear.click();
-      return;
-    }
-    if (location.pathname !== '/' || VIEW) {
-      try {
-        sessionStorage.setItem('gcx:open-settings', String(Date.now()));
-      } catch {}
-      location.href = '/';
-      return;
-    }
-    openSettings(anchor);
-  }
-  function openSettingsOnArrival() {
-    let t = 0;
-    try {
-      t = Number(sessionStorage.getItem('gcx:open-settings'));
-      sessionStorage.removeItem('gcx:open-settings');
-    } catch {}
-    if (!t || Date.now() - t > 20000) return;
-    let n = 0;
-    const tryOpen = () => {
-      const gear = bcGear();
-      if (gear) {
-        bc.pending = true;
-        gear.click();
-      } else if (n++ < 30) setTimeout(tryOpen, 300);
-      else openSettings(rail.querySelector('.gcx-settings-btn'));
-    };
-    tryOpen();
-  }
-
   const SETTINGS_CSS = `
     .gcx-bc-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 24px; animation: gcx-set-in .28s cubic-bezier(.16,.84,.3,1) both; }
     .gcx-bc-panel-in { max-width: 640px; }
@@ -2163,7 +2065,6 @@
     .gcx-set-h { font-size: 13px; font-weight: 600; opacity: .6; margin: 18px 4px 8px; }
     .gcx-set-h:first-child { margin-top: 4px; }
     .gcx-set-card { border-radius: 16px; background: var(--gcx-card, #fff); border: 1px solid var(--gcx-border, #e4e4e7); overflow: hidden; }
-    .gcx-settings .gcx-set-card { border: 0; border-radius: 0; background: none; }
     .gcx-set-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; margin: 0; font-weight: 400; }
     .gcx-set-row + .gcx-set-row, .gcx-set-sub + .gcx-set-row, .gcx-set-row + .gcx-set-sub { border-top: 1px solid var(--gcx-border, #e4e4e7); }
     .gcx-set-row:hover { background: var(--gcx-bg2, #f4f4f5); }
@@ -2203,13 +2104,6 @@
     .gcx-set-soon:hover { background: none; }
     .gcx-soon { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); color: var(--gcx-muted, #71717a); }
   `;
-  // The fallback popover needs the same styles on the page itself.
-  {
-    const st = document.createElement('style');
-    st.id = 'gcx-set-css';
-    st.textContent = SETTINGS_CSS;
-    document.head.append(st);
-  }
 
   // ----- Confetti when he submits something (seasonal on certain days)
   function confettiTheme() {
@@ -2646,7 +2540,6 @@
   setTimeout(() => html.classList.remove('gcx-enter'), 1600);
   if (html.classList.contains('gcx-dash')) {
     mountWelcome();
-    openSettingsOnArrival();
   }
   hookBcSettings();
   watchSubmissions();
