@@ -807,7 +807,13 @@
         return;
       }
       box.style.width = OPEN_W;
-      const want = top.offsetHeight + log.scrollHeight + ROW + 2;
+      // Measure the messages themselves; the log's scrollHeight never drops below its current box.
+      const kids = log.children;
+      const cs = getComputedStyle(log);
+      const content = kids.length
+        ? kids[kids.length - 1].getBoundingClientRect().bottom - kids[0].getBoundingClientRect().top + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
+        : 0;
+      const want = top.offsetHeight + content + ROW + 2;
       box.style.height = Math.min(maxH(), Math.max(ROW + 120, want)) + 'px';
     }
     const ro = new ResizeObserver(() => state === 'open' && fit());
@@ -861,6 +867,12 @@
         setState('open');
       }
     });
+    // Tabbing out of the chat tucks it away, same as moving the pointer off it.
+    on(root, 'focusout', () =>
+      setTimeout(() => {
+        if (state !== 'idle' && !root.contains(document.activeElement) && !root.matches(':hover') && !keepOpen()) setState('idle');
+      }),
+    );
     on(root, 'focusin', (e) => {
       clearTimeout(leaveTimer);
       leaveTimer = 0;
@@ -1005,7 +1017,8 @@
       q = String(q || '').trim();
       if (!q || busy) return;
       // A pasted API key must never become chat text (history, or a message to OpenAI).
-      if (/sk-[\w-]{20,}/.test(q)) {
+      // "sk-" only counts at the start of a token, so "risk-assessment-…" is still a question.
+      if (/(?<![\w-])sk-[A-Za-z0-9_-]{20,}/.test(q)) {
         input.value = '';
         showKeyPrompt("Keys don't go in the chat.");
         return;

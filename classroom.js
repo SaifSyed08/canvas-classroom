@@ -1685,6 +1685,7 @@
     const hello = welcomeCtx.wel.querySelector('.gcx-hello');
     hello.textContent = text;
     welcomeCtx.refs = greetRefs;
+    welcomeCtx.kind = greetKind;
     if (animate) reveal(hello);
   }
   function applyWelcomePrefs() {
@@ -1721,8 +1722,9 @@
       const stale = refs.some((k) =>
         k === 'flagged' ? !flagged : k === 'clear' ? openItems.some((i) => i.due && i.due >= now && i.due < horizonEnd()) || flagged : !open.has(k),
       );
-      // Anything due today that the greeting didn't mention outranks what it did say.
-      const newToday = todayKeys.some((k) => !refs.includes(k));
+      // New work due today outranks what it said, unless it said something that outranks
+      // "due today" anyway (a deadline within hours, a holiday).
+      const newToday = !['urgent', 'holiday'].includes(welcomeCtx.kind) && todayKeys.some((k) => !refs.includes(k));
       if (stale || newToday) setHello(greeting(name, items, welcomeCtx.lastVisit), true);
     }
   }
@@ -1731,8 +1733,10 @@
   // absence, late night. Otherwise a random pick from time of day, weekday and season, never the
   // same line twice in a row. Tone: 'calm' (plain), 'normal', 'extra' (emoji, sillier lines).
   let greetRefs = []; // keys of the work items ('flagged', 'clear') the last greeting talked about
+  let greetKind = ''; // which branch it came from: 'urgent', 'holiday', 'today' or ''
   function greeting(n, items, lastVisit = 0) {
     greetRefs = [];
+    greetKind = '';
     const tone = prefs().tone;
     const calm = tone === 'calm';
     const extra = tone === 'extra';
@@ -1754,6 +1758,7 @@
 
     if (next && hoursLeft < 6) {
       greetRefs = [next.key];
+      greetKind = 'urgent';
       const left = hoursLeft < 1 ? `${Math.max(1, Math.round(hoursLeft * 60))} min` : `${Math.round(hoursLeft)} hr`;
       if (calm) return `${short(next.title)} is due in ${left}.`;
       return say([
@@ -1785,11 +1790,13 @@
       null;
     // Calm keeps only the real holidays (one day), said plainly.
     const bigDay = (m === 1 && d === 1) || (m === 7 && d === 4) || (m === 10 && d === 31) || (m === 11 && d === tg) || (m === 12 && d >= 24 && d <= 25);
-    if (holiday && (!calm || bigDay)) return calm ? holiday[0][0].replace(/!$/, '.') : say(holiday);
+    if (holiday && (!calm || bigDay)) greetKind = 'holiday';
+    if (greetKind === 'holiday') return calm ? holiday[0][0].replace(/!$/, '.') : say(holiday);
 
     const dueToday = open.filter((i) => dayDiff(i.due) === 0);
     if (dueToday.length) {
       greetRefs = dueToday.map((i) => i.key);
+      greetKind = 'today';
       if (calm) return dueToday.length === 1 ? `${short(dueToday[0].title)} is due today.` : `${dueToday.length} things are due today.`;
       return say(
         dueToday.length === 1
@@ -1843,8 +1850,14 @@
   }
 
   // ----- Settings popover (dashboard gear, and Settings at the bottom of the rail)
+  let closeSettings = null;
   function openSettings(anchor) {
-    document.querySelector('.gcx-settings')?.remove();
+    // The gear (or rail Settings) toggles it.
+    if (closeSettings) {
+      const same = closeSettings.anchor === anchor;
+      closeSettings();
+      if (same) return;
+    }
     const p = prefs();
     const toggle = (k, label, sub) =>
       `<label class="gcx-set-row"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="checkbox" class="gcx-switch" data-k="${k}" ${p[k] ? 'checked' : ''}></label>`;
@@ -1885,21 +1898,28 @@
       }
       if (e.target.closest('.gcx-set-try')) confetti();
     });
-    const close = () => {
+    const close = (refocus) => {
+      closeSettings = null;
       pop.classList.add('gcx-out');
       html.classList.remove('gcx-rail-hold');
+      anchor.setAttribute('aria-expanded', 'false');
       setTimeout(() => pop.remove(), 160);
       document.removeEventListener('mousedown', outside, true);
       document.removeEventListener('keydown', onKey, true);
+      if (refocus) anchor.focus({ preventScroll: true });
     };
+    close.anchor = anchor;
+    closeSettings = close;
     const outside = (e) => {
       if (!pop.contains(e.target) && !anchor.contains(e.target)) close();
     };
     const onKey = (e) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') close(true);
     };
     document.addEventListener('mousedown', outside, true);
     document.addEventListener('keydown', onKey, true);
+    anchor.setAttribute('aria-expanded', 'true');
+    pop.querySelector('.gcx-switch').focus({ preventScroll: true });
   }
 
   // ----- Confetti when he submits something (seasonal on certain days)
@@ -1975,14 +1995,11 @@
     };
     requestAnimationFrame(frame);
   }
-  // Classic submissions reload the page, so leave a note and celebrate on the next load.
-  // Newer Canvas pages submit in place, so also watch briefly for their "Submitted" message.
+  // Classic submissions reload the page, so leave a note (naming the assignment or quiz) and
+  // celebrate when that same assignment or quiz loads. Newer Canvas pages submit in place, so a
+  // click on a Submit button also watches briefly for Canvas's own "Submitted" message.
   function watchSubmissions() {
-    const mark = () => {
-      try {
-        sessionStorage.setItem('gcx:celebrate', String(Date.now()));
-      } catch {}
-    };
+    const workPath = () => (location.pathname.match(/^\/courses\/\d+\/(?:assignments|quizzes)\/\d+/) || [])[0] || '';
     let celebrated = false;
     const celebrate = () => {
       if (celebrated || !prefs().confetti) return;
@@ -1993,37 +2010,54 @@
       confetti();
     };
     try {
-      const t = Number(sessionStorage.getItem('gcx:celebrate'));
-      if (t && Date.now() - t < 60000) setTimeout(celebrate, 600);
-      else if (t) sessionStorage.removeItem('gcx:celebrate');
+      const note = JSON.parse(sessionStorage.getItem('gcx:celebrate') || 'null');
+      if (note && Date.now() - note.t < 60000 && note.path && location.pathname.startsWith(note.path)) setTimeout(celebrate, 600);
+      else if (note && Date.now() - note.t >= 60000) sessionStorage.removeItem('gcx:celebrate');
     } catch {}
+
+    // Only the real hand-in forms, and only if nothing (validation, a confirm) cancelled them.
     document.addEventListener(
       'submit',
       (e) => {
         const f = e.target;
-        if (f && (f.id === 'submit_assignment_form' || /\/(submissions|quiz_submissions)(\/|$|\?)/.test(f.getAttribute('action') || ''))) mark();
+        if (!f || !/^(submit_assignment_form|submit_quiz_form)$/.test(f.id) || !workPath()) return;
+        setTimeout(() => {
+          if (e.defaultPrevented) return;
+          try {
+            sessionStorage.setItem('gcx:celebrate', JSON.stringify({ t: Date.now(), path: workPath() }));
+          } catch {}
+        });
       },
       true,
     );
+
+    // One shared watcher; each Submit click just extends its deadline.
+    let watchUntil = 0;
+    let watcher = null;
+    const SUCCESS = /\b(submitted|submission (was )?successful)\b/i;
+    const check = debounce(() => {
+      if (Date.now() > watchUntil) {
+        watcher.disconnect();
+        watcher = null;
+        return;
+      }
+      const hit = [...document.querySelectorAll('[role="alert"], [role="status"], .flashalert-message, #flash_message_holder')].some((n) => SUCCESS.test(n.textContent));
+      if (hit) {
+        watcher.disconnect();
+        watcher = null;
+        celebrate();
+      }
+    }, 150);
     document.addEventListener(
       'click',
       (e) => {
         const b = e.target.closest && e.target.closest('button, input[type="submit"]');
-        if (!b || !/^\s*(submit( assignment| quiz)?|turn in)\s*$/i.test(b.textContent || b.value || '')) return;
-        mark();
-        const until = Date.now() + 20000;
-        const mo = new MutationObserver(() => {
-          if (Date.now() > until) return mo.disconnect();
-          const ok = [...document.querySelectorAll('[role="alert"], [role="status"], .flashalert-message, #flash_message_holder, [data-testid*="status" i]')].some((n) =>
-            /\b(submitted|submission (was )?successful)\b/i.test(n.textContent),
-          );
-          if (ok) {
-            mo.disconnect();
-            celebrate();
-          }
-        });
-        mo.observe(document.body, { childList: true, subtree: true, characterData: true });
-        setTimeout(() => mo.disconnect(), 20000);
+        if (!b || !workPath() || !/^\s*(submit( assignment| quiz)?|turn in)\s*$/i.test(b.textContent || b.value || '')) return;
+        watchUntil = Date.now() + 20000;
+        if (!watcher) {
+          watcher = new MutationObserver(check);
+          watcher.observe(document.body, { childList: true, subtree: true, characterData: true });
+        }
       },
       true,
     );

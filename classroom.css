@@ -383,13 +383,14 @@ html.gcx-dash #dashboard_header_container { display: none !important; }
 .gcx-welcome.no-hello .gcx-hello { visibility: hidden; }
 .gcx-welcome.no-ask .gcx-ask-slot { display: none; }
 .gcx-welcome.no-hello.no-ask { min-height: 0; margin-bottom: 8px; }
+.gcx-welcome.no-hello.no-ask .gcx-hello { display: none; }
 .gcx-welcome.no-hello.no-ask .gcx-welcome-gear { position: absolute; right: 0; top: -6px; }
 .gcx-ask-slot { flex: none; display: flex; align-items: center; margin-left: auto; }
 .gcx-welcome-gear {
   flex: none; width: 36px; height: 36px; border: 0; border-radius: 50%; background: none; color: var(--gcx-muted);
   display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity 0.15s ease, background-color 0.15s ease;
 }
-.gcx-welcome:hover .gcx-welcome-gear, .gcx-welcome-gear:focus-visible { opacity: 1; }
+.gcx-welcome:hover .gcx-welcome-gear, .gcx-welcome-gear:focus-visible, .gcx-welcome-gear[aria-expanded="true"] { opacity: 1; }
 .gcx-welcome-gear:hover { background: var(--gcx-bg2); color: var(--gcx-text); }
 
 /* settings popover */
@@ -594,7 +595,7 @@ html[data-gcx-nav="in"]::view-transition-new(gcx-cbar):only-child { animation: g
 
 /* dark/light switch: a slow crossfade of everything */
 html.gcx-theme-vt::view-transition-group(*) { animation-duration: 0.5s; }
-html.gcx-theme-vt::view-transition-old(*) { animation: gcx-vt-fade-out 0.5s ease both; }
+html.gcx-theme-vt::view-transition-old(*) { animation: gcx-vt-fade-out 0.5s ease both; opacity: 1; }
 html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease both; }
 
 @media (prefers-reduced-motion: reduce) {
