@@ -131,6 +131,17 @@
     }
     return null;
   })();
+  // Same script has his display name, so the greeting knows it on the very first load.
+  const PAGE_NAME = (() => {
+    for (const sc of document.scripts) {
+      if (sc.src) continue;
+      const i = sc.textContent.indexOf('"current_user":{');
+      if (i < 0) continue;
+      const m = sc.textContent.slice(i, i + 800).match(/"display_name":"([^"\\]*)"/);
+      if (m) return m[1];
+    }
+    return '';
+  })();
   const cacheKey = (k) => `c:${location.origin}|${PAGE_USER || 'anon'}|${k}`;
   const cache = {
     async get(k) {
@@ -1697,7 +1708,7 @@
   function mountWelcome() {
     const anchor = document.getElementById('dashboard_header_container');
     if (!anchor || document.querySelector('.gcx-welcome')) return;
-    const name = (me && me.name ? me.name.split(' ')[0] : '') || 'there';
+    const name = ((me && me.name) || PAGE_NAME).split(' ')[0] || 'there';
     const wel = el(`<div class="gcx-welcome"><h1 class="gcx-hello"></h1><div class="gcx-ask-slot"></div></div>`);
     anchor.before(wel);
     const lastVisit = store.get('lastVisit', 0);

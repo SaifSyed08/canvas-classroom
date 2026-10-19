@@ -163,8 +163,61 @@ html.gcx .gcx-ask-ptext { overflow: hidden; text-overflow: ellipsis; min-width: 
 html.gcx .gcx-ask.peek-done .gcx-ask-pdot { animation: none; background: var(--gcx-link); }
 html.gcx .gcx-ask.peek-done .gcx-ask-peek { color: var(--gcx-text); }
 
+/* ---------- Ctrl+Space: the floating "Ask anything" pill / panel */
+html.gcx .gcx-spot-bg {
+  position: fixed; inset: 0; z-index: 2147482400; background: rgba(20, 24, 32, 0.14);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  animation: gcx-spot-fade 0.25s ease both;
+}
+html.gcx .gcx-spot-bg.gone { opacity: 0; pointer-events: none; transition: opacity 0.35s ease; }
+@keyframes gcx-spot-fade { from { opacity: 0; } }
+html.gcx .gcx-spot {
+  position: fixed; z-index: 2147482500;
+  transition: top 0.35s cubic-bezier(.2,.8,.2,1), left 0.35s cubic-bezier(.2,.8,.2,1);
+}
+html.gcx .gcx-spot.dragging { transition: none; cursor: grabbing; }
+/* fill "backwards" only: a finished-but-filling opacity animation makes this a backdrop root, and the
+   panel's frosted blur would then see nothing behind it. */
+html.gcx .gcx-ask.spot { width: 100%; height: auto; animation: gcx-spot-in 0.4s cubic-bezier(.2,.9,.25,1.12) backwards; }
+html.gcx .gcx-spot.closing .gcx-ask.spot { animation: gcx-spot-out 0.18s ease forwards; }
+@keyframes gcx-spot-in { from { opacity: 0; transform: scale(0.96) translateY(6px); } }
+@keyframes gcx-spot-out { to { opacity: 0; transform: scale(0.96); } }
+/* Over an arbitrary page the glass is a bit more solid, with a soft lift so it reads as floating. */
+html.gcx .gcx-ask.spot .gcx-ask-box {
+  position: relative; right: auto; top: auto; width: 100% !important; height: 56px; border-radius: 28px; cursor: grab;
+  --ask-fill: color-mix(in srgb, var(--gcx-link) 10%, color-mix(in srgb, var(--gcx-card) 86%, transparent));
+  -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.14);
+}
+html.gcx .gcx-ask.spot:not(.compact) .gcx-ask-box { border-radius: 24px; }
+html.gcx .gcx-spot.dragging .gcx-ask-box { cursor: grabbing; }
+html.gcx .gcx-ask.spot.compact :is(.gcx-ask-top, .gcx-ask-log) { display: none; }
+html.gcx .gcx-ask.spot .gcx-ask-row { height: 54px; }
+html.gcx .gcx-ask.spot input.gcx-ask-input { left: 52px !important; right: 54px !important; height: 54px !important; font-size: 17px !important; }
+html.gcx .gcx-ask.spot .gcx-ask-icon { left: 16px; bottom: 17px; }
+html.gcx .gcx-ask.spot .gcx-ask-ai { font-size: 15px; }
+html.gcx .gcx-ask.spot .gcx-ask-send { right: 10px; width: 36px; height: 36px; margin-top: -18px; }
+html.gcx .gcx-ask.spot .gcx-ask-top { justify-content: flex-start; padding: 10px 12px 0; }
+html.gcx .gcx-ask.spot .gcx-ask-log { padding: 0 20px 6px; }
+/* a small handle at the top to show it can be moved */
+html.gcx .gcx-ask-grip {
+  position: absolute; top: 5px; left: 50%; z-index: 2; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px;
+  background: color-mix(in srgb, var(--gcx-text) 22%, transparent); opacity: 0; transition: opacity 0.15s ease;
+}
+html.gcx .gcx-ask.spot .gcx-ask-box:hover .gcx-ask-grip, html.gcx .gcx-spot.dragging .gcx-ask-grip { opacity: 1; }
+/* close: a white x on a red circle, on the corner, Google Classroom style */
+html.gcx .gcx-ask-x {
+  position: absolute; top: -9px; right: -9px; z-index: 3; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; background: #d93025 !important; color: #fff !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18); transition: transform 0.15s ease, background-color 0.15s ease;
+}
+html.gcx .gcx-ask-x svg { fill: currentColor; display: block; }
+html.gcx .gcx-ask-x:hover { transform: scale(1.1); background: #c5221f !important; }
+html.gcx .gcx-ask-x:active { transform: scale(0.95); }
+
 @media (prefers-reduced-motion: reduce) {
   html.gcx .gcx-ask *, html.gcx .gcx-ask *::after { animation: none !important; }
+  html.gcx :is(.gcx-ask.spot, .gcx-spot-bg) { animation: none !important; }
   html.gcx .gcx-ask :is(.gcx-ask-box, .gcx-ask-icon, .gcx-ask-hint, .gcx-ask-input, .gcx-ask-peek) { transition-duration: 0.01s !important; transition-delay: 0s !important; }
   html.gcx .gcx-ask:not([data-state='idle']) .gcx-ask-icon { transform: none; }
 }

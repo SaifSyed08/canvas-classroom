@@ -733,12 +733,16 @@
     send: 'M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a.99.99 0 0 0-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z',
     stop: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
     plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
   };
   const icon = (d, s = 20) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true"><path d="${d}"/></svg>`;
   const SUGGEST = ["What's due this week?", 'How are my grades looking?', 'Summarize the latest announcements', "What's on my next exam?"];
   const OPEN_W = 'min(440px, calc(100vw - 160px))';
   const HOVER_W = 200;
   const ROW = 48; // height of the input row, and of the closed circle
+  const SPOT_ROW = 56; // the Ctrl+Space pill is taller
+  // One answer at a time across the dashboard pill and the Ctrl+Space panel (they share history).
+  let asking = null;
 
   // Plain text of the start of an answer, for the little preview next to the closed circle.
   const previewText = (t) =>
@@ -749,23 +753,30 @@
       .replace(/\s+/g, ' ')
       .trim();
 
-  function mountAsk(slot) {
+  // opts.spot: the floating Ctrl+Space variant. It opens as a wide input pill ("compact"), grows
+  // into the chat on the first question, never closes on pointer-leave, and calls opts.onClose
+  // (X button, Esc) and opts.onAsk (first question) so its controller can drop the backdrop.
+  function mountAsk(slot, opts = {}) {
     if (!slot || slot.querySelector('.gcx-ask')) return null;
+    const spot = !!opts.spot;
+    const rowH = spot ? SPOT_ROW : ROW;
     // Everything this pill listens to on the page goes away with it (prefs can turn it off).
     const ac = new AbortController();
     const on = (target, type, fn, opts = {}) => target.addEventListener(type, fn, { ...opts, signal: ac.signal });
 
-    const root = gcx.el(`<div class="gcx-ask" data-state="idle">
+    const root = gcx.el(`<div class="gcx-ask${spot ? ' spot compact' : ''}" data-state="idle"${spot ? ' role="dialog" aria-label="Ask anything"' : ''}>
       <div class="gcx-ask-box" aria-live="polite">
+        ${spot ? '<span class="gcx-ask-grip" title="Drag to move" aria-hidden="true"></span>' : ''}
         <div class="gcx-ask-top"><button class="gcx-ask-new" type="button" title="Start a new chat" tabindex="-1">${icon(ICON.plus, 16)}New chat</button></div>
         <div class="gcx-ask-log"></div>
         <div class="gcx-ask-row" role="button" tabindex="0" aria-label="Ask anything about your classes" aria-expanded="false">
           <span class="gcx-ask-hint" aria-hidden="true">Ask anything…</span>
-          <input class="gcx-ask-input" type="text" autocomplete="off" spellcheck="false" placeholder="Ask about your classes" aria-label="Ask about your classes" tabindex="-1">
+          <input class="gcx-ask-input" type="text" autocomplete="off" spellcheck="false" placeholder="${spot ? 'Ask anything…' : 'Ask about your classes'}" aria-label="Ask about your classes" tabindex="-1">
           <button class="gcx-ask-send" type="button" tabindex="-1" aria-label="Send">${icon(ICON.send, 16)}</button>
         </div>
         <span class="gcx-ask-icon"><span class="gcx-ask-ai">AI</span></span>
       </div>
+      ${spot ? `<button class="gcx-ask-x" type="button" title="Close" aria-label="Close">${icon(ICON.close, 14)}</button>` : ''}
       <div class="gcx-ask-peek" aria-hidden="true"><span class="gcx-ask-pdot"></span><span class="gcx-ask-ptext"></span></div>
     </div>`);
     slot.append(root);
@@ -792,9 +803,15 @@
 
     // Size: the box grows left (width) and down (height) from the closed circle. Height is
     // measured from the content so it can animate; the log scrolls past a cap.
-    const maxH = () => Math.min(Math.round(innerHeight * 0.62), 560);
+    const maxH = () => (spot ? Math.min(Math.round(innerHeight * 0.72), 620) : Math.min(Math.round(innerHeight * 0.62), 560));
     function fit() {
-      if (state === 'idle') {
+      if (spot) {
+        // The floating panel's width comes from its holder; only the height moves.
+        if (root.classList.contains('compact')) {
+          box.style.height = rowH + 'px';
+          return;
+        }
+      } else if (state === 'idle') {
         box.style.width = box.style.height = '';
         return;
       }
@@ -803,15 +820,15 @@
         box.style.height = ROW + 'px';
         return;
       }
-      box.style.width = OPEN_W;
+      if (!spot) box.style.width = OPEN_W;
       // Measure the messages themselves; the log's scrollHeight never drops below its current box.
       const kids = log.children;
       const cs = getComputedStyle(log);
       const content = kids.length
         ? kids[kids.length - 1].getBoundingClientRect().bottom - kids[0].getBoundingClientRect().top + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
         : 0;
-      const want = top.offsetHeight + content + ROW + 2;
-      box.style.height = Math.min(maxH(), Math.max(ROW + 120, want)) + 'px';
+      const want = top.offsetHeight + content + rowH + 2;
+      box.style.height = Math.min(maxH(), Math.max(rowH + 120, want)) + 'px';
     }
     const ro = new ResizeObserver(() => state === 'open' && fit());
     ro.observe(log);
@@ -867,6 +884,7 @@
     // Tabbing out of the chat tucks it away, same as moving the pointer off it.
     on(root, 'focusout', () =>
       setTimeout(() => {
+        if (spot) return;
         if (state !== 'idle' && !root.contains(document.activeElement) && !root.matches(':hover') && !keepOpen()) setState('idle');
       }),
     );
@@ -893,7 +911,7 @@
       document,
       'pointermove',
       (e) => {
-        if (state === 'idle') return;
+        if (spot || state === 'idle') return;
         if (inside(e.clientX, e.clientY)) {
           clearTimeout(leaveTimer);
           leaveTimer = 0;
@@ -905,14 +923,20 @@
       { passive: true },
     );
     on(document.documentElement, 'pointerleave', () => {
-      if (state !== 'idle' && !keepOpen()) scheduleClose(400);
+      if (!spot && state !== 'idle' && !keepOpen()) scheduleClose(400);
     });
     on(document, 'keydown', (e) => {
-      if (e.key === 'Escape' && state !== 'idle' && (root.contains(document.activeElement) || state === 'open')) {
+      if (e.key !== 'Escape') return;
+      if (spot) {
+        if (opts.onClose) opts.onClose();
+        return;
+      }
+      if (state !== 'idle' && (root.contains(document.activeElement) || state === 'open')) {
         if (busy) stop();
         setState('idle');
       }
     });
+    if (spot) on(root.querySelector('.gcx-ask-x'), 'click', () => opts.onClose && opts.onClose());
 
     // ----- rendering
     function msgHtml(m) {
@@ -958,9 +982,13 @@
         e.preventDefault();
         if (!busy) ask(input.value);
       } else if (e.key === 'Escape') {
-        if (busy) stop();
-        setState('idle');
-        input.blur();
+        if (spot) {
+          if (opts.onClose) opts.onClose();
+        } else {
+          if (busy) stop();
+          setState('idle');
+          input.blur();
+        }
       }
       // Typing here is for the chat only: page-level keyboard shortcuts (Canvas's, BetterCampus's)
       // were swallowing the space bar.
@@ -993,9 +1021,9 @@
     };
     chrome.storage.onChanged.addListener(onKeyChange);
 
-    root.gcxDestroy = () => {
+    root.gcxDestroy = (keepAnswer = false) => {
       if (busy) stop();
-      if (run) run.discard = true;
+      if (run && !keepAnswer) run.discard = true;
       ac.abort();
       ro.disconnect();
       clearTimeout(leaveTimer);
@@ -1027,7 +1055,16 @@
         showKeyPrompt("Keys don't go in the chat.");
         return;
       }
+      if (asking && asking !== root && asking.isConnected) {
+        gcx.toast && gcx.toast('Still answering in the other chat');
+        return;
+      }
       keyMode = false;
+      if (spot && root.classList.contains('compact')) {
+        root.classList.remove('compact');
+        if (opts.onAsk) opts.onAsk();
+      }
+      asking = root;
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
       const cancelled = new Promise((r) => (me.onCancel = r));
@@ -1133,6 +1170,7 @@
       }
       cancelAnimationFrame(raf);
       if (run === me) run = null;
+      if (asking === root) asking = null;
       setBusy(false);
       bot.classList.remove('live');
       // "New chat" was pressed mid-answer: drop this answer instead of writing it into the new chat.
@@ -1165,9 +1203,111 @@
     }
 
     renderLog();
+    if (spot) setState('open');
     return root;
   }
   gcx.mountAsk = mountAsk;
+
+  // ---------------------------------------------------------------- Ctrl+Space: ask from anywhere
+  // The page blurs a little and a wide "Ask anything" pill appears in the middle, ready to type.
+  // It can be dragged anywhere; the first question clears the blur and the pill grows into the
+  // chat where it sits. Only the red X (or Esc, or Ctrl+Space again) closes it.
+  const prefsNow = () => (gcx.prefs ? gcx.prefs() : gcx.store.get('prefs', {}) || {});
+  const spotOn = () => {
+    const p = prefsNow();
+    return p.ask !== false && p.hotkey !== false;
+  };
+  let spotUi = null;
+  function openSpot() {
+    if (spotUi || !spotOn()) return;
+    const back = document.activeElement;
+    const bg = gcx.el('<div class="gcx-spot-bg" aria-hidden="true"></div>');
+    const holder = gcx.el('<div class="gcx-spot"></div>');
+    document.body.append(bg, holder);
+    const W = Math.min(600, innerWidth - 32);
+    holder.style.width = W + 'px';
+    holder.style.left = Math.round((innerWidth - W) / 2) + 'px';
+    holder.style.top = Math.round(innerHeight * 0.36) + 'px';
+    const ui = (spotUi = { bg, holder, back, root: null });
+    const clearBg = () => {
+      bg.classList.add('gone');
+      setTimeout(() => bg.remove(), 400);
+    };
+    ui.root = mountAsk(holder, { spot: true, onClose: closeSpot, onAsk: clearBg });
+    requestAnimationFrame(() => ui.root && ui.root.querySelector('.gcx-ask-input').focus({ preventScroll: true }));
+
+    // Keep it on screen: when it grows past the bottom edge, it slides up.
+    const clamp = () => {
+      const r = holder.getBoundingClientRect();
+      const left = Math.max(8, Math.min(r.left, innerWidth - r.width - 8));
+      const top = Math.max(8, Math.min(r.top, innerHeight - r.height - 8));
+      if (Math.round(left) !== Math.round(r.left)) holder.style.left = left + 'px';
+      if (Math.round(top) !== Math.round(r.top)) holder.style.top = top + 'px';
+    };
+    ui.ro = new ResizeObserver(() => !holder.classList.contains('dragging') && clamp());
+    ui.ro.observe(holder);
+    ui.onResize = () => clamp();
+    addEventListener('resize', ui.onResize);
+
+    // Drag by anything that isn't a control or the conversation text.
+    holder.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.target.closest('input, button, a, .gcx-ask-log')) return;
+      e.preventDefault();
+      const r = holder.getBoundingClientRect();
+      const dx = e.clientX - r.left;
+      const dy = e.clientY - r.top;
+      holder.classList.add('dragging');
+      // Listen on the window, not via pointer capture: capture on the moving element dropped
+      // events mid-drag in testing, leaving it stuck.
+      const move = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        holder.style.left = Math.max(8, Math.min(ev.clientX - dx, innerWidth - r.width - 8)) + 'px';
+        holder.style.top = Math.max(8, Math.min(ev.clientY - dy, innerHeight - holder.offsetHeight - 8)) + 'px';
+      };
+      const up = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        holder.classList.remove('dragging');
+        removeEventListener('pointermove', move, true);
+        removeEventListener('pointerup', up, true);
+        removeEventListener('pointercancel', up, true);
+      };
+      addEventListener('pointermove', move, true);
+      addEventListener('pointerup', up, true);
+      addEventListener('pointercancel', up, true);
+    });
+  }
+  function closeSpot() {
+    const ui = spotUi;
+    if (!ui) return;
+    spotUi = null;
+    ui.holder.classList.add('closing');
+    ui.bg.classList.add('gone');
+    ui.ro.disconnect();
+    removeEventListener('resize', ui.onResize);
+    setTimeout(() => {
+      if (ui.root) ui.root.gcxDestroy(true);
+      ui.holder.remove();
+      ui.bg.remove();
+    }, 200);
+    if (ui.back && ui.back.isConnected && ui.back.focus) ui.back.focus({ preventScroll: true });
+  }
+  // Capture on window so page shortcut handlers can't swallow the chord.
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (e.code !== 'Space' && e.key !== ' ')) return;
+      if (!spotUi && !spotOn()) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      if (spotUi) closeSpot();
+      else openSpot();
+    },
+    true,
+  );
+  window.addEventListener('gcx:prefs', () => {
+    if (spotUi && !spotOn()) closeSpot();
+  });
 
   // The dashboard's welcome row has a slot for it (classroom.js adds it). Settings can turn it off.
   const askOn = () => (gcx.store.get('prefs', {}) || {}).ask !== false;

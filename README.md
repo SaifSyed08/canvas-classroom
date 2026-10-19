@@ -40,6 +40,9 @@ BetterCampus still supplies the grade badges, the to-do sidebar and its theme co
   assignments, grades, feedback, modules, files (it can read PDFs, slides and docs), announcements,
   quizzes, discussions, pages, the syllabus, people and the inbox. It's read-only. Move the pointer away
   and it tucks back into the circle, with a one-line preview beside it while an answer is coming in.
+- **Ctrl + Space** (any Canvas page, can be turned off in settings): the page blurs and a wide "Ask anything"
+  pill opens in the middle, ready to type. Drag it anywhere; once you ask, the blur clears and it grows
+  into the chat right where you left it. Close it with the red X, Esc, or Ctrl + Space again.
 - **Files**: clicking a course file opens it over the page (PDFs with zoom and page count; slides and
   documents in Canvas's viewer) instead of leaving the page. Back, download, share and zoom are in the
   top bar; Esc or browser Back closes it. Ctrl/Cmd-click still opens the normal page.
