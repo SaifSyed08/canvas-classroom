@@ -22,11 +22,11 @@ BetterCampus still supplies the grade badges, the to-do sidebar and its theme co
     by folder. Includes a grade chip and a filter box. Open/closed state is remembered per course.
   - The original Canvas pages are still reachable from the More panel (or add `?gcx-original=1`).
 - **To-do** (`/?gcx=todo`): all courses' work in Assigned / Missing / Done tabs with a class filter.
-- **Dashboard**: a big greeting ("Boo! Saif", "Happy Friday, Saif!", "Exam 2 is due today, Saif.") picked from
+- **Dashboard**: a big greeting ("Boo! Greetings, Saif!", "Happy Friday, Saif!", "Exam 2 is due today, Saif.") picked from
   the time of day, weekday, season, holidays, how long you've been away and what's due soon. Next to it,
   the **AI** button asks questions about your classes (see below). Settings are a **Classroom** tab in
   BetterCampus's own settings (its gear, top right of the to-do list): greeting on or off, its tone (Calm,
-  Normal, or Extra with emoji) and font, the AI button and its Ctrl + Space shortcut, page animations,
+  Normal, or Extra with emoji) and font, the AI button and, separately, the Ctrl + Space shortcut, page animations,
   announcements easing in as you scroll, and **confetti when you submit** something, which goes seasonal
   around Halloween, Thanksgiving, Christmas, New Year, Valentine's, St. Patrick's and the Fourth.
   Cards show the course name and instructor over the image; below that, work for the next two weeks is

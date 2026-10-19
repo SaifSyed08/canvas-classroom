@@ -1215,7 +1215,8 @@
   const prefsNow = () => (gcx.prefs ? gcx.prefs() : gcx.store.get('prefs', {}) || {});
   const spotOn = () => {
     const p = prefsNow();
-    return p.ask !== false && p.hotkey !== false;
+    // Independent of the dashboard button: he can hide the button and keep the hotkey.
+    return p.hotkey !== false;
   };
   let spotUi = null;
   function openSpot() {

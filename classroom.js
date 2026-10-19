@@ -1842,8 +1842,8 @@
       (m === 3 && d === 17 && [[`Happy St. Patrick's Day, ${n}!`, '☘️']]) ||
       (m === 4 && d === 1 && [[`Nice try, ${n}. No pranks here.`, '🃏']]) ||
       (m === 7 && d === 4 && [[`Happy Fourth, ${n}!`, '🎆']]) ||
-      (m === 10 && d === 31 && [[`Happy Halloween, ${n}!`, '🎃'], [`Trick or treat, ${n}!`, '🍬'], [`Boo! ${n}`, '👻']]) ||
-      (m === 10 && d >= 24 && [[`Boo! ${n}`, '👻'], [`Spooky season, ${n}.`, '🎃'], [`Almost Halloween, ${n}!`, '🦇']]) ||
+      (m === 10 && d === 31 && [[`Happy Halloween, ${n}!`, '🎃'], [`Trick or treat, ${n}!`, '🍬'], [`Boo! Greetings, ${n}!`, '👻']]) ||
+      (m === 10 && d >= 24 && [[`Boo! Greetings, ${n}!`, '👻'], [`Spooky season, ${n}.`, '🎃'], [`Almost Halloween, ${n}!`, '🦇']]) ||
       (m === 11 && d === tg && [[`Happy Thanksgiving, ${n}!`, '🦃']]) ||
       (m === 11 && d > tg - 5 && d < tg && [[`Almost turkey time, ${n}!`, '🦃'], [`Break's close, ${n}.`, '🥧']]) ||
       (m === 12 && d >= 24 && d <= 25 && [[`Merry Christmas, ${n}!`, '🎄'], [`Happy holidays, ${n}!`, '🎁']]) ||
@@ -1940,8 +1940,8 @@
             ([k, label]) => `<button type="button" role="radio" data-font="${k}" aria-checked="${p.font === k}"><span class="gcx-font-${k}">Aa</span><small>${label}</small></button>`,
           ).join('')}</div>
         </div>
-        ${toggle('ask', 'Ask anything', 'The AI button next to the greeting')}
-        <div class="gcx-set-sub gcx-set-subrow" data-needs="ask">${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page')}</div>
+        ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
+        ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden')}
       </div>
       <div class="gcx-set-h">Motion</div>
       <div class="gcx-set-card">
