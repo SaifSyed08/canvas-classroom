@@ -2055,7 +2055,8 @@
     find();
   }
   const SETTINGS_CSS = `
-    .gcx-bc-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 24px; animation: gcx-set-in .28s cubic-bezier(.16,.84,.3,1) both; }
+    /* BetterCampus wraps its panel in pointer-events: none and opts each control back in. */
+    .gcx-bc-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 24px; pointer-events: auto; animation: gcx-set-in .28s cubic-bezier(.16,.84,.3,1) both; }
     .gcx-bc-panel-in { max-width: 640px; }
     @keyframes gcx-set-in { from { opacity: 0; transform: translateY(8px); } }
     .gcx-bc-tab { opacity: .6; position: relative; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
