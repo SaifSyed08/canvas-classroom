@@ -506,6 +506,8 @@
     'keydown',
     (e) => {
       if (!ov || !state) return;
+      // Keys typed in the Ctrl+Space chat belong to it, not the viewer behind.
+      if (e.target && e.target.closest && e.target.closest('.gcx-spot')) return;
       const inInput = e.target && e.target.closest && e.target.closest('.gcx-fv-pg');
       if (e.key === 'Escape' && !inInput) {
         e.preventDefault();

@@ -929,7 +929,8 @@
       if (e.key !== 'Escape') return;
       if (spot) {
         // Esc on some other Canvas menu or dialog shouldn't close this (and cut off its answer).
-        if (opts.onClose && (root.contains(document.activeElement) || root.classList.contains('compact'))) opts.onClose();
+        const a = document.activeElement;
+        if (opts.onClose && (root.contains(a) || a === document.body || !a || root.classList.contains('compact'))) opts.onClose();
         return;
       }
       if (state !== 'idle' && (root.contains(document.activeElement) || state === 'open')) {
@@ -961,6 +962,8 @@
     on(newBtn, 'click', () => {
       if (busy) stop();
       if (run) run.discard = true;
+      // The other chat may be the one answering; it shares this history, so stop it too.
+      if (asking && asking !== root && asking.gcxCancel) asking.gcxCancel();
       hist = { msgs: [], prev: null };
       live = '';
       unseen = false;
@@ -1006,7 +1009,12 @@
       fit();
     }
     function retryAfterKey() {
-      if (asking && asking !== root && asking.isConnected) return;
+      if (asking && asking !== root && asking.isConnected) {
+        // The other chat is re-asking; just clear this one's "Add key" prompt.
+        keyMode = false;
+        renderLog();
+        return;
+      }
       keyMode = false;
       const last = hist.msgs[hist.msgs.length - 1];
       if (last && last.error) hist.msgs.pop();
@@ -1067,6 +1075,10 @@
         if (opts.onAsk) opts.onAsk();
       }
       asking = root;
+      root.gcxCancel = () => {
+        stop();
+        if (run) run.discard = true;
+      };
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
       // Both chats share one history; if either starts a new chat meanwhile, this answer is stale.
@@ -1180,6 +1192,7 @@
       // "New chat" was pressed mid-answer: drop this answer instead of writing it into the new chat.
       if (me.discard || hist !== myHist) {
         bot.remove();
+        renderLog();
         return;
       }
       if (error) {
@@ -1228,6 +1241,10 @@
     const back = document.activeElement;
     const bg = gcx.el('<div class="gcx-spot-bg" aria-hidden="true"></div>');
     const holder = gcx.el('<div class="gcx-spot"></div>');
+    if (document.documentElement.classList.contains('gcx-fv-open')) {
+      bg.classList.add('over-fv');
+      holder.classList.add('over-fv');
+    }
     document.body.append(bg, holder);
     const W = Math.min(600, innerWidth - 32);
     holder.style.width = W + 'px';
