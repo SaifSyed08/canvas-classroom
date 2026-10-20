@@ -165,14 +165,14 @@ html.gcx .gcx-ask.peek-done .gcx-ask-peek { color: var(--gcx-text); }
 
 /* ---------- Ctrl+Space: the floating "Ask anything" pill / panel */
 html.gcx .gcx-spot-bg {
-  position: fixed; inset: 0; z-index: 2147482400; background: rgba(20, 24, 32, 0.14);
+  position: fixed; inset: 0; z-index: 2147483100; background: rgba(20, 24, 32, 0.14);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
   animation: gcx-spot-fade 0.25s ease both;
 }
 html.gcx .gcx-spot-bg.gone { opacity: 0; pointer-events: none; transition: opacity 0.35s ease; }
 @keyframes gcx-spot-fade { from { opacity: 0; } }
 html.gcx .gcx-spot {
-  position: fixed; z-index: 2147482500;
+  position: fixed; z-index: 2147483200;
   transition: top 0.35s cubic-bezier(.2,.8,.2,1), left 0.35s cubic-bezier(.2,.8,.2,1);
 }
 html.gcx .gcx-spot.dragging { transition: none; cursor: grabbing; }

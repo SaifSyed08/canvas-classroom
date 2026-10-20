@@ -466,7 +466,7 @@ html.gcx-still .gcx-ann.gcx-reveal { opacity: 1; transform: none; }
 
 /* toast */
 .gcx-toast {
-  position: fixed; left: 50%; bottom: 28px; z-index: 2147483000; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+  position: fixed; left: 50%; bottom: 28px; z-index: 2147483300; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
   padding: 12px 20px; border-radius: 10px; background: #323232; color: #fff; font-size: 14px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   transition: opacity 0.2s ease, transform 0.25s cubic-bezier(.2,.7,.2,1);
 }

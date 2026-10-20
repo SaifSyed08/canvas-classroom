@@ -520,8 +520,9 @@
   // Icon + color for a course's rail avatar, picked from a little panel next to the cursor.
   const LOOK_ICONS = ['', 'science', 'biotech', 'psych', 'calc', 'chart', 'code', 'book', 'pen', 'globe', 'palette', 'music', 'sport', 'leaf', 'bolt', 'star', 'heart', 'school', 'people', 'quiz'];
   const LOOK_COLORS = ['', '#d93025', '#e8710a', '#f9ab00', '#188038', '#12a4af', '#1a73e8', '#9334e6', '#c2185b', '#5f6368'];
+  let closeLook = null;
   function openLookPicker(item, ev) {
-    document.querySelector('.gcx-look')?.remove();
+    if (closeLook) closeLook();
     const id = Number(item.dataset.id);
     const c = (COURSES || []).find((x) => x.id === id);
     if (!c) return;
@@ -567,6 +568,7 @@
       save();
     });
     const close = () => {
+      if (closeLook === close) closeLook = null;
       pop.classList.add('gcx-out');
       html.classList.remove('gcx-rail-hold');
       setTimeout(() => pop.remove(), 160);
@@ -575,6 +577,7 @@
       document.removeEventListener('pointermove', onMove);
       clearTimeout(leaveTimer);
     };
+    closeLook = close;
     const outside = (e) => {
       if (!pop.contains(e.target) && !e.target.closest?.('.gcx-ri-dots')) close();
     };
@@ -1721,7 +1724,7 @@
     try {
       saved = JSON.parse(sessionStorage.getItem('gcx:hello') || 'null');
     } catch {}
-    if (saved && saved.tone === prefs().tone && Date.now() - saved.t < 3 * 36e5) {
+    if (saved && saved.kind !== 'urgent' && saved.tone === prefs().tone && Date.now() - saved.t < 3 * 36e5) {
       welcomeCtx.titled = true;
       welcomeCtx.fromCache = true;
       greetRefs = saved.refs || [];

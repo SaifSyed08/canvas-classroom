@@ -928,7 +928,8 @@
     on(document, 'keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (spot) {
-        if (opts.onClose) opts.onClose();
+        // Esc on some other Canvas menu or dialog shouldn't close this (and cut off its answer).
+        if (opts.onClose && (root.contains(document.activeElement) || root.classList.contains('compact'))) opts.onClose();
         return;
       }
       if (state !== 'idle' && (root.contains(document.activeElement) || state === 'open')) {
@@ -1005,6 +1006,7 @@
       fit();
     }
     function retryAfterKey() {
+      if (asking && asking !== root && asking.isConnected) return;
       keyMode = false;
       const last = hist.msgs[hist.msgs.length - 1];
       if (last && last.error) hist.msgs.pop();
@@ -1067,6 +1069,8 @@
       asking = root;
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
+      // Both chats share one history; if either starts a new chat meanwhile, this answer is stale.
+      const myHist = hist;
       const cancelled = new Promise((r) => (me.onCancel = r));
       live = 'Thinking…';
       unseen = false;
@@ -1174,7 +1178,7 @@
       setBusy(false);
       bot.classList.remove('live');
       // "New chat" was pressed mid-answer: drop this answer instead of writing it into the new chat.
-      if (me.discard) {
+      if (me.discard || hist !== myHist) {
         bot.remove();
         return;
       }
@@ -1297,6 +1301,8 @@
     'keydown',
     (e) => {
       if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (e.code !== 'Space' && e.key !== ' ')) return;
+      // Some keyboards switch input method with Ctrl+Space; leave that alone.
+      if (e.isComposing || e.key === 'Process') return;
       if (!spotUi && !spotOn()) return;
       e.preventDefault();
       e.stopPropagation();
