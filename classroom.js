@@ -2260,8 +2260,8 @@
 
 
   // BetterCampus's to-do items restyled like Google Classroom's to-do: flat rows, a round
-  // course-colored icon, the title, the course in small grey text, the due date muted (red when
-  // it's urgent). Only the look changes; BetterCampus's own checkboxes and menus still work.
+  // course-colored icon, the title, the course in small grey text, the due date muted (urgent
+  // ones keep their red pill). Only the look changes; BetterCampus's own checkboxes and menus still work.
   const maskIcon = (name) => `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='${ICONS[name]}'/></svg>`)}")`;
   const BC_CLASSROOM_CSS = `
     #bettercanvas-todo-list .group { border-radius: 10px !important; filter: none !important; overflow: visible !important; transition: background-color .15s ease !important; }
@@ -2283,8 +2283,7 @@
     #bettercanvas-todo-list .group > [class*="z-[1]"] > div { padding: 8px 6px 8px 0 !important; }
     #bettercanvas-todo-list .group p.text-course { color: var(--gcx-muted, #5f6368) !important; font-weight: 500 !important; font-size: 12px !important; }
     #bettercanvas-todo-list .group a[href] { font-size: 14px !important; font-weight: 500 !important; line-height: 1.3; }
-    #bettercanvas-todo-list .group [aria-label^="Urgent"] { background: none !important; color: var(--gcx-red, #d93025) !important; padding: 0 !important; font-weight: 600; }
-    #bettercanvas-todo-list .group [aria-label^="Urgent"] .font-semibold { font-weight: 600 !important; }
+    /* Urgent and past-due dates keep BetterCampus's red pill so they jump out. */
     #bettercanvas-todo-list > div > .bc-btn, #bettercanvas-todo-list > .bc-btn {
       height: 36px !important; border-radius: 18px !important; border: 1px solid var(--gcx-border, #dadce0) !important; box-shadow: none !important;
       background: transparent !important; color: var(--gcx-link, #1a73e8) !important; font-weight: 600 !important; font-size: 13px !important;
