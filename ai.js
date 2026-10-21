@@ -1267,6 +1267,17 @@
       if (Math.round(top) !== Math.round(r.top)) holder.style.top = top + 'px';
     };
     ui.ro = new ResizeObserver(() => !holder.classList.contains('dragging') && clamp());
+    // Once the viewer it opened over closes (or a new one opens from an answer link), drop back
+    // below the viewer so files open on top of the chat.
+    const fvOpen = () => document.documentElement.classList.contains('gcx-fv-open');
+    let wasFv = fvOpen();
+    ui.fvMo = new MutationObserver(() => {
+      if (fvOpen() === wasFv) return;
+      wasFv = fvOpen();
+      bg.classList.remove('over-fv');
+      holder.classList.remove('over-fv');
+    });
+    ui.fvMo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     ui.ro.observe(holder);
     ui.onResize = () => clamp();
     addEventListener('resize', ui.onResize);
@@ -1305,6 +1316,7 @@
     ui.holder.classList.add('closing');
     ui.bg.classList.add('gone');
     ui.ro.disconnect();
+    ui.fvMo.disconnect();
     removeEventListener('resize', ui.onResize);
     setTimeout(() => {
       if (ui.root) ui.root.gcxDestroy(true);
