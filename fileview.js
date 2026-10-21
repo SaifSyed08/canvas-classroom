@@ -67,14 +67,7 @@
   }
   const fmtSize = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n > 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`);
 
-  function toast(msg) {
-    if (typeof gcx.toast === 'function') return gcx.toast(msg);
-    const t = document.createElement('div');
-    t.className = 'gcx-fv-toast';
-    t.textContent = msg;
-    (ov || document.body).append(t);
-    setTimeout(() => t.remove(), 2200);
-  }
+  const toast = (msg) => gcx.toast(msg);
 
   // ---------------------------------------------------------------- overlay
   let ov = null; // the open overlay element
@@ -589,6 +582,4 @@
     },
     true,
   );
-
-  gcx.openFile = (fileId, opts = {}) => openFile(fileId, opts);
 })();

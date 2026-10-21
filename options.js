@@ -2,6 +2,7 @@
 const input = document.getElementById('key');
 const status = document.getElementById('status');
 
+// Mirrors background.js: a saved key wins, config.local.json is the fallback.
 async function show() {
   const { openaiKey } = await chrome.storage.local.get('openaiKey');
   let fromFile = false;
@@ -9,10 +10,10 @@ async function show() {
     const r = await fetch(chrome.runtime.getURL('config.local.json'));
     fromFile = r.ok && !!(await r.json()).openaiKey;
   } catch {}
-  status.textContent = fromFile
-    ? 'Using the key in config.local.json.'
-    : openaiKey
-      ? `Saved key ending in …${openaiKey.slice(-4)}.`
+  status.textContent = openaiKey
+    ? `Using your saved key ending in …${openaiKey.slice(-4)}.`
+    : fromFile
+      ? 'Using the key in config.local.json. A key saved here replaces it.'
       : 'No key saved yet.';
 }
 
@@ -24,7 +25,8 @@ document.getElementById('save').addEventListener('click', async () => {
   }
   await chrome.storage.local.set({ openaiKey: k });
   input.value = '';
-  status.textContent = 'Saved. Go back to Canvas and ask again.';
+  await show();
+  status.textContent += ' Go back to Canvas and ask again.';
 });
 document.getElementById('clear').addEventListener('click', async () => {
   await chrome.storage.local.remove('openaiKey');

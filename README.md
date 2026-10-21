@@ -14,7 +14,7 @@ BetterCampus still supplies the grade badges, the to-do sidebar and its theme co
   Every other tool (Syllabus, Zoom, Course Evaluations, NameCoach, Lectures Online, ...) is in the
   **More** panel: click it or press `/`, type to search, Enter to open.
   - **Home** (`/courses/:id`): banner with the course name, instructor and grade; an Upcoming panel
-    (missing + next two weeks); a **Pinned** panel under it where **+ Add** pins any course tool
+    (missing work from the last two weeks plus the next two weeks); a **Pinned** panel under it where **+ Add** pins any course tool
     (Instapoll, the original home page, ...) or any link, saved per course; the announcements stream.
   - **Classwork** (`/courses/:id/modules`): modules as topics, each item showing its grade, "Turned in",
     "Missing" or due date. A module's text headers become collapsible subgroups. Assignments that aren't
@@ -40,7 +40,7 @@ BetterCampus still supplies the grade badges, the to-do sidebar and its theme co
   assignments, grades, feedback, modules, files (it can read PDFs, slides and docs), announcements,
   quizzes, discussions, pages, the syllabus, people and the inbox. It's read-only. Move the pointer away
   and it tucks back into the circle, with a one-line preview beside it while an answer is coming in.
-- **Ctrl + Space** (any Canvas page, can be turned off in settings): the page blurs and a wide "Ask anything"
+- **Ctrl + Space** (any regular Canvas page, not sign-in or full-screen tool pages; can be turned off in settings): the page blurs and a wide "Ask anything"
   pill opens in the middle, ready to type. Drag it anywhere; once you ask, the blur clears and it grows
   into the chat right where you left it. Close it with the red X, Esc, or Ctrl + Space again.
 - **Files**: clicking a course file opens it over the page (PDFs with zoom and page count; slides and

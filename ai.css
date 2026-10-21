@@ -226,3 +226,6 @@ html.gcx .gcx-ask-x:active { transform: scale(0.95); }
    link in an answer opens the viewer on top. */
 html.gcx .gcx-spot-bg.over-fv { z-index: 2147483100; }
 html.gcx .gcx-spot.over-fv { z-index: 2147483200; }
+
+/* status line for screen readers (visually hidden) */
+html.gcx .gcx-ask-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

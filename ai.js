@@ -1,4 +1,5 @@
-// "Ask anything" pill: a question mark in a circle that opens into a small chat about his classes.
+// "Ask anything": a frosted "AI" button on the dashboard (and a Ctrl+Space chat on any page) that
+// opens into a small chat about his classes.
 // The model runs in background.js (it holds the OpenAI key); this file draws the pill,
 // keeps the history (sessionStorage, per tab) and runs the read-only Canvas tools.
 (() => {
@@ -10,6 +11,19 @@
   const DAY = 864e5;
   const MAX_OUT = 30000;
   const MAX_ROUNDS = 10;
+
+  // Modules with their items. Canvas leaves `items` out of big modules and gives `items_url` instead.
+  async function modulesWithItems(courseId) {
+    const mods = await api(`/courses/${courseId}/modules?include[]=items&per_page=50`, true);
+    await Promise.all(
+      mods
+        .filter((m) => !m.items && m.items_url)
+        .map(async (m) => {
+          m.items = await api(`${m.items_url}${m.items_url.includes('?') ? '&' : '?'}per_page=100`, true).catch(() => []);
+        }),
+    );
+    return mods;
+  }
 
   // ---------------------------------------------------------------- text helpers
   const decode = (s) =>
@@ -272,8 +286,7 @@
       description: 'The modules of a course and what is in each (pages, files, assignments, quizzes, links). Instructions and lecture material often live here.',
       parameters: obj({ course_id: ID }, ['course_id']),
       run: async ({ course_id }) => {
-        const mods = await api(`/courses/${course_id}/modules?include[]=items&per_page=50`, true);
-        for (const m of mods) if (!m.items && m.items_url) m.items = await api(`${m.items_url}${m.items_url.includes('?') ? '&' : '?'}per_page=100`, true).catch(() => []);
+        const mods = await modulesWithItems(course_id);
         return mods.map((m) => ({
           module: m.name,
           items: (m.items || []).map((i) => ({
@@ -323,7 +336,7 @@
           return out.length > 200 ? { note: `${out.length} files; showing the 200 newest. Narrow with search or folder.`, files: out.slice(0, 200) } : out;
         } catch (e) {
           if (![401, 403, 404].includes(e.status)) throw e;
-          const mods = await api(`/courses/${course_id}/modules?include[]=items&per_page=50`, true);
+          const mods = await modulesWithItems(course_id);
           let out = [];
           for (const m of mods)
             for (const i of m.items || []) if (i.type === 'File') out.push({ file_id: i.content_id, name: i.title, module: m.name, url: `/courses/${course_id}/files/${i.content_id}` });
@@ -765,7 +778,7 @@
     const on = (target, type, fn, opts = {}) => target.addEventListener(type, fn, { ...opts, signal: ac.signal });
 
     const root = gcx.el(`<div class="gcx-ask${spot ? ' spot compact' : ''}" data-state="idle"${spot ? ' role="dialog" aria-label="Ask anything"' : ''}>
-      <div class="gcx-ask-box" aria-live="polite">
+      <div class="gcx-ask-box">
         ${spot ? '<span class="gcx-ask-grip" title="Drag to move" aria-hidden="true"></span>' : ''}
         <div class="gcx-ask-top"><button class="gcx-ask-new" type="button" title="Start a new chat" tabindex="-1">${icon(ICON.plus, 16)}New chat</button></div>
         <div class="gcx-ask-log"></div>
@@ -778,6 +791,7 @@
       </div>
       ${spot ? `<button class="gcx-ask-x" type="button" title="Close" aria-label="Close">${icon(ICON.close, 14)}</button>` : ''}
       <div class="gcx-ask-peek" aria-hidden="true"><span class="gcx-ask-pdot"></span><span class="gcx-ask-ptext"></span></div>
+      <div class="gcx-ask-sr" role="status"></div>
     </div>`);
     slot.append(root);
     const box = root.querySelector('.gcx-ask-box');
@@ -789,6 +803,12 @@
     const log = root.querySelector('.gcx-ask-log');
     const peek = root.querySelector('.gcx-ask-peek');
     const peekText = root.querySelector('.gcx-ask-ptext');
+    // Screen readers get short status lines and the finished answer here, not every streamed word.
+    const srBox = root.querySelector('.gcx-ask-sr');
+    const announce = (t) => {
+      srBox.textContent = '';
+      setTimeout(() => (srBox.textContent = t), 30);
+    };
 
     let state = 'idle';
     let busy = false;
@@ -1110,6 +1130,7 @@
         scroll();
       };
       const status = (s) => {
+        announce(s + '…');
         if (!text) {
           live = s + '…';
           updatePeek();
@@ -1131,9 +1152,11 @@
 
       let finalId = null;
       let error = null;
+      let settled = false; // false after the loop = it used up every round
       for (let round = 0; round < MAX_ROUNDS; round++) {
         if (me.cancelled) {
           if (!text) text = '_Stopped._';
+          settled = true;
           break;
         }
         const res = await new Promise((resolve) => {
@@ -1167,14 +1190,17 @@
         }
         if (res.type === 'error') {
           error = res;
+          settled = true;
           break;
         }
         if (res.type === 'stopped') {
           if (!text) text = '_Stopped._';
+          settled = true;
           break;
         }
         if (res.type === 'done') {
           finalId = res.response_id;
+          settled = true;
           break;
         }
         // tool_calls
@@ -1204,9 +1230,18 @@
           return;
         }
         hist.msgs.push({ role: 'assistant', text: `Couldn't answer: ${error.message}`, error: true });
+        announce(`Couldn't answer: ${error.message}`);
+      } else if (!settled) {
+        // Ran out of lookups mid-answer. The thread on OpenAI's side is incomplete, so the next
+        // question replays the visible history instead of continuing it.
+        const note = `_Stopped after ${MAX_ROUNDS} lookups. Try a narrower question._`;
+        hist.msgs.push({ role: 'assistant', text: text ? `${text.trim()}\n\n${note}` : note });
+        hist.prev = null;
+        announce(`Stopped after ${MAX_ROUNDS} lookups. Try a narrower question.`);
       } else {
         hist.msgs.push({ role: 'assistant', text: text || '(no answer)' });
         if (finalId) hist.prev = finalId;
+        announce(previewText(text || 'No answer.').slice(0, 600));
       }
       saveHist();
       renderLog();
@@ -1229,7 +1264,7 @@
   // The page blurs a little and a wide "Ask anything" pill appears in the middle, ready to type.
   // It can be dragged anywhere; the first question clears the blur and the pill grows into the
   // chat where it sits. Only the red X (or Esc, or Ctrl+Space again) closes it.
-  const prefsNow = () => (gcx.prefs ? gcx.prefs() : gcx.store.get('prefs', {}) || {});
+  const prefsNow = () => gcx.prefs();
   const spotOn = () => {
     const p = prefsNow();
     // Independent of the dashboard button: he can hide the button and keep the hotkey.
@@ -1346,7 +1381,7 @@
   });
 
   // The dashboard's welcome row has a slot for it (classroom.js adds it). Settings can turn it off.
-  const askOn = () => (gcx.store.get('prefs', {}) || {}).ask !== false;
+  const askOn = () => gcx.prefs().ask !== false;
   let mounted = null;
   const sync = () => {
     if (!askOn()) {

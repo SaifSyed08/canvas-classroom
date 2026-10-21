@@ -42,7 +42,6 @@
     lock: 'M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z',
     chevron: 'M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z',
     list: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
-    check: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z',
     gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
     sync: 'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z',
     more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
@@ -106,7 +105,11 @@
   async function api(path, all = false) {
     let url = path.startsWith('http') ? path : location.origin + '/api/v1' + path;
     const out = [];
-    for (let page = 0; url && page < 30; page++) {
+    for (let page = 0; url; page++) {
+      if (page === 30) {
+        console.warn('[canvas-classroom] stopped after 30 pages of', path);
+        break;
+      }
       const r = await fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       if (!r.ok) throw Object.assign(new Error(`${r.status} ${path}`), { status: r.status });
       const data = JSON.parse((await r.text()).replace(/^while\(1\);/, ''));
@@ -151,15 +154,13 @@
         const v = r[cacheKey(k)];
         return v && v.v === CACHE_VERSION && Date.now() - v.t < CACHE_DAYS * 864e5 ? v.d : null;
       } catch {
-        return store.get('c:' + k, null);
+        return null; // extension reloaded underneath this page; just fetch fresh
       }
     },
     set(k, d) {
       try {
         chrome.storage.local.set({ [cacheKey(k)]: { v: CACHE_VERSION, t: Date.now(), d } }).catch(() => {});
-      } catch {
-        store.set('c:' + k, d);
-      }
+      } catch {}
     },
     // Drop entries nobody has refreshed in a month (old classes, other accounts).
     async sweep() {
@@ -233,14 +234,16 @@
     let n = String(c.name || c.code || '').trim();
     if (c.nick) return n;
     n = n.replace(/^(?:Fa|Sp|Su|Fall|Spring|Summer)\s?\d{2,4}\s*[-–:]\s*/i, '').replace(/\s*\([\d\s,–-]+\)\s*$/, '').trim();
-    if (n && n === n.toUpperCase() && /[A-Z]{3}/.test(n)) {
+    if (n && n === n.toUpperCase() && /\p{Lu}{3}/u.test(n)) {
       n = n
         .split(' ')
         .map((word, wi) =>
-          word.replace(/[A-Za-z]+/g, (seg, at) => {
+          word.replace(/\p{L}+/gu, (seg, at) => {
             if (KEEP_UPPER.test(seg)) return seg;
             const lower = seg.toLowerCase();
             if (wi > 0 && at === 0 && SMALL_WORDS.has(lower)) return lower;
+            // The "s" in WOMEN'S stays lowercase.
+            if (at > 0 && /['’]/.test(word[at - 1])) return lower;
             return lower[0].toUpperCase() + lower.slice(1);
           }),
         )
@@ -248,7 +251,8 @@
     }
     return n || c.code || '';
   }
-  const initial = (c) => (String(c.code || c.name || '?').trim()[0] || '?').toUpperCase();
+  const firstChar = (str) => [...String(str || '').trim()][0] || '?';
+  const initial = (c) => firstChar(c.code || c.name).toUpperCase();
   const teacherLine = (c) => {
     const t = (c && c.teachers) || [];
     if (!t.length) return '';
@@ -261,6 +265,22 @@
     return `/conversations?context_id=course_${c.id}`;
   };
 
+  // The course shape everything else uses; `f` is Canvas's course object (teachers, scores).
+  function toCourse(f, base) {
+    const enr = (f.enrollments || []).find((e) => e.type === 'student') || {};
+    return {
+      name: '',
+      nick: false,
+      code: '',
+      term: '',
+      ...base,
+      image: base.image || '',
+      color: base.color || '#1a73e8',
+      teachers: (f.teachers || []).map((t) => ({ id: t.id, name: t.display_name })),
+      score: enr.computed_current_score ?? null,
+      letter: enr.computed_current_grade ?? null,
+    };
+  }
   async function fetchCourses() {
     const [cards, colors, full] = await Promise.all([
       api('/dashboard/dashboard_cards'),
@@ -269,24 +289,24 @@
     ]);
     const custom = colors.custom_colors || {};
     const byId = new Map(full.map((c) => [c.id, c]));
-    return cards.map((d) => {
-      const f = byId.get(d.id) || {};
-      const enr = (f.enrollments || []).find((e) => e.type === 'student') || {};
-      return {
+    return cards.map((d) =>
+      toCourse(byId.get(d.id) || {}, {
         id: d.id,
         name: d.shortName,
         nick: !!d.originalName && d.shortName !== d.originalName,
         code: d.courseCode,
         term: d.term,
-        image: d.image || '',
-        color: custom[d.assetString] || d.color || '#1a73e8',
-        teachers: (f.teachers || []).map((t) => ({ id: t.id, name: t.display_name })),
-        score: enr.computed_current_score ?? null,
-        letter: enr.computed_current_grade ?? null,
-      };
-    });
+        image: d.image,
+        color: custom[d.assetString] || d.color,
+      }),
+    );
   }
 
+  // localStorage is per site, not per person; forget the last account's courses and name.
+  if (PAGE_USER && (store.get('me', null) || {}).id && String(store.get('me', null).id) !== PAGE_USER) {
+    store.set('courses', null);
+    store.set('me', null);
+  }
   let COURSES = store.get('courses', null);
   const coursesReady = fetchCourses()
     .then((c) => {
@@ -309,21 +329,16 @@
         api(`/courses/${id}?include[]=teachers&include[]=total_scores&include[]=term&include[]=course_image`),
         api('/users/self/colors').catch(() => ({})),
       ]);
-      const enr = (f.enrollments || []).find((e) => e.type === 'student') || {};
-      return {
+      return toCourse(f, {
         id,
         name: f.name,
-        nick: false,
         code: f.course_code,
         term: f.term ? f.term.name : '',
-        image: f.image_download_url || '',
-        color: (colors.custom_colors || {})['course_' + id] || '#1a73e8',
-        teachers: (f.teachers || []).map((t) => ({ id: t.id, name: t.display_name })),
-        score: enr.computed_current_score ?? null,
-        letter: enr.computed_current_grade ?? null,
-      };
+        image: f.image_download_url,
+        color: (colors.custom_colors || {})['course_' + id],
+      });
     } catch {
-      return { id, name: '', code: '', term: '', image: '', color: '#1a73e8', teachers: [], score: null };
+      return toCourse({}, { id });
     }
   }
 
@@ -472,15 +487,17 @@
         ${item('calendar', '/calendar', 'calendar', 'Calendar')}
         ${item('inbox', '/conversations', 'inbox', 'Inbox', `<span class="gcx-badge" ${unread ? '' : 'hidden'}>${unread}</span>`)}
         <button class="gcx-ri gcx-account" type="button" title="Account">
-          <span class="gcx-me">${avatarUrl ? '' : esc((me && me.name ? me.name[0] : '?').toUpperCase())}</span>
+          <span class="gcx-me">${avatarUrl ? '' : esc(firstChar(me && me.name).toUpperCase())}</span>
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc((me && me.name) || 'Account')}</span><span class="gcx-ri-sub">Account &amp; settings</span></span>
         </button>
       </div>`;
     if (avatarUrl) rail.querySelector('.gcx-me').style.backgroundImage = `url(${JSON.stringify(avatarUrl)})`;
     if (html.classList.contains('gcx-school') && typeof applySchoolPref === 'function') applySchoolPref();
+    if (fallbackSettings) addFallbackSettings();
   }
   const avatarInner = (c, look) => (look.icon && ICONS[look.icon] ? svg(look.icon, 18) : `<span class="gcx-av-l">${esc(initial(c))}</span>`);
   let unread = 0;
+  let fallbackSettings = false; // set when BetterCampus's settings panel never shows up
   renderRail(COURSES);
   coursesReady.then(renderRail);
   api('/users/self')
@@ -593,7 +610,8 @@
         const r = n.getBoundingClientRect();
         return e.clientX > r.left - m && e.clientX < r.right + m && e.clientY > r.top - m && e.clientY < r.bottom + m;
       };
-      const over = near(pop, 40) || near(item, 8);
+      const live = rail.querySelector(`.gcx-ri-course[data-id="${id}"]`) || item;
+      const over = near(pop, 40) || near(live, 8);
       if (over) {
         clearTimeout(leaveTimer);
         leaveTimer = 0;
@@ -606,6 +624,18 @@
   }
 
   // ---------------------------------------------------------------- course top bar
+  // The course menu, parsed once. Some course pages don't render it, so the last copy seen for
+  // this course stands in.
+  let tabsCache = null;
+  function courseTabs() {
+    if (tabsCache) return tabsCache;
+    const live = [...document.querySelectorAll('#section-tabs a')]
+      .map((a) => ({ label: tabLabel(a), href: a.getAttribute('href') || '' }))
+      .filter((t) => t.href && t.label);
+    if (live.length && COURSE_ID) store.set('tabs:' + COURSE_ID, live);
+    tabsCache = live.length ? live : (COURSE_ID && store.get('tabs:' + COURSE_ID, [])) || [];
+    return tabsCache;
+  }
   const CORE = { home: /^\/?$/, classwork: /^\/modules\/?$/, people: /^\/users\/?$/ };
   function tabLabel(a) {
     const c = a.cloneNode(true);
@@ -630,9 +660,7 @@
     const id = COURSE_ID;
     const base = `/courses/${id}`;
     const rest = location.pathname.slice(base.length);
-    const tabs = [...document.querySelectorAll('#section-tabs a')]
-      .map((a) => ({ label: tabLabel(a), href: a.getAttribute('href') || '' }))
-      .filter((t) => t.href && t.label);
+    const tabs = courseTabs();
     const hasPeople = !tabs.length || tabs.some((t) => /\/users\/?$/.test(t.href));
     // Canvas redirects a hidden tab back to course home, so courses without Modules
     // reach Classwork through the home URL instead.
@@ -756,7 +784,7 @@
       if (!panel.hidden && !e.target.closest('.gcx-cbar-actions')) open(false);
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented || html.classList.contains('gcx-fv-open')) return;
       const t = e.composedPath()[0] || e.target;
       if (!t.tagName || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
       e.preventDefault();
@@ -886,7 +914,7 @@
             const av = author.avatar && !/avatar-50\.png/.test(author.avatar) ? `data-av="${esc(author.avatar)}"` : '';
             return `<article class="gcx-card gcx-ann" style="--i:${Math.min(i, 8)}">
             <div class="gcx-ann-head">
-              <span class="gcx-ann-av" ${av}>${av ? '' : esc((author.name || '?')[0])}</span>
+              <span class="gcx-ann-av" ${av}>${av ? '' : esc(firstChar(author.name))}</span>
               <div class="gcx-ann-who"><b>${esc(author.name || 'Instructor')}</b><span>${when ? esc(shortDate(when) + ', ' + timeOf(when)) : ''}</span></div>
               ${a.read_state === 'unread' ? '<span class="gcx-ann-new">New</span>' : ''}
             </div>
@@ -991,14 +1019,18 @@
       if (e.target.closest('.gcx-links-add')) openPicker(e.target.closest('.gcx-links-add'));
     });
 
+    let closePicker = null;
     function openPicker(btn) {
-      document.querySelector('.gcx-picker')?.remove();
+      if (closePicker) {
+        closePicker();
+        return;
+      }
       const base = `/courses/${id}`;
       const pinned = new Set(links().map((l) => l.href));
       const options = [
-        ...[...document.querySelectorAll('#section-tabs a')].map((a) => ({ label: tabLabel(a), href: a.getAttribute('href') || '' })),
+        ...courseTabs(),
         { label: 'Original Canvas home page', href: `${base}?gcx-original=1`, icon: 'home' },
-        { label: 'Original modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' },
+        ...(hasTab(/\/modules\/?$/) ? [{ label: 'Original modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' }] : []),
       ].filter((o) => o.href && o.label && !pinned.has(o.href));
       const pop = el(`<div class="gcx-picker gcx-pop-panel" role="dialog" aria-label="Pin a link">
         <div class="gcx-more-search">${svg('search', 20)}<input type="text" placeholder="Search course tools" aria-label="Search course tools" autocomplete="off"></div>
@@ -1040,11 +1072,13 @@
         toast(`Pinned ${o.label}`);
       };
       const close = () => {
+        closePicker = null;
         pop.classList.add('gcx-out');
         btn.setAttribute('aria-expanded', 'false');
         setTimeout(() => pop.remove(), 160);
         document.removeEventListener('mousedown', outside, true);
       };
+      closePicker = close;
       const outside = (e) => {
         if (!pop.contains(e.target) && !btn.contains(e.target)) close();
       };
@@ -1085,6 +1119,10 @@
 
 
   // ----- Classwork: modules as topics, each item with its grade or due status
+  const dueStatus = (d, highlightSoon) =>
+    d < new Date()
+      ? { text: `Was due ${shortDate(d)}`, cls: '', done: false }
+      : { text: dueText(d), cls: highlightSoon && dayDiff(d) <= 1 ? 'soon' : '', done: false };
   function statusOf(a, details) {
     if (a) {
       const s = a.submission || {};
@@ -1094,17 +1132,10 @@
       if (s.workflow_state === 'graded' && s.score != null) return { text: pts ? `${fmt(s.score)}/${fmt(pts)}` : `${fmt(s.score)} pts`, cls: 'graded', done: true };
       if (s.missing) return { text: 'Missing', cls: 'missing', done: false };
       if (s.submitted_at) return { text: s.late ? 'Turned in late' : 'Turned in', cls: '', done: true };
-      if (a.due_at) {
-        const d = new Date(a.due_at);
-        if (d < new Date()) return { text: `Was due ${shortDate(d)}`, cls: '', done: false };
-        return { text: dueText(d), cls: dayDiff(d) <= 1 ? 'soon' : '', done: false };
-      }
+      if (a.due_at) return dueStatus(new Date(a.due_at), true);
       return { text: pts ? `${fmt(pts)} pts` : '', cls: '', done: false };
     }
-    if (details && details.due_at) {
-      const d = new Date(details.due_at);
-      return { text: d < new Date() ? `Was due ${shortDate(d)}` : dueText(d), cls: '', done: false };
-    }
+    if (details && details.due_at) return dueStatus(new Date(details.due_at), false);
     return { text: '', cls: '', done: false };
   }
   const KIND_ICON = { Assignment: 'assignment', Quiz: 'quiz', Discussion: 'discussion', File: 'file', Page: 'page', ExternalUrl: 'link', ExternalTool: 'tool' };
@@ -1112,7 +1143,7 @@
   function rowHtml(r, i = 0) {
     const st = statusOf(r.a, r.details);
     const locked = r.details && r.details.locked_for_user;
-    const sub = r.details && r.details.lock_explanation && locked ? r.details.lock_explanation.replace(/<[^>]+>/g, '') : '';
+    const sub = r.details && r.details.lock_explanation && locked ? htmlText(r.details.lock_explanation) : '';
     const pad = r.indent ? `padding-left:${16 + r.indent * 20}px;` : '';
     const host = r.ext ? hostOf(r.url) : '';
     return `<a class="gcx-row${st.done || r.kind === 'File' || r.kind === 'Page' ? ' done' : ''}${locked ? ' locked' : ''}" href="${esc(r.url)}"${
@@ -1197,6 +1228,7 @@
     hideLinkCard();
     fetch(a.dataset.gcxTrack, { credentials: 'same-origin' }).catch(() => {});
   });
+  const htmlText = (markup) => new DOMParser().parseFromString(markup, 'text/html').body.textContent.trim();
   const collapse = (inner) => `<div class="gcx-collapse"><div class="gcx-collapse-in">${inner}</div></div>`;
   // A collapsible subgroup (module text headers, file folders).
   const subHtml = (key, title, count, inner, closed, icon = 'folder') =>
@@ -1289,7 +1321,7 @@
       files: files.map((f) => ({ id: f.id, name: f.display_name, folder: f.folder_id, updated: f.updated_at, locked: !!f.locked_for_user })),
     };
   }
-  const hasTab = (re) => [...document.querySelectorAll('#section-tabs a')].some((a) => re.test(a.getAttribute('href') || ''));
+  const hasTab = (re) => courseTabs().some((t) => re.test(t.href));
 
   // Warm the Classwork cache while he's on any other page of the course.
   function prefetchClasswork(id) {
@@ -1337,7 +1369,7 @@
           fileId: it.type === 'File' ? it.content_id : null,
         });
       }
-      topics.push({ name: m.name, rows, tag: m.state === 'locked' ? 'Locked' : '' });
+      topics.push({ name: m.name, key: 'm:' + m.name, rows, tag: m.state === 'locked' ? 'Locked' : '' });
     }
     const kindOf = (a) => (a.quiz_id ? 'Quiz' : a.discussion_topic ? 'Discussion' : 'Assignment');
     for (const g of groups) {
@@ -1345,7 +1377,7 @@
         .filter((a) => !used.has(a.id))
         .sort((x, y) => (x.due_at ? Date.parse(x.due_at) : Infinity) - (y.due_at ? Date.parse(y.due_at) : Infinity))
         .map((a) => ({ kind: kindOf(a), title: a.name, url: a.html_url, a }));
-      if (rows.length) topics.push({ name: g.name, rows, tag: mods && mods.length ? 'Not in a module' : '' });
+      if (rows.length) topics.push({ name: g.name, key: 'g:' + g.name, rows, tag: mods && mods.length ? 'Not in a module' : '' });
     }
     if (hasTab(/\/files\/?$/)) topics.push({ name: 'All course files', rows: [], files: true });
     const missing = assigns.filter((a) => a.submission && a.submission.missing).length;
@@ -1388,6 +1420,7 @@
     return draw(root, '') || '<div class="gcx-empty">No files.</div>';
   }
 
+  const gradeChip = (c) => `${svg('grade', 20)}${c && c.score != null ? `Grade · ${esc(c.letter ? c.letter + ' · ' : '')}${esc(+c.score.toFixed(2))}%` : 'Grades'}`;
   async function renderClasswork(view, cPromise) {
     const id = COURSE_ID;
     view.innerHTML = `<div class="gcx-cw-head">${skeleton(1)}</div><div class="gcx-card gcx-pad">${skeleton(6)}</div>`;
@@ -1407,7 +1440,7 @@
       const typing = oldInput && document.activeElement === oldInput ? [oldInput.selectionStart, oldInput.selectionEnd] : null;
       view.innerHTML = `
       <div class="gcx-cw-head">
-        <a class="gcx-chip" href="/courses/${id}/grades">${svg('grade', 20)}${c && c.score != null ? `Grade · ${esc(c.letter ? c.letter + ' · ' : '')}${esc(+c.score.toFixed(2))}%` : 'Grades'}</a>
+        <a class="gcx-chip" href="/courses/${id}/grades">${gradeChip(c)}</a>
         ${missing ? `<span class="gcx-chip warn">${missing} missing</span>` : ''}
         ${dueThisWeek ? `<span class="gcx-chip">${dueThisWeek} due this week</span>` : ''}
         <span class="gcx-sync" ${fromCache ? '' : 'hidden'}>${svg('sync', 18)}Updating</span>
@@ -1419,15 +1452,15 @@
           topics.length
             ? topics
                 .map((t, i) => {
-                  const closed = t.files ? !closedSet.has('open:files') : closedSet.has(t.name);
-                  return `<section class="gcx-topic${closed ? ' closed' : ''}${t.files ? ' gcx-files-topic' : ''}" id="gcx-t${i}" data-k="${esc(t.files ? 'files' : t.name)}" style="--i:${Math.min(i, 8)}">
+                  const closed = t.files ? !closedSet.has('open:files') : closedSet.has(t.key);
+                  return `<section class="gcx-topic${closed ? ' closed' : ''}${t.files ? ' gcx-files-topic' : ''}" id="gcx-t${i}" data-k="${esc(t.files ? 'files' : t.key)}" style="--i:${Math.min(i, 8)}">
             <button class="gcx-topic-h" type="button" aria-expanded="${!closed}"><h2>${esc(t.name)}</h2>${t.tag ? `<span class="gcx-topic-tag">${esc(t.tag)}</span>` : ''}<span class="gcx-count">${
               t.files ? '' : t.rows.filter((r) => !r.header).length || ''
             }</span>${svg('chevron')}</button>
             <div class="gcx-topic-rows gcx-collapse"><div class="gcx-collapse-in">${
               t.files
                 ? `<div class="gcx-files-slot">${filesData ? filesTreeHtml(id, filesData, closedSet) : `<div class="gcx-pad">${skeleton(3)}</div>`}</div>`
-                : topicRowsHtml(t.rows, t.name, closedSet) || '<div class="gcx-empty">Nothing here yet.</div>'
+                : topicRowsHtml(t.rows, t.key, closedSet) || '<div class="gcx-empty">Nothing here yet.</div>'
             }</div></div></section>`;
                 })
                 .join('')
@@ -1538,6 +1571,8 @@
     cPromise.then((cc) => {
       c = cc;
       view.style.setProperty('--c', cc.color);
+      const chip = view.querySelector('.gcx-cw-head .gcx-chip');
+      if (chip) chip.innerHTML = gradeChip(cc);
     });
     if (c) view.style.setProperty('--c', c.color);
     try {
@@ -1558,9 +1593,9 @@
     view.innerHTML = `
       <div class="gcx-todo-head"><h1>To-do</h1><span class="gcx-sync" hidden>${svg('sync', 18)}Updating</span><select class="gcx-select" aria-label="Class"><option value="">All classes</option></select></div>
       <div class="gcx-seg" role="tablist">
-        <button type="button" data-tab="assigned">Assigned<span class="gcx-n"></span></button>
-        <button type="button" data-tab="missing">Missing<span class="gcx-n"></span></button>
-        <button type="button" data-tab="done">Done<span class="gcx-n"></span></button>
+        <button type="button" role="tab" data-tab="assigned">Assigned<span class="gcx-n"></span></button>
+        <button type="button" role="tab" data-tab="missing">Missing<span class="gcx-n"></span></button>
+        <button type="button" role="tab" data-tab="done">Done<span class="gcx-n"></span></button>
         <span class="gcx-seg-ink"></span>
       </div>
       <div class="gcx-todo-body"><div class="gcx-card">${skeleton(6)}</div></div>`;
@@ -1572,6 +1607,7 @@
     const select = view.querySelector('select');
     select.insertAdjacentHTML('beforeend', courses.map((c) => `<option value="${c.id}">${esc(prettyName(c))}</option>`).join(''));
     select.value = courseFilter;
+    if (select.value !== courseFilter) courseFilter = '';
 
     const fetchItems = async () => {
       const list = await coursesReady;
@@ -1648,6 +1684,7 @@
       const pool = items.filter((i) => !courseFilter || String(i.courseId) === courseFilter);
       view.querySelectorAll('.gcx-seg button').forEach((b) => {
         b.classList.toggle('on', b.dataset.tab === tab);
+        b.setAttribute('aria-selected', String(b.dataset.tab === tab));
         b.querySelector('.gcx-n').textContent = pool.filter(inTab[b.dataset.tab]).length || '';
       });
       moveInk();
@@ -1738,6 +1775,7 @@
   function enhanceCards() {
     const cards = document.querySelectorAll('.ic-DashboardCard');
     for (const card of cards) {
+      html.classList.add('gcx-cards');
       if (card.querySelector(':scope > .gcx-card-body')) continue;
       const link = card.querySelector('a.ic-DashboardCard__link, a[href^="/courses/"]');
       const id = Number(((link && link.getAttribute('href')) || '').match(/\/courses\/(\d+)/)?.[1]);
@@ -1939,6 +1977,8 @@
   // Most specific wins: something due within hours, a holiday, something due today, a long
   // absence, late night. Otherwise a random pick from time of day, weekday and season, never the
   // same line twice in a row. Tone: 'calm' (plain), 'normal', 'extra' (emoji, sillier lines).
+  // Day of November that Thanksgiving falls on (fourth Thursday).
+  const thanksgiving = (year) => ((4 - new Date(year, 10, 1).getDay() + 7) % 7) + 1 + 21;
   let greetRefs = []; // keys of the work items ('flagged', 'clear') the last greeting talked about
   let greetKind = ''; // which branch it came from: 'urgent', 'holiday', 'today' or ''
   function greeting(n, items, lastVisit = 0) {
@@ -1975,11 +2015,7 @@
       ]);
     }
 
-    const nthWeekday = (month, weekday, nth) => {
-      const x = new Date(now.getFullYear(), month - 1, 1);
-      return ((weekday - x.getDay() + 7) % 7) + 1 + (nth - 1) * 7;
-    };
-    const tg = nthWeekday(11, 4, 4); // Thanksgiving
+    const tg = thanksgiving(now.getFullYear());
     const holiday =
       (m === 1 && d === 1 && [[`Happy New Year, ${n}!`, '🎉'], [`New year, ${n}. Let's go.`, '🥳']]) ||
       (m === 2 && d === 14 && [[`Happy Valentine's Day, ${n}!`, '💘']]) ||
@@ -2222,8 +2258,39 @@
         new MutationObserver(debounce(bcInject, 60)).observe(bc.sr, { childList: true, subtree: true });
         bcInject();
       } else if (tries++ < 20) setTimeout(find, 750);
+      else addFallbackSettings();
     };
     find();
+  }
+  // Without BetterCampus there's no panel to host our tab, so the rail gets a Settings item that
+  // opens the same controls in a small panel.
+  function addFallbackSettings() {
+    fallbackSettings = true;
+    if (rail.querySelector('.gcx-fallback-set')) return;
+    const b = el(`<button class="gcx-ri gcx-fallback-set" type="button" aria-haspopup="dialog"><span class="gcx-ri-ic">${svg('gear')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">Settings</span></span></button>`);
+    rail.querySelector('.gcx-rail-bottom').prepend(b);
+    b.addEventListener('click', () => {
+      const old = document.querySelector('.gcx-fallback-panel');
+      if (old) return old.remove();
+      const pop = el(`<div class="gcx-fallback-panel gcx-pop-panel" role="dialog" aria-label="Classroom settings">${settingsHtml()}</div>`);
+      if (!document.getElementById('gcx-set-css')) {
+        const st = document.createElement('style');
+        st.id = 'gcx-set-css';
+        st.textContent = SETTINGS_CSS;
+        document.head.append(st);
+      }
+      document.body.append(pop);
+      bindSettings(pop);
+      const r = b.getBoundingClientRect();
+      pop.style.left = r.right + 8 + 'px';
+      pop.style.top = Math.max(12, innerHeight - pop.offsetHeight - 12) + 'px';
+      const outside = (e) => {
+        if (pop.contains(e.target) || b.contains(e.target)) return;
+        pop.remove();
+        document.removeEventListener('mousedown', outside, true);
+      };
+      document.addEventListener('mousedown', outside, true);
+    });
   }
   const SETTINGS_CSS = `
     /* BetterCampus wraps its panel in pointer-events: none and opts each control back in. */
@@ -2282,8 +2349,7 @@
     const now = new Date();
     const m = now.getMonth() + 1;
     const d = now.getDate();
-    const x = new Date(now.getFullYear(), 10, 1);
-    const tg = ((4 - x.getDay() + 7) % 7) + 1 + 21;
+    const tg = thanksgiving(now.getFullYear());
     if (m === 10 && d >= 15) return ['🎃', '👻', '🦇', '🍬', '🕷️'];
     if (m === 11 && d >= tg - 6 && d <= tg + 3) return ['🦃', '🍂', '🥧', '🌽'];
     if ((m === 12 && d === 31) || (m === 1 && d <= 2)) return ['🎉', '🥳', '✨', '🍾'];
@@ -2389,7 +2455,7 @@
     // One shared watcher; each Submit click just extends its deadline.
     let watchUntil = 0;
     let watcher = null;
-    const SUCCESS = /\b(submitted|submission (was )?successful)\b/i;
+    const SUCCESS = /(?<!\bnot\s)\bsubmitted\b|\bsubmission (was )?successful\b/i;
     const check = debounce(() => {
       if (Date.now() > watchUntil) {
         watcher.disconnect();
@@ -2608,10 +2674,7 @@
   }
 
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = {
-    api, esc, el, svg, ICONS, store, debounce, coursesReady, courseById, prettyName, planner, toast,
-    COURSE_ID, VIEW, getMe: () => me, prefs, confetti,
-  };
+  window.gcx = { api, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs };
 
   // ---------------------------------------------------------------- motion
   // Which way the next page should slide in. Course tabs are ordered Home, Classwork, People.

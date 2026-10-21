@@ -9,22 +9,22 @@ const REASONING = { effort: 'low' };
 const MAX_FILE = 25e6;
 const MAX_TEXT = 24000;
 
+// A key saved on the settings page wins, so a revoked key in config.local.json can be replaced
+// without editing the file. config.local.json is the fallback.
 async function getKey() {
+  const { openaiKey } = await chrome.storage.local.get('openaiKey');
+  if (openaiKey) return openaiKey;
   try {
     const r = await fetch(chrome.runtime.getURL('config.local.json'));
-    if (r.ok) {
-      const k = (await r.json()).openaiKey;
-      if (k) return k;
-    }
+    if (r.ok) return (await r.json()).openaiKey || '';
   } catch {}
-  const { openaiKey } = await chrome.storage.local.get('openaiKey');
-  return openaiKey || '';
+  return '';
 }
 
 // ---------------------------------------------------------------- files
 const decode = (s) =>
   s
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
     .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(+n))
     .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
     .replace(/&amp;/g, '&');
@@ -204,8 +204,6 @@ chrome.runtime.onConnect.addListener((port) => {
         }
         if (parts.length) input.push({ role: 'user', content: [{ type: 'input_text', text: '(Attached file contents for the tool call above.)' }, ...parts] });
         await stream(port, { instructions: msg.instructions, tools: msg.tools, input, previous_response_id: msg.previous_response_id }, ctrl.signal);
-      } else if (msg.type === 'ping') {
-        port.postMessage({ type: 'pong', hasKey: !!(await getKey()), model: MODEL });
       }
     } catch (e) {
       if (e.name !== 'AbortError') {

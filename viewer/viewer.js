@@ -454,7 +454,6 @@ window.addEventListener('message', (e) => {
   if (m.type === 'zoom') step(m.dir);
   else if (m.type === 'fit' && m.reset) applyZoom(MODE === 'pdf' ? autoZoom() : 1, null, 'auto');
   else if (m.type === 'fit') applyZoom(MODE === 'pdf' ? (fitMode === 'width' ? autoZoom() : widthZoom()) : 1, null, MODE === 'pdf' ? (fitMode === 'width' ? 'auto' : 'width') : 'auto');
-  else if (m.type === 'setZoom') applyZoom(Number(m.zoom) || 1);
   else if (m.type === 'goto') goto(Number(m.page) || 1);
   else if (m.type === 'focus') scroller.focus({ preventScroll: true });
 });
