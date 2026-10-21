@@ -50,6 +50,7 @@
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     folder: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     open: 'M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+    play: 'M8 5v14l11-7z',
     // course icons for the rail picker
     science: 'M19.8 18.4L14 10.67V6.5l1.35-1.69c.26-.33.03-.81-.39-.81H9.04c-.42 0-.65.48-.39.81L10 6.5v4.17L4.2 18.4c-.49.66-.02 1.6.8 1.6h14c.82 0 1.29-.94.8-1.6z',
     biotech: 'M7 19c-1.1 0-2 .9-2 2h14c0-1.1-.9-2-2-2h-4v-2h3c1.1 0 2-.9 2-2h-8c-1.66 0-3-1.34-3-3 0-1.09.59-2.04 1.46-2.56C8.17 9.03 8 8.54 8 8c0-.21.04-.42.09-.62A5.01 5.01 0 0 0 5 12c0 2.76 2.24 5 5 5v2H7zm3.56-12.18C11.15 6.55 11 6.15 11 5.7V4.7c0-.39-.31-.7-.7-.7h-.6c-.39 0-.7.31-.7.7v1c0 .45-.15.85-.44 1.12C8.23 7.13 8 7.55 8 8c0 .86.7 1.56 1.56 1.56.43 0 .82-.17 1.1-.45.28-.28.44-.67.44-1.11 0-.45-.23-.87-.54-1.18zM14.3 4.7l1.4-1.4 2.1 2.1-1.4 1.4zm-1.4 1.4l2.1 2.1-3.9 3.9-2.1-2.1z',
@@ -476,6 +477,7 @@
         </button>
       </div>`;
     if (avatarUrl) rail.querySelector('.gcx-me').style.backgroundImage = `url(${JSON.stringify(avatarUrl)})`;
+    if (html.classList.contains('gcx-school') && typeof applySchoolPref === 'function') applySchoolPref();
   }
   const avatarInner = (c, look) => (look.icon && ICONS[look.icon] ? svg(look.icon, 18) : `<span class="gcx-av-l">${esc(initial(c))}</span>`);
   let unread = 0;
@@ -904,10 +906,12 @@
       }
       if (anns.length >= 15) stream.append(el(`<a class="gcx-chip" style="align-self:center" href="/courses/${id}/announcements">Older announcements</a>`));
       stream.querySelectorAll('[data-av]').forEach((n) => (n.style.backgroundImage = `url(${JSON.stringify(n.dataset.av)})`));
-      if (prefs().annReveal && !stream.dataset.revealed && 'IntersectionObserver' in window) {
-        stream.dataset.revealed = '1';
-        const later = [...stream.querySelectorAll('.gcx-ann')].slice(5);
-        const io = new IntersectionObserver(
+      // Past the first two, announcements fade and slide up as they scroll into view. This runs
+      // on every draw (the fresh copy replaces the cached one), but anything already on screen or
+      // above it stays put so a refresh never hides what he's looking at.
+      if (stream.gcxIo) stream.gcxIo.disconnect();
+      if (prefs().annReveal && 'IntersectionObserver' in window) {
+        const io = (stream.gcxIo = new IntersectionObserver(
           (entries) => {
             for (const e of entries) {
               if (!e.isIntersecting) continue;
@@ -916,11 +920,12 @@
             }
           },
           { rootMargin: '0px 0px -8% 0px' },
-        );
-        later.forEach((n) => {
+        ));
+        for (const n of [...stream.querySelectorAll('.gcx-ann')].slice(2)) {
+          if (n.getBoundingClientRect().top < innerHeight) continue;
           n.classList.add('gcx-reveal');
           io.observe(n);
-        });
+        }
       }
       for (const art of stream.querySelectorAll('.gcx-ann')) {
         const body = art.querySelector('.gcx-ann-body');
@@ -1109,13 +1114,89 @@
     const locked = r.details && r.details.locked_for_user;
     const sub = r.details && r.details.lock_explanation && locked ? r.details.lock_explanation.replace(/<[^>]+>/g, '') : '';
     const pad = r.indent ? `padding-left:${16 + r.indent * 20}px;` : '';
+    const host = r.ext ? hostOf(r.url) : '';
     return `<a class="gcx-row${st.done || r.kind === 'File' || r.kind === 'Page' ? ' done' : ''}${locked ? ' locked' : ''}" href="${esc(r.url)}"${
       r.fileId ? ` data-gcx-file="${esc(r.fileId)}" data-gcx-course="${COURSE_ID}"` : ''
-    } data-q="${esc(r.title.toLowerCase())}" style="${pad}--i:${Math.min(i, 12)}">
+    }${r.ext ? ` target="_blank" rel="noopener noreferrer" data-gcx-ext="1"${r.track ? ` data-gcx-track="${esc(r.track)}"` : ''}` : ''} data-q="${esc(
+      r.title.toLowerCase(),
+    )}" style="${pad}--i:${Math.min(i, 12)}">
       <span class="gcx-row-ic">${svg(locked ? 'lock' : KIND_ICON[r.kind] || 'link', 20)}</span>
       <span class="gcx-row-main"><span class="gcx-row-title">${esc(r.title)}</span>${sub ? `<span class="gcx-row-sub">${esc(sub)}</span>` : ''}</span>
-      <span class="gcx-row-meta ${st.cls}">${esc(r.meta != null ? r.meta : st.text)}</span></a>`;
+      <span class="gcx-row-meta ${st.cls}">${host ? `${esc(host)}${svg('open', 14)}` : esc(r.meta != null ? r.meta : st.text)}</span></a>`;
   }
+  const hostOf = (u) => {
+    try {
+      return new URL(u).hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  };
+
+  // Hovering a web link shows a small card by the cursor: favicon, title and domain (and a
+  // thumbnail for YouTube). Titles come from the course itself; nothing is fetched from the site.
+  let linkCard = null;
+  let linkTimer = 0;
+  const ytId = (u) => {
+    try {
+      const x = new URL(u);
+      if (/(^|\.)youtu\.be$/.test(x.hostname)) return x.pathname.slice(1).split('/')[0];
+      if (/(^|\.)youtube\.com$/.test(x.hostname)) return x.searchParams.get('v') || (x.pathname.match(/^\/(?:embed|shorts|live)\/([\w-]{6,})/) || [])[1] || '';
+    } catch {}
+    return '';
+  };
+  function showLinkCard(a, ev) {
+    const url = a.href;
+    const host = hostOf(url);
+    if (!host) return;
+    const title = (a.querySelector('.gcx-row-title') || a).textContent.trim();
+    const yt = ytId(url);
+    if (!linkCard) {
+      linkCard = el('<div class="gcx-linkcard" role="tooltip"></div>');
+      document.body.append(linkCard);
+    }
+    linkCard.innerHTML = `${yt ? `<div class="gcx-lc-thumb"><img alt="" src="https://i.ytimg.com/vi/${esc(yt)}/mqdefault.jpg"><span>${svg('play', 28)}</span></div>` : ''}
+      <div class="gcx-lc-row"><span class="gcx-lc-fav"><img alt="" src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64"></span>
+      <span class="gcx-lc-tx"><b></b><small></small></span>${svg('open', 16)}</div>`;
+    linkCard.querySelector('b').textContent = title || host;
+    linkCard.querySelector('small').textContent = host;
+    // No favicon (or a blocked image): fall back to a plain link icon; a failed thumbnail just goes.
+    linkCard.querySelector('.gcx-lc-fav img').addEventListener('error', (e) => (e.target.parentElement.innerHTML = svg('link', 18)), { once: true });
+    linkCard.querySelector('.gcx-lc-thumb img')?.addEventListener('error', (e) => e.target.parentElement.remove(), { once: true });
+    linkCard.classList.add('show');
+    moveLinkCard(ev);
+  }
+  function moveLinkCard(ev) {
+    if (!linkCard || !linkCard.classList.contains('show')) return;
+    const w = linkCard.offsetWidth;
+    const h = linkCard.offsetHeight;
+    let x = ev.clientX + 18;
+    let y = ev.clientY + 20;
+    if (x + w > innerWidth - 12) x = ev.clientX - w - 14;
+    if (y + h > innerHeight - 12) y = ev.clientY - h - 14;
+    linkCard.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
+  }
+  const hideLinkCard = () => {
+    clearTimeout(linkTimer);
+    linkCard?.classList.remove('show');
+  };
+  document.addEventListener('pointerover', (e) => {
+    const a = e.target.closest && e.target.closest('a[data-gcx-ext]');
+    if (!a || (e.relatedTarget && a.contains(e.relatedTarget))) return;
+    clearTimeout(linkTimer);
+    linkTimer = setTimeout(() => showLinkCard(a, e), 280);
+  });
+  document.addEventListener('pointerout', (e) => {
+    const a = e.target.closest && e.target.closest('a[data-gcx-ext]');
+    if (a && !(e.relatedTarget && a.contains(e.relatedTarget))) hideLinkCard();
+  });
+  document.addEventListener('pointermove', (e) => linkCard && moveLinkCard(e), { passive: true });
+  document.addEventListener('scroll', hideLinkCard, { passive: true, capture: true });
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[data-gcx-track]');
+    if (!a) return;
+    hideLinkCard();
+    fetch(a.dataset.gcxTrack, { credentials: 'same-origin' }).catch(() => {});
+  });
   const collapse = (inner) => `<div class="gcx-collapse"><div class="gcx-collapse-in">${inner}</div></div>`;
   // A collapsible subgroup (module text headers, file folders).
   const subHtml = (key, title, count, inner, closed, icon = 'folder') =>
@@ -1245,7 +1326,11 @@
         rows.push({
           kind: it.type,
           title: it.title,
-          url: it.html_url || it.external_url || '#',
+          // Web links open the site itself in a new tab; Canvas's module-item URL is pinged
+          // alongside so "view this" requirements still count.
+          url: (it.type === 'ExternalUrl' && it.external_url) || it.html_url || it.external_url || '#',
+          ext: it.type === 'ExternalUrl' && !!it.external_url,
+          track: it.type === 'ExternalUrl' ? it.html_url : null,
           indent: it.indent || 0,
           a,
           details: it.content_details,
@@ -1705,9 +1790,65 @@
   }
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
-  const PREF_DEFAULTS = { greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, confetti: true, motion: true, annReveal: true };
+  const PREF_DEFAULTS = {
+    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, confetti: true, motion: true, annReveal: true,
+    school: false, shade: 1,
+  };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
+  // How dark the course images get behind their white titles (cards and the class banner).
+  const SHADES = [
+    ['Light', 0],
+    ['Medium', 1],
+    ['Strong', 2],
+    ['Max', 3],
+  ];
+  const applyShadePref = () => (html.dataset.gcxShade = String(prefs().shade));
+
+  // School colors: the rail takes the school's Canvas nav color (and logo), like stock Canvas,
+  // and the accent color follows it. Everything comes from Canvas's own brand variables.
+  function applySchoolPref() {
+    const on = prefs().school;
+    html.classList.toggle('gcx-school', on);
+    rail.querySelector('.gcx-rail-logo')?.remove();
+    document.querySelector('.gcx-school-mark')?.remove();
+    if (!on) {
+      html.style.removeProperty('--gcx-school');
+      html.style.removeProperty('--gcx-school-fg');
+      html.style.removeProperty('--gcx-link');
+      return;
+    }
+    const cs = getComputedStyle(html);
+    const nav = cs.getPropertyValue('--ic-brand-global-nav-bgd').trim() || cs.getPropertyValue('--ic-brand-primary').trim() || '#394b58';
+    const fg = cs.getPropertyValue('--ic-brand-global-nav-menu-item__text-color').trim() || (luminance(nav) > 0.55 ? '#1f1f1f' : '#ffffff');
+    html.style.setProperty('--gcx-school', nav);
+    html.style.setProperty('--gcx-school-fg', fg);
+    // Accent follows the school color unless it's too light to read on white.
+    if (luminance(nav) < 0.6) html.style.setProperty('--gcx-link', nav);
+    const logo = (cs.getPropertyValue('--ic-brand-header-image').match(/url\(["']?([^"')]+)/) || [])[1];
+    if (logo) {
+      const a = el(`<a class="gcx-rail-logo" href="/" aria-label="Dashboard"></a>`);
+      a.style.backgroundImage = `url(${JSON.stringify(logo)})`;
+      rail.prepend(a);
+    }
+    // The school's wordmark, the one Canvas puts at the top of the dashboard sidebar.
+    const mark = document.querySelector('.ic-sidebar-logo__image');
+    const side = document.getElementById('right-side-wrapper');
+    if (html.classList.contains('gcx-dash') && mark && mark.src && side) {
+      const box = el('<div class="gcx-school-mark"><img alt=""></div>');
+      box.querySelector('img').src = mark.src;
+      box.querySelector('img').alt = mark.alt || 'School logo';
+      side.prepend(box);
+    }
+  }
+  function luminance(color) {
+    const m = String(color).trim().match(/^#?([\da-f]{3}|[\da-f]{6})$/i);
+    if (!m) return 0.3;
+    let h = m[1];
+    if (h.length === 3) h = h.replace(/./g, (c) => c + c);
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
   function mountWelcome() {
     const anchor = document.getElementById('dashboard_header_container');
     if (!anchor || document.querySelector('.gcx-welcome')) return;
@@ -1946,10 +2087,20 @@
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden')}
       </div>
+      <div class="gcx-set-h">Look</div>
+      <div class="gcx-set-card">
+        ${toggle('school', 'School colors', "The menu rail in your school's Canvas color with its logo, and accents to match")}
+        <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Darken class images (so white titles stand out)</div>
+          <div class="gcx-set-tone" role="radiogroup" aria-label="Darken class images">${SHADES.map(
+            ([label, v]) => `<button type="button" role="radio" data-shade="${v}" aria-checked="${p.shade === v}">${label}</button>`,
+          ).join('')}</div>
+        </div>
+      </div>
       <div class="gcx-set-h">Motion</div>
       <div class="gcx-set-card">
         ${toggle('motion', 'Page animations', 'Slides between tabs, pages easing in')}
-        ${toggle('annReveal', 'Reveal announcements as you scroll', 'Past the first five, each one eases in when it comes into view')}
+        ${toggle('annReveal', 'Reveal announcements as you scroll', 'Past the first two, each one fades and slides up as it comes into view')}
       </div>
       <div class="gcx-set-h">Fun</div>
       <div class="gcx-set-card">
@@ -1963,6 +2114,8 @@
       store.set('prefs', { ...prefs(), ...patch });
       applyWelcomePrefs();
       applyFontPref();
+      applyShadePref();
+      if ('school' in patch) applySchoolPref();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
@@ -1976,7 +2129,11 @@
     box.addEventListener('click', (e) => {
       const t = e.target.closest('[data-tone]');
       const f = e.target.closest('[data-font]');
-      if (t) {
+      const sh = e.target.closest('[data-shade]');
+      if (sh) {
+        save({ shade: Number(sh.dataset.shade) });
+        box.querySelectorAll('[data-shade]').forEach((b) => b.setAttribute('aria-checked', String(b === sh)));
+      } else if (t) {
         save({ tone: t.dataset.tone });
         box.querySelectorAll('[data-tone]').forEach((b) => b.setAttribute('aria-checked', String(b === t)));
         if (welcomeCtx) setHello(greeting(welcomeCtx.name, welcomeCtx.items, welcomeCtx.lastVisit), true);
@@ -2548,6 +2705,8 @@
 
   // ---------------------------------------------------------------- boot
   applyFontPref();
+  applyShadePref();
+  applySchoolPref();
   html.classList.toggle('gcx-still', !prefs().motion);
   // Elements ease in one by one after a page change; stop once the page has settled so later
   // refreshes and redraws don't replay it.

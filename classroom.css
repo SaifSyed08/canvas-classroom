@@ -240,6 +240,7 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
   color: var(--gcx-text) !important; text-decoration: none !important;
 }
 .gcx-row:hover { background: var(--gcx-bg2); }
+.gcx-row:hover .gcx-row-title { color: var(--gcx-text) !important; }
 .gcx-row + .gcx-row { border-top: 1px solid var(--gcx-border); }
 .gcx-row-ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--c, var(--gcx-link)); color: #fff; }
 .gcx-row.done .gcx-row-ic { background: var(--gcx-bg2); color: var(--gcx-muted); }
@@ -346,7 +347,8 @@ html.gcx-dash .bettercampus-card-grade { z-index: 3; }
 .gcx-card-ov {
   position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: flex-end;
   padding: 14px 18px; color: #fff !important; text-decoration: none !important;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%);
+  /* !important: BetterCampus's card styles clear link backgrounds, which hid this gradient. */
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%) !important;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 .gcx-card-title {
@@ -429,11 +431,13 @@ html.gcx-enter.gcx-dash .ic-DashboardCard:nth-child(5) { animation-delay: 280ms;
 html.gcx-enter.gcx-dash .ic-DashboardCard:nth-child(n+6) { animation-delay: 330ms; }
 html.gcx-enter.gcx-dash #right-side-wrapper { animation: gcx-rise 0.5s 160ms cubic-bezier(.16,.84,.3,1) both; }
 /* announcements past the first five ease in as they scroll into view */
-.gcx-ann.gcx-reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.5s ease, transform 0.6s cubic-bezier(.16,.84,.3,1); }
-.gcx-ann.gcx-reveal.gcx-shown { opacity: 1; transform: none; }
+/* (an animation, not a transition, so the list's own entrance animation can't override it) */
+.gcx-stream .gcx-ann.gcx-reveal:not(.gcx-shown) { opacity: 0; animation: none !important; }
+.gcx-stream .gcx-ann.gcx-reveal.gcx-shown { animation: gcx-ann-in 0.65s cubic-bezier(.16,.84,.3,1) both !important; }
+@keyframes gcx-ann-in { from { opacity: 0; transform: translateY(36px) scale(0.97); } }
 /* "Page animations" off */
 html.gcx-still *, html.gcx-still *::before, html.gcx-still *::after { animation-duration: 0s !important; animation-delay: 0s !important; }
-html.gcx-still .gcx-ann.gcx-reveal { opacity: 1; transform: none; }
+html.gcx-still .gcx-stream .gcx-ann.gcx-reveal { opacity: 1 !important; }
 
 /* expand/collapse by animating the grid row from 0fr to 1fr */
 .gcx-collapse { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s cubic-bezier(.2,.7,.2,1), opacity 0.25s ease; }
@@ -599,3 +603,53 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 @media (prefers-reduced-motion: reduce) {
   html.gcx *, html.gcx *::before, html.gcx *::after { animation-duration: 0.01ms !important; animation-delay: 0s !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- web links in Classwork: domain on the right, preview card by the cursor */
+.gcx-row[data-gcx-ext] .gcx-row-meta { display: inline-flex; align-items: center; gap: 4px; }
+.gcx-row[data-gcx-ext] .gcx-row-meta .gcx-svg { opacity: 0.7; }
+.gcx-linkcard {
+  position: fixed; left: 0; top: 0; z-index: 2147483400; width: 280px; pointer-events: none; overflow: hidden;
+  background: var(--gcx-card); color: var(--gcx-text); border: 1px solid var(--gcx-border); border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); font-size: 13px;
+  opacity: 0; visibility: hidden; transition: opacity 0.15s ease, visibility 0s 0.15s;
+}
+.gcx-linkcard.show { opacity: 1; visibility: visible; transition: opacity 0.15s ease; }
+.gcx-lc-thumb { position: relative; aspect-ratio: 16 / 9; background: #000; }
+.gcx-lc-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.gcx-lc-thumb span { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
+.gcx-lc-thumb span .gcx-svg { width: 44px; height: 44px; padding: 8px; box-sizing: border-box; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
+.gcx-lc-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.gcx-lc-row > .gcx-svg { color: var(--gcx-muted); flex: none; }
+.gcx-lc-fav { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--gcx-bg2); color: var(--gcx-muted); }
+.gcx-lc-fav img { width: 18px; height: 18px; }
+.gcx-lc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gcx-lc-tx b { font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gcx-lc-tx small { color: var(--gcx-muted); font-size: 12px; }
+
+/* ---------- darker class images behind white titles (Settings > Look) */
+html[data-gcx-shade="0"] .gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%) !important; }
+html[data-gcx-shade="2"] .gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%) !important; }
+html[data-gcx-shade="3"] .gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%) !important; }
+html[data-gcx-shade="0"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%); }
+html[data-gcx-shade="2"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3)); }
+html[data-gcx-shade="3"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5)); }
+
+/* ---------- school colors (Settings > Look) */
+html.gcx-school #gcx-rail { background: var(--gcx-school); border-right-color: transparent; color: var(--gcx-school-fg); }
+html.gcx-school #gcx-rail :is(.gcx-ri, .gcx-brand, .gcx-burger) { color: var(--gcx-school-fg) !important; }
+html.gcx-school #gcx-rail :is(.gcx-ri-ic, .gcx-rail-label, .gcx-ri-sub) { color: color-mix(in srgb, var(--gcx-school-fg) 78%, transparent) !important; }
+html.gcx-school #gcx-rail .gcx-ri:hover .gcx-ri-name, html.gcx-school #gcx-rail .gcx-ri-name { color: var(--gcx-school-fg) !important; }
+html.gcx-school #gcx-rail .gcx-ri:hover .gcx-ri-sub { color: color-mix(in srgb, var(--gcx-school-fg) 78%, transparent) !important; }
+html.gcx-school #gcx-rail :is(.gcx-ri:hover, .gcx-ri:focus, .gcx-burger:hover) { background: color-mix(in srgb, var(--gcx-school-fg) 14%, transparent); }
+html.gcx-school #gcx-rail :is(.gcx-ri.on, .gcx-ri.on:hover) { background: color-mix(in srgb, var(--gcx-school-fg) 22%, transparent); }
+html.gcx-school #gcx-rail .gcx-ri.on .gcx-ri-ic { color: var(--gcx-school-fg) !important; }
+html.gcx-school #gcx-rail :is(.gcx-rail-sep, .gcx-rail-bottom) { border-color: color-mix(in srgb, var(--gcx-school-fg) 20%, transparent); }
+html.gcx-school #gcx-rail .gcx-rail-sep { background: color-mix(in srgb, var(--gcx-school-fg) 20%, transparent); }
+html.gcx-school #gcx-rail .gcx-av { box-shadow: 0 0 0 2px color-mix(in srgb, var(--gcx-school-fg) 35%, transparent); }
+html.gcx-school #gcx-rail .gcx-me { background-color: color-mix(in srgb, var(--gcx-school-fg) 20%, transparent); color: var(--gcx-school-fg) !important; }
+html.gcx-school #gcx-rail .gcx-ri-dots { color: var(--gcx-school-fg); }
+.gcx-rail-logo {
+  display: block; flex: none; height: 64px; margin: 6px 0 0; background: center / auto 48px no-repeat;
+}
+.gcx-school-mark { padding: 4px 4px 16px; text-align: center; }
+.gcx-school-mark img { max-width: 100%; max-height: 64px; object-fit: contain; }
