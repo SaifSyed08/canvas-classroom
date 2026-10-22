@@ -1169,7 +1169,7 @@
           port.onMessage.addListener((m) => {
             if (m.type === 'delta') {
               text += m.text;
-              if (!raf) raf = requestAnimationFrame(paint);
+              if (!raf) raf = setTimeout(() => requestAnimationFrame(paint), 80);
             } else if (m.type === 'tool_start') status((TOOL_BY.get(m.name) || {}).label || 'Looking things up');
             else resolve(m);
           });
@@ -1206,11 +1206,16 @@
         // tool_calls
         if (text && !/\n$/.test(text)) text += '\n\n';
         const outputs = await Promise.race([Promise.all(res.calls.map(runTool)), cancelled.then(() => null)]);
-        if (!outputs) continue; // stopped while tools ran; the loop head ends the turn
+        if (!outputs) {
+          // Stopped while tools ran.
+          settled = true;
+          if (!text) text = '_Stopped._';
+          break;
+        }
         status('Thinking');
         req = { type: 'continue', instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
       }
-      cancelAnimationFrame(raf);
+      clearTimeout(raf);
       if (run === me) run = null;
       if (asking === root) asking = null;
       setBusy(false);

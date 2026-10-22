@@ -89,7 +89,7 @@ html.gcx .gcx-ask-top {
 }
 html.gcx .gcx-ask-log {
   order: 2; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 18px 4px; cursor: auto;
-  scrollbar-width: thin; overscroll-behavior: contain;
+  overscroll-behavior: contain;
   opacity: 0; transition: opacity 0.15s ease;
 }
 html.gcx .gcx-ask[data-state='open'] :is(.gcx-ask-top, .gcx-ask-log) { opacity: 1; transition: opacity 0.3s ease 0.12s; }

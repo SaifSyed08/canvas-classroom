@@ -78,10 +78,11 @@ async function officeText(buf, ext) {
   }
   return null;
 }
+// Base64 in 3-byte-aligned chunks, so there's never one giant binary string in memory.
 function b64(buf) {
-  let s = '';
-  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
-  return btoa(s);
+  const parts = [];
+  for (let i = 0; i < buf.length; i += 0x7ffe) parts.push(btoa(String.fromCharCode.apply(null, buf.subarray(i, i + 0x7ffe))));
+  return parts.join('');
 }
 const TEXTY = /^(txt|md|csv|tsv|json|html?|xml|py|java|js|ts|c|cpp|h|r|rmd|m|tex|sql|ipynb|css|sh)$/;
 const IMAGE = /^(png|jpe?g|gif|webp)$/;
@@ -98,9 +99,18 @@ async function readFile(att) {
     host = u.protocol === 'https:' ? u.hostname : '';
   } catch {}
   if (!/(^|\.)(instructure\.com|inscloudgate\.net|amazonaws\.com)$/.test(host)) return { text: `Can't download ${att.name} from that address.` };
+  // Skip types it can't read before downloading anything (a lecture video, say).
+  const readable = (e, m) => e === 'pdf' || e === 'docx' || e === 'pptx' || IMAGE.test(e) || TEXTY.test(e) || /pdf|^image\/|^text\//.test(m);
+  if (!readable(ext, att.mime || '')) return { text: `${att.name} is a .${ext || '?'} file, which can't be read here. Link it instead.` };
   const r = await fetch(att.url, { credentials: 'include' });
   if (!r.ok) return { text: `Couldn't download ${att.name} (HTTP ${r.status}).` };
+  const len = Number(r.headers.get('content-length')) || 0;
+  if (len > MAX_FILE) {
+    r.body?.cancel();
+    return { text: `${att.name} is ${Math.round(len / 1e6)} MB, too big to read here.` };
+  }
   const buf = new Uint8Array(await r.arrayBuffer());
+  if (buf.length > MAX_FILE) return { text: `${att.name} is ${Math.round(buf.length / 1e6)} MB, too big to read here.` };
   const mime = att.mime || r.headers.get('content-type') || '';
   if (ext === 'pdf' || /pdf/.test(mime))
     return {

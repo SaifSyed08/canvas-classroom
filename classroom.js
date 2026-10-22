@@ -148,14 +148,19 @@
   })();
   const cacheKey = (k) => `c:${location.origin}|${PAGE_USER || 'anon'}|${k}`;
   const cache = {
-    async get(k) {
+    // { d: data, t: saved at } or null
+    async entry(k) {
       try {
         const r = await chrome.storage.local.get(cacheKey(k));
         const v = r[cacheKey(k)];
-        return v && v.v === CACHE_VERSION && Date.now() - v.t < CACHE_DAYS * 864e5 ? v.d : null;
+        return v && v.v === CACHE_VERSION && Date.now() - v.t < CACHE_DAYS * 864e5 ? v : null;
       } catch {
         return null; // extension reloaded underneath this page; just fetch fresh
       }
+    },
+    async get(k) {
+      const e = await cache.entry(k);
+      return e ? e.d : null;
     },
     set(k, d) {
       try {
@@ -176,7 +181,8 @@
   // Stale-while-revalidate: draw the cached copy at once, fetch, redraw only if it changed.
   // onData(data, fromCache). Throws only when there was no cached copy to fall back on.
   async function swr(key, fetcher, onData, revive = (x) => x) {
-    const cached = await cache.get(key);
+    const ent = await cache.entry(key);
+    const cached = ent ? ent.d : null;
     let shown = null;
     if (cached != null) {
       shown = JSON.stringify(cached);
@@ -190,8 +196,10 @@
       console.warn('[canvas-classroom] refresh failed, showing saved copy', key, e);
       return null;
     }
-    cache.set(key, fresh);
-    if (JSON.stringify(fresh) !== shown) onData(revive(fresh), false);
+    const now = JSON.stringify(fresh);
+    // Write only when something changed (or the copy is a day old, so the sweep keeps it).
+    if (now !== shown || !ent || Date.now() - ent.t > 864e5) cache.set(key, fresh);
+    if (now !== shown) onData(revive(fresh), false);
     return fresh;
   }
   const reviveItems = (list) => list.map((i) => ({ ...i, due: i.due ? new Date(i.due) : null }));
@@ -308,10 +316,14 @@
     store.set('me', null);
   }
   let COURSES = store.get('courses', null);
-  const coursesReady = fetchCourses()
+  const COURSES_TTL = 10 * 6e4;
+  const coursesReady = (COURSES && Date.now() - store.get('coursesAt', 0) < COURSES_TTL ? Promise.resolve(COURSES) : fetchCourses())
     .then((c) => {
-      COURSES = c;
-      store.set('courses', c);
+      if (c !== COURSES) {
+        COURSES = c;
+        store.set('courses', c);
+        store.set('coursesAt', Date.now());
+      }
       return c;
     })
     .catch((e) => {
@@ -496,23 +508,41 @@
     if (fallbackSettings) addFallbackSettings();
   }
   const avatarInner = (c, look) => (look.icon && ICONS[look.icon] ? svg(look.icon, 18) : `<span class="gcx-av-l">${esc(initial(c))}</span>`);
-  let unread = 0;
+  let unread = store.get('unread', 0);
   let fallbackSettings = false; // set when BetterCampus's settings panel never shows up
+  let railQueued = false;
+  const queueRail = () => {
+    if (railQueued) return;
+    railQueued = true;
+    requestAnimationFrame(() => {
+      railQueued = false;
+      renderRail(COURSES);
+    });
+  };
   renderRail(COURSES);
-  coursesReady.then(renderRail);
-  api('/users/self')
-    .then((u) => {
-      me = { id: u.id, name: u.short_name || u.name, avatar_url: u.avatar_url };
-      store.set('me', me);
-      renderRail(COURSES);
-    })
-    .catch(() => {});
-  api('/conversations/unread_count')
-    .then((r) => {
-      unread = Number(r.unread_count) || 0;
-      renderRail(COURSES);
-    })
-    .catch(() => {});
+  coursesReady.then((c) => c !== undefined && queueRail());
+  // Name/avatar change rarely (refresh daily); the unread count is kept for two minutes.
+  if (!me || Date.now() - store.get('meAt', 0) > 864e5)
+    api('/users/self')
+      .then((u) => {
+        me = { id: u.id, name: u.short_name || u.name, avatar_url: u.avatar_url };
+        store.set('me', me);
+        store.set('meAt', Date.now());
+        queueRail();
+      })
+      .catch(() => {});
+  if (Date.now() - store.get('unreadAt', 0) > 2 * 6e4)
+    api('/conversations/unread_count')
+      .then((r) => {
+        const n = Number(r.unread_count) || 0;
+        store.set('unread', n);
+        store.set('unreadAt', Date.now());
+        if (n !== unread) {
+          unread = n;
+          queueRail();
+        }
+      })
+      .catch(() => {});
 
   rail.addEventListener('click', (e) => {
     const dots = e.target.closest('.gcx-ri-dots');
@@ -859,7 +889,17 @@
     const paintBanner = (c) => {
       view.style.setProperty('--c', c.color);
       const banner = view.querySelector('.gcx-banner');
-      if (c.image) banner.style.backgroundImage = `url("${c.image.replace(/"/g, '%22')}")`;
+      // The fresh course data carries the same image under a new access token; swapping to that URL
+      // made the banner drop to plain color while it re-downloaded. Only change it for a new image.
+      const imgPath = (c.image || '').split('?')[0];
+      if (c.image && banner.dataset.img !== imgPath) {
+        banner.dataset.img = imgPath;
+        banner.style.backgroundImage = `url("${c.image.replace(/"/g, '%22')}")`;
+      }
+      const tx = banner.querySelector('.gcx-banner-tx');
+      const sig = [prettyName(c), c.code, c.term, teacherLine(c), c.score, c.letter].join('|');
+      if (tx.dataset.sig === sig) return;
+      tx.dataset.sig = sig;
       banner.querySelector('.gcx-banner-tx').innerHTML = `<h1>${esc(prettyName(c))}</h1><div>${esc([c.code, c.term].filter(Boolean).join(' · '))}</div>${
         c.teachers.length ? `<div>${esc(teacherLine(c))}</div>` : ''
       }`;
@@ -900,15 +940,82 @@
         replies: a.discussion_subentry_count || 0,
         author: { name: (a.author || {}).display_name, avatar: (a.author || {}).avatar_image_url },
       }));
-    const drawAnns = (anns) => {
-      if (!anns.length) {
+    // Classroom-style "posted a new assignment / new material" items from the last three weeks.
+    // Assignments count from when they opened (unlock date) if that's later than when they were made.
+    const POST_DAYS = 21;
+    const fetchPosts = async () => {
+      const since = Date.now() - POST_DAYS * DAY;
+      const now = Date.now();
+      const [assigns, files] = await Promise.all([
+        api(`/courses/${id}/assignments?per_page=100`, true).catch(() => []),
+        hasTab(/\/files\/?$/) ? api(`/courses/${id}/files?sort=created_at&order=desc&per_page=40`).catch(() => []) : Promise.resolve([]),
+      ]);
+      const posts = [];
+      for (const a of assigns) {
+        if (!a.published && a.published !== undefined) continue;
+        const opened = [a.created_at, a.unlock_at].filter(Boolean).map(Date.parse).filter((t) => t <= now);
+        const t = opened.length ? Math.max(...opened) : 0;
+        if (t >= since) posts.push({ kind: a.quiz_id ? 'quiz' : a.discussion_topic ? 'discussion' : 'assignment', t, title: a.name, url: a.html_url, due: a.due_at });
+      }
+      // Files posted the same day become one "posted N new materials" item.
+      const byDay = new Map();
+      for (const f of files) {
+        const t = Date.parse(f.created_at);
+        if (!(t >= since) || f.locked_for_user || f.hidden_for_user) continue;
+        const day = startOfDay(t).getTime();
+        if (!byDay.has(day)) byDay.set(day, { kind: 'files', t, files: [] });
+        const g = byDay.get(day);
+        g.t = Math.max(g.t, t);
+        g.files.push({ id: f.id, name: f.display_name });
+      }
+      posts.push(...byDay.values());
+      return posts;
+    };
+    const postHtml = (pst, i) => {
+      const c = COURSES && COURSES.find((x) => x.id === id);
+      const who = (c && c.teachers[0] && c.teachers[0].name) || 'Your instructor';
+      const when = new Date(pst.t);
+      const date = `${shortDate(when)}${dayDiff(when) === 0 ? ', ' + timeOf(when) : ''}`;
+      if (pst.kind === 'files') {
+        const shown = pst.files.slice(0, 4);
+        const more = pst.files.length - shown.length;
+        return `<article class="gcx-card gcx-post" style="--i:${Math.min(i, 8)}">
+          <div class="gcx-post-head"><span class="gcx-post-ic">${svg('file', 20)}</span>
+            <div class="gcx-post-tx"><span><b>${esc(who)}</b> posted ${pst.files.length === 1 ? 'a new material' : `${pst.files.length} new materials`}</span><small>${esc(date)}</small></div></div>
+          <div class="gcx-post-files">${shown
+            .map((f) => `<a class="gcx-post-file" href="/courses/${id}/files/${f.id}" data-gcx-file="${f.id}" data-gcx-course="${id}">${svg('file', 18)}<span>${esc(f.name)}</span></a>`)
+            .join('')}${more > 0 ? `<a class="gcx-post-more" href="/courses/${id}/files">+${more} more</a>` : ''}</div>
+        </article>`;
+      }
+      const noun = pst.kind === 'quiz' ? 'quiz' : pst.kind === 'discussion' ? 'discussion' : 'assignment';
+      return `<a class="gcx-card gcx-post gcx-post-link" href="${esc(pst.url)}" style="--i:${Math.min(i, 8)}">
+        <div class="gcx-post-head"><span class="gcx-post-ic">${svg(TYPE_ICON[pst.kind === 'discussion' ? 'discussion_topic' : pst.kind] || 'assignment', 20)}</span>
+          <div class="gcx-post-tx"><span><b>${esc(who)}</b> posted a new ${noun}: <b>${esc(pst.title)}</b></span><small>${esc(date)}${pst.due ? ' · ' + esc(dueText(new Date(pst.due))) : ''}</small></div></div>
+      </a>`;
+    };
+    let annsNow = null;
+    let postsNow = [];
+    const drawStream = () => {
+      if (!annsNow) return;
+      const anns = annsNow;
+      // Fresh data often differs only invisibly (signed image links in the message); redrawing
+      // then reloads avatars and re-measures "Show more", which made the links jump. Skip it.
+      const sig = JSON.stringify([
+        anns.map((a) => [a.title, a.posted_at, a.read_state, a.replies, htmlText(a.message || '').slice(0, 2000)]),
+        postsNow.map((x) => [x.kind, x.t, x.title, x.due, (x.files || []).map((f) => f.id)]),
+      ]);
+      if (stream.dataset.sig === sig) return;
+      stream.dataset.sig = sig;
+      if (!anns.length && !postsNow.length) {
         swapIn(stream, `<div class="gcx-card gcx-empty">No announcements yet.</div>`);
         return;
       }
+      const entries = [...anns.map((a) => ({ t: a.posted_at ? Date.parse(a.posted_at) : 0, a })), ...postsNow.map((p) => ({ t: p.t, p }))].sort((x, y) => y.t - x.t);
       swapIn(
         stream,
-        anns
-          .map((a, i) => {
+        entries
+          .map(({ a, p }, i) => {
+            if (p) return postHtml(p, i);
             const author = a.author || {};
             const when = a.posted_at ? new Date(a.posted_at) : null;
             const av = author.avatar && !/avatar-50\.png/.test(author.avatar) ? `data-av="${esc(author.avatar)}"` : '';
@@ -949,7 +1056,7 @@
           },
           { rootMargin: '0px 0px -8% 0px' },
         ));
-        for (const n of [...stream.querySelectorAll('.gcx-ann')].slice(2)) {
+        for (const n of [...stream.querySelectorAll('.gcx-ann, .gcx-post')].slice(2)) {
           if (n.getBoundingClientRect().top < innerHeight) continue;
           n.classList.add('gcx-reveal');
           io.observe(n);
@@ -977,12 +1084,17 @@
       }
     };
     barStart();
-    swr('home:ann:' + id, fetchAnns, (anns, fromCache) => {
-      drawAnns(anns, fromCache);
+    swr('home:ann:' + id, fetchAnns, (anns) => {
+      annsNow = anns;
+      drawStream();
       barDone();
     })
       .catch((e) => showError(stream, 'announcements', `/courses/${id}/announcements`, e))
       .finally(barDone);
+    swr('home:posts:' + id, fetchPosts, (posts) => {
+      postsNow = posts;
+      drawStream();
+    }).catch(() => {});
   }
 
   // ----- Pinned links under Upcoming: any course tool or URL, saved per course
@@ -1228,14 +1340,15 @@
     if (!linkCard || !linkCard.classList.contains('show')) return;
     const w = linkCard.offsetWidth;
     const h = linkCard.offsetHeight;
-    let x = ev.clientX + 18;
-    let y = ev.clientY + 20;
-    if (x + w > innerWidth - 12) x = ev.clientX - w - 14;
-    if (y + h > innerHeight - 12) y = ev.clientY - h - 14;
-    linkCard.style.transform = `translate(${Math.max(8, x)}px, ${Math.max(8, y)}px)`;
+    // Centered under the pointer, flipping above it near the bottom of the window.
+    const x = Math.min(Math.max(8, ev.clientX - w / 2), innerWidth - w - 8);
+    let y = ev.clientY + 16;
+    if (y + h > innerHeight - 8) y = ev.clientY - h - 12;
+    linkCard.style.transform = `translate(${x}px, ${Math.max(8, y)}px)`;
   }
   const hideLinkCard = () => {
     clearTimeout(linkTimer);
+    linkTimer = 0;
     if (linkCard) {
       linkCard.dataset.token = '';
       linkCard.classList.remove('show');
@@ -1243,7 +1356,11 @@
   };
   document.addEventListener('pointerover', (e) => {
     const a = e.target.closest && e.target.closest('a[data-gcx-ext]');
-    if (!a || (e.relatedTarget && a.contains(e.relatedTarget))) return;
+    if (!a) {
+      if (linkCard || linkTimer) hideLinkCard();
+      return;
+    }
+    if (e.relatedTarget && a.contains(e.relatedTarget)) return;
     clearTimeout(linkTimer);
     // A deliberate pause first: the card is for when he's lingering, not passing over.
     linkTimer = setTimeout(() => showLinkCard(a, lastPointer || e), 1200);
@@ -1365,7 +1482,9 @@
 
   // Warm the Classwork cache while he's on any other page of the course.
   function prefetchClasswork(id) {
-    const go = () => {
+    const go = async () => {
+      const ent = await cache.entry('cw:' + id);
+      if (ent && Date.now() - ent.t < 10 * 6e4) return;
       fetchClasswork(id)
         .then((d) => cache.set('cw:' + id, JSON.parse(JSON.stringify(d))))
         .catch(() => {});
@@ -1820,8 +1939,55 @@
 
   // ---------------------------------------------------------------- dashboard
   let dashItems = null; // planner items for the next two weeks (cached copy first, then fresh)
+
+  // While Canvas builds its cards, show last visit's finished cards (a snapshot) in their place,
+  // or, the first time, one placeholder card per class. Canvas's own loading state stays hidden
+  // (early.js adds gcx-dash-wait) until the real cards are ready, then they swap in place.
+  let ghosts = null;
+  const snapKey = () => 'dashsnap:' + (PAGE_USER || 'anon');
+  function mountGhosts() {
+    const container = document.getElementById('DashboardCard_Container');
+    if (!container || document.querySelector('.ic-DashboardCard .gcx-card-body')) return releaseGhosts();
+    const snap = store.get(snapKey(), null);
+    const n = (COURSES || []).length || 6;
+    const skeletonCard = `<div class="ic-DashboardCard gcx-skelcard"><div class="ic-DashboardCard__header"></div><div class="gcx-card-body">${skeleton(3)}</div></div>`;
+    const markup = snap || `<div class="ic-DashboardCard__box__container">${skeletonCard.repeat(n)}</div>`;
+    ghosts = el(`<div class="gcx-ghosts ic-DashboardCard__box" aria-hidden="true">${markup}</div>`);
+    ghosts.inert = true;
+    container.before(ghosts);
+    setTimeout(releaseGhosts, 10000); // never block the real cards for long
+  }
+  function releaseGhosts() {
+    if (ghosts) {
+      // The real cards take over the same spot without replaying the entrance animation.
+      html.classList.add('gcx-swapped');
+      ghosts.remove();
+      ghosts = null;
+    }
+    html.classList.remove('gcx-dash-wait');
+  }
+  // Real cards are ready once every one has its body and its due list (or placeholder) drawn.
+  function maybeReleaseGhosts() {
+    if (!ghosts && !html.classList.contains('gcx-dash-wait')) return;
+    const cards = [...document.querySelectorAll('#DashboardCard_Container .ic-DashboardCard')];
+    if (!cards.length) return;
+    const filled = cards.every((c) => c.querySelector('.gcx-card-body[data-color]'));
+    if (filled && (!dashItems || cards.every((c) => c.querySelector('.gcx-card-due-wrap[data-markup]')))) releaseGhosts();
+  }
+  // After a fresh load, keep a copy of the finished cards for next time.
+  const saveSnapshot = debounce(() => {
+    const box = document.querySelector('#DashboardCard_Container .ic-DashboardCard__box__container');
+    if (!box || box.querySelector('.gcx-skel')) return;
+    const copy = box.cloneNode(true);
+    copy.querySelectorAll('*').forEach((n) => {
+      for (const a of [...n.attributes]) if (/^on|^id$|^draggable$|^data-testid$/i.test(a.name)) n.removeAttribute(a.name);
+    });
+    copy.querySelectorAll('script, iframe').forEach((n) => n.remove());
+    const markup = copy.outerHTML;
+    if (markup.length < 300000) store.set(snapKey(), markup);
+  }, 800);
   function enhanceCards() {
-    const cards = document.querySelectorAll('.ic-DashboardCard');
+    const cards = document.querySelectorAll('#DashboardCard_Container .ic-DashboardCard');
     for (const card of cards) {
       html.classList.add('gcx-cards');
       if (card.querySelector(':scope > .gcx-card-body')) continue;
@@ -1854,6 +2020,7 @@
       foot.append(el(`<a class="gcx-iconbtn" href="${esc(emailHref(c))}" title="Email ${esc(who)}" aria-label="Email ${esc(who)}">${svg('mail', 22)}</a>`));
     }
     if (dashItems) fillCardDue(body);
+    maybeReleaseGhosts();
   }
   const CARD_LIMIT = 3;
   function fillCardDue(body) {
@@ -1872,7 +2039,8 @@
       soon.length > CARD_LIMIT ? `<a class="gcx-more-link" href="/?gcx=todo&course=${id}">${soon.length - CARD_LIMIT} more</a>` : '<span></span>';
   }
   function refreshCards() {
-    document.querySelectorAll('.gcx-card-body[data-color]').forEach(fillCardDue);
+    document.querySelectorAll('#DashboardCard_Container .gcx-card-body[data-color]').forEach(fillCardDue);
+    maybeReleaseGhosts();
   }
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
@@ -1909,8 +2077,11 @@
     const fg = cs.getPropertyValue('--ic-brand-global-nav-menu-item__text-color').trim() || (luminance(nav) > 0.55 ? '#1f1f1f' : '#ffffff');
     html.style.setProperty('--gcx-school', nav);
     html.style.setProperty('--gcx-school-fg', fg);
-    // Accent follows the school color unless it's too light to read on white.
-    if (luminance(nav) < 0.6) html.style.setProperty('--gcx-link', nav);
+    // Accent follows the school color only when it has real contrast with the page (light or dark).
+    const bg = rgbLuminance(getComputedStyle(document.body).backgroundColor);
+    const L = luminance(nav);
+    if ((Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3) html.style.setProperty('--gcx-link', nav);
+    else html.style.removeProperty('--gcx-link');
     const logo = (cs.getPropertyValue('--ic-brand-header-image').match(/url\(["']?([^"')]+)/) || [])[1];
     if (logo) {
       const a = el(`<a class="gcx-rail-logo" href="/" aria-label="Dashboard"></a>`);
@@ -1926,6 +2097,12 @@
       box.querySelector('img').alt = mark.alt || 'School logo';
       side.prepend(box);
     }
+  }
+  function rgbLuminance(rgb) {
+    const m = String(rgb).match(/(\d+(?:\.\d+)?)/g);
+    if (!m || m.length < 3) return 1;
+    const hex = '#' + m.slice(0, 3).map((v) => Math.round(+v).toString(16).padStart(2, '0')).join('');
+    return luminance(hex);
   }
   function luminance(color) {
     const m = String(color).trim().match(/^#?([\da-f]{3}|[\da-f]{6})$/i);
@@ -2590,7 +2767,16 @@
         @keyframes gcx-bc-in{from{opacity:0;transform:translateY(-4px)}}
         ${BC_CLASSROOM_CSS}`;
       sr.append(st);
-      new MutationObserver(debounce(() => applyBcTodo(sr), 60)).observe(sr, { childList: true, subtree: true, characterData: true });
+      let lastSig = '';
+      new MutationObserver(
+        debounce(() => {
+          const list = sr.getElementById('bettercanvas-todo-list');
+          const sig = list ? `${list.querySelectorAll('.group').length}|${list.textContent.length}|${list.childElementCount}` : '';
+          if (sig === lastSig) return;
+          lastSig = sig;
+          applyBcTodo(sr);
+        }, 60),
+      ).observe(sr, { childList: true, subtree: true, characterData: true });
     }
     applyBcTodo(sr);
     return true;
@@ -2806,8 +2992,14 @@
     for (const n of document.querySelectorAll('head style[id]')) if (THEME_STYLE.test(n.id)) themeSnap.set(n, n.textContent);
   };
   let themeBusy = false;
-  const themeObserver = new MutationObserver(() => {
-    if (themeBusy) return;
+  const touchesTheme = (records) =>
+    records.some((r) => {
+      const t = r.type === 'characterData' ? r.target.parentNode : r.target;
+      if (t && t.nodeName === 'STYLE' && THEME_STYLE.test(t.id || '')) return true;
+      return [...r.addedNodes, ...r.removedNodes].some((n) => n.nodeName === 'STYLE' && THEME_STYLE.test(n.id || ''));
+    });
+  const themeObserver = new MutationObserver((records) => {
+    if (themeBusy || !touchesTheme(records)) return;
     const changed = [...document.querySelectorAll('head style[id]')].filter((n) => THEME_STYLE.test(n.id) && themeSnap.get(n) !== n.textContent);
     const isTheme = changed.some((n) => n.id === 'darkcss' || n.id === 'bettercanvas-theme-preset');
     if (!changed.length || !isTheme || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -2870,6 +3062,7 @@
   setTimeout(() => html.classList.remove('gcx-enter'), 1600);
   if (html.classList.contains('gcx-dash')) {
     mountWelcome();
+    mountGhosts();
   }
   hookBcSettings();
   watchSubmissions();
@@ -2894,11 +3087,13 @@
         dashItems = items;
         refreshCards();
         updateWelcome(items, fromCache);
+        if (!fromCache) saveSnapshot();
       },
       reviveItems,
     ).catch((e) => {
       console.warn('[canvas-classroom] planner', e);
       dashItems = [];
+      releaseGhosts();
       document.querySelectorAll('.gcx-card-due-wrap').forEach((w) => (w.innerHTML = `<div class="gcx-due-none">Couldn't load assignments.</div>`));
       updateWelcome([], false, true);
     });

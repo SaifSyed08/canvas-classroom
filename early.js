@@ -25,7 +25,11 @@
     else if (course && rest === '/') view = q.get('gcx') === 'classwork' ? 'classwork' : 'home';
     else if (course && /^\/modules\/?$/.test(rest)) view = 'classwork';
   }
-  if (path === '/' && !view) html.classList.add('gcx-dash');
+  if (path === '/' && !view) {
+    html.classList.add('gcx-dash');
+    // Canvas's loading state stays hidden until our stand-in cards (or the real ones) are up.
+    html.classList.add('gcx-dash-wait');
+  }
 
   // Page transitions: the page we came from leaves a direction ('left'/'right' between
   // course tabs, 'in' when opening a class) and the view transition CSS reads it.

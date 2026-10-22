@@ -55,7 +55,7 @@ html:not(.gcx-pinned) #gcx-rail:has(:focus-visible) { box-shadow: 0 8px 28px rgb
 html.gcx-pinned #gcx-rail .gcx-burger { color: var(--gcx-text); }
 #gcx-rail .gcx-brand { margin-left: 12px; font-size: 22px; color: var(--gcx-text) !important; text-decoration: none !important; white-space: nowrap; }
 
-#gcx-rail .gcx-rail-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; padding-bottom: 8px; }
+#gcx-rail .gcx-rail-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; padding-bottom: 8px; }
 html:not(.gcx-pinned) #gcx-rail:not(:hover):not(:has(:focus-visible)) .gcx-rail-scroll { scrollbar-width: none; }
 #gcx-rail .gcx-rail-bottom { flex: none; border-top: 1px solid var(--gcx-border); padding: 6px 0; }
 #gcx-rail .gcx-rail-sep { height: 1px; background: var(--gcx-border); margin: 8px 0; }
@@ -266,7 +266,7 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 }
 #gcx-view .gcx-filter input[type="text"] { flex: 1; min-width: 0; border: 0 !important; outline: 0 !important; box-shadow: none !important; background: none !important; font: inherit; color: var(--gcx-text); margin: 0 !important; padding: 0 !important; height: auto !important; border-radius: 0 !important; appearance: none; }
 .gcx-cw { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
-.gcx-toc { position: sticky; top: 88px; display: flex; flex-direction: column; max-height: calc(100vh - 110px); overflow-y: auto; scrollbar-width: thin; }
+.gcx-toc { position: sticky; top: 88px; display: flex; flex-direction: column; max-height: calc(100vh - 110px); overflow-y: auto; }
 .gcx-toc a { padding: 8px 12px; border-radius: 0 18px 18px 0; color: var(--gcx-text) !important; font-size: 14px; line-height: 1.3; }
 .gcx-toc a:hover { background: var(--gcx-bg2); }
 .gcx-toc a.on { color: var(--c) !important; font-weight: 600; background: color-mix(in srgb, var(--c) 12%, transparent); }
@@ -326,7 +326,7 @@ html.gcx-dash .ic-DashboardCard {
   height: auto !important; align-self: stretch !important; background: var(--gcx-card);
   transition: box-shadow 0.2s ease;
 }
-html.gcx-dash .ic-DashboardCard:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important; }
+html.gcx-dash .ic-DashboardCard:hover { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14) !important; }
 html.gcx-dash .ic-DashboardCard__header { position: relative; height: 128px; flex: none; overflow: hidden; }
 html.gcx-dash .ic-DashboardCard__header_image,
 html.gcx-dash .ic-DashboardCard__header_hero { height: 128px !important; background-size: cover !important; background-position: center !important; }
@@ -412,7 +412,7 @@ html[data-gcx-font="canvas"] .gcx-hello { font-family: inherit !important; font-
 .gcx-slide-right { animation: gcx-slide-r 0.32s cubic-bezier(.2,.7,.2,1) both; }
 @keyframes gcx-slide-l { from { opacity: 0; transform: translateX(36px); } }
 @keyframes gcx-slide-r { from { opacity: 0; transform: translateX(-36px); } }
-.gcx-stagger :is(.gcx-grp, .gcx-topic, .gcx-ann) { animation: gcx-rise 0.4s calc(var(--i, 0) * 40ms) cubic-bezier(.2,.7,.2,1) both; }
+.gcx-stagger :is(.gcx-grp, .gcx-topic, .gcx-ann, .gcx-post) { animation: gcx-rise 0.4s calc(var(--i, 0) * 40ms) cubic-bezier(.2,.7,.2,1) both; }
 .gcx-stagger .gcx-row { animation: gcx-rise 0.35s calc(var(--i, 0) * 22ms + 60ms) cubic-bezier(.2,.7,.2,1) both; }
 /* After a page change the page's pieces ease in one at a time instead of the page moving as one. */
 html.gcx-enter :is(.gcx-welcome, .gcx-banner, .gcx-cw-head, .gcx-todo-head) { animation: gcx-rise 0.5s cubic-bezier(.16,.84,.3,1) both; }
@@ -427,12 +427,12 @@ html.gcx-enter.gcx-dash .ic-DashboardCard:nth-child(n+6) { animation-delay: 330m
 html.gcx-enter.gcx-dash #right-side-wrapper { animation: gcx-rise 0.5s 160ms cubic-bezier(.16,.84,.3,1) both; }
 /* announcements past the first five ease in as they scroll into view */
 /* (an animation, not a transition, so the list's own entrance animation can't override it) */
-.gcx-stream .gcx-ann.gcx-reveal:not(.gcx-shown) { opacity: 0; animation: none !important; }
-.gcx-stream .gcx-ann.gcx-reveal.gcx-shown { animation: gcx-ann-in 0.65s cubic-bezier(.16,.84,.3,1) both !important; }
+.gcx-stream :is(.gcx-ann, .gcx-post).gcx-reveal:not(.gcx-shown) { opacity: 0; animation: none !important; }
+.gcx-stream :is(.gcx-ann, .gcx-post).gcx-reveal.gcx-shown { animation: gcx-ann-in 0.65s cubic-bezier(.16,.84,.3,1) both !important; }
 @keyframes gcx-ann-in { from { opacity: 0; transform: translateY(36px) scale(0.97); } }
 /* "Page animations" off */
 html.gcx-still *, html.gcx-still *::before, html.gcx-still *::after { animation-duration: 0s !important; animation-delay: 0s !important; }
-html.gcx-still .gcx-stream .gcx-ann.gcx-reveal { opacity: 1 !important; }
+html.gcx-still .gcx-stream :is(.gcx-ann, .gcx-post).gcx-reveal { opacity: 1 !important; }
 
 /* expand/collapse by animating the grid row from 0fr to 1fr */
 .gcx-collapse { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.3s cubic-bezier(.2,.7,.2,1), opacity 0.25s ease; }
@@ -598,7 +598,7 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 .gcx-row[data-gcx-ext] .gcx-row-meta { display: inline-flex; align-items: center; gap: 4px; }
 .gcx-row[data-gcx-ext] .gcx-row-meta .gcx-svg { opacity: 0.7; }
 .gcx-linkcard {
-  position: fixed; left: 0; top: 0; z-index: 2147483400; width: 280px; pointer-events: none; overflow: hidden;
+  position: fixed; left: 0; top: 0; z-index: 2147483400; width: 220px; pointer-events: none; overflow: hidden;
   background: var(--gcx-card); color: var(--gcx-text); border: 1px solid var(--gcx-border); border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); font-size: 13px;
   opacity: 0; visibility: hidden; transition: opacity 0.15s ease, visibility 0s 0.15s;
@@ -607,13 +607,13 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 .gcx-lc-thumb { position: relative; aspect-ratio: 16 / 9; background: #000; }
 .gcx-lc-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .gcx-lc-thumb span { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; }
-.gcx-lc-thumb span .gcx-svg { width: 44px; height: 44px; padding: 8px; box-sizing: border-box; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
-.gcx-lc-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.gcx-lc-thumb span .gcx-svg { width: 34px; height: 34px; padding: 8px; box-sizing: border-box; border-radius: 50%; background: rgba(0, 0, 0, 0.55); }
+.gcx-lc-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; }
 .gcx-lc-row > .gcx-svg { color: var(--gcx-muted); flex: none; }
-.gcx-lc-fav { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--gcx-bg2); color: var(--gcx-muted); }
-.gcx-lc-fav img { width: 18px; height: 18px; }
+.gcx-lc-fav { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--gcx-bg2); color: var(--gcx-muted); }
+.gcx-lc-fav img { width: 16px; height: 16px; }
 .gcx-lc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.gcx-lc-tx b { font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.gcx-lc-tx b { font-weight: 600; font-size: 12.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .gcx-lc-tx small { color: var(--gcx-muted); font-size: 12px; }
 
 /* ---------- darker class images behind white titles (Settings > Look) */
@@ -660,3 +660,41 @@ html.gcx-pinned .gcx-progress { left: var(--gcx-rail-open); }
   transition: transform 0.2s ease-out;
 }
 @media (max-width: 767px) { .gcx-progress { left: 0; } }
+
+/* ---------- dashboard while loading: last visit's cards (or placeholders) stand in */
+html.gcx-dash-wait :is(#DashboardCard_Container, #dashboard_header_container) { display: none !important; }
+html.gcx-swapped.gcx-dash .ic-DashboardCard { animation: none !important; }
+.gcx-ghosts { pointer-events: none; }
+.gcx-skelcard .ic-DashboardCard__header { background: var(--gcx-bg2); animation: gcx-ghost-pulse 1.4s ease-in-out infinite; }
+.gcx-skelcard .gcx-card-body { padding: 18px 18px 22px; min-height: 120px; }
+.gcx-skelcard .gcx-skel { height: 16px; margin: 0 0 14px; }
+@keyframes gcx-ghost-pulse { 50% { opacity: 0.55; } }
+
+/* ---------- course Home: "posted a new assignment / new material" items in the stream */
+.gcx-post { display: block; padding: 14px 18px; color: var(--gcx-text) !important; text-decoration: none !important; transition: background-color 0.15s ease, box-shadow 0.15s ease; }
+.gcx-post-link:hover { background: var(--gcx-bg2); }
+.gcx-post-head { display: flex; align-items: center; gap: 14px; }
+.gcx-post-ic { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--c, var(--gcx-link)); color: #fff; }
+.gcx-post-tx { min-width: 0; display: flex; flex-direction: column; line-height: 1.35; }
+.gcx-post-tx span { overflow-wrap: anywhere; }
+.gcx-post-tx b { font-weight: 600; }
+.gcx-post-tx small { font-size: 12px; color: var(--gcx-muted); margin-top: 2px; }
+.gcx-post-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0 54px; }
+.gcx-post-file {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px 12px 6px 8px; border: 1px solid var(--gcx-border); border-radius: 8px;
+  color: var(--gcx-text) !important; text-decoration: none !important; font-size: 13px; transition: background-color 0.15s ease;
+}
+.gcx-post-file:hover { background: var(--gcx-bg2); }
+.gcx-post-file .gcx-svg { color: var(--c, var(--gcx-link)); flex: none; }
+.gcx-post-file span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.gcx-post-more { align-self: center; font-size: 13px; font-weight: 600; color: var(--gcx-link) !important; padding: 0 4px; }
+
+/* ---------- scrollbars: a slim rounded thumb on a clear track instead of Chrome's default */
+html.gcx::-webkit-scrollbar, html.gcx *::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+html.gcx::-webkit-scrollbar-track, html.gcx *::-webkit-scrollbar-track { background: transparent; }
+html.gcx::-webkit-scrollbar-thumb, html.gcx *::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--gcx-text) 22%, transparent) content-box; border: 3px solid transparent; border-radius: 8px; min-height: 40px;
+}
+html.gcx::-webkit-scrollbar-thumb:hover, html.gcx *::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--gcx-text) 38%, transparent); }
+html.gcx::-webkit-scrollbar-corner, html.gcx *::-webkit-scrollbar-corner { background: transparent; }
+html.gcx::-webkit-scrollbar-button, html.gcx *::-webkit-scrollbar-button { display: none; }
