@@ -646,3 +646,17 @@ html.gcx-school #gcx-rail .gcx-ri-dots { color: var(--gcx-school-fg); }
 
 /* settings panel when BetterCampus isn't there to host the Classroom tab */
 .gcx-fallback-panel { width: 400px; max-height: min(680px, 88vh); overflow-y: auto; padding: 8px 12px 14px; box-sizing: border-box; transform-origin: bottom left; }
+
+/* ---------- loading bar: across the page (not the rail), grey track filled in the course color */
+.gcx-progress {
+  position: fixed; top: 0; left: var(--gcx-rail); right: 0; height: 4px; z-index: 1002; pointer-events: none;
+  background: rgba(60, 64, 67, 0.35); opacity: 0; transition: opacity 0.25s ease, left 0.18s ease;
+}
+html.gcx-pinned .gcx-progress { left: var(--gcx-rail-open); }
+.gcx-progress.on { opacity: 1; }
+.gcx-progress.done { opacity: 0; transition: opacity 0.35s ease 0.15s; }
+.gcx-progress-fill {
+  height: 100%; background: var(--c, var(--gcx-link)); transform-origin: left; transform: scaleX(var(--p, 0));
+  transition: transform 0.2s ease-out;
+}
+@media (max-width: 767px) { .gcx-progress { left: 0; } }

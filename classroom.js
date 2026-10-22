@@ -976,7 +976,13 @@
         body.querySelectorAll('img').forEach((img) => img.addEventListener('load', measure, { once: true }));
       }
     };
-    swr('home:ann:' + id, fetchAnns, drawAnns).catch((e) => showError(stream, 'announcements', `/courses/${id}/announcements`, e));
+    barStart();
+    swr('home:ann:' + id, fetchAnns, (anns, fromCache) => {
+      drawAnns(anns, fromCache);
+      barDone();
+    })
+      .catch((e) => showError(stream, 'announcements', `/courses/${id}/announcements`, e))
+      .finally(barDone);
   }
 
   // ----- Pinned links under Upcoming: any course tool or URL, saved per course
@@ -1175,7 +1181,14 @@
     } catch {}
     return '';
   };
+  let lastPointer = null;
   function showLinkCard(a, ev) {
+    if (!a.matches(':hover')) return;
+    // Not while the page itself is still loading.
+    if (document.readyState !== 'complete') {
+      addEventListener('load', () => showLinkCard(a, lastPointer || ev), { once: true });
+      return;
+    }
     const url = a.href;
     const host = hostOf(url);
     if (!host) return;
@@ -1193,8 +1206,23 @@
     // No favicon (or a blocked image): fall back to a plain link icon; a failed thumbnail just goes.
     linkCard.querySelector('.gcx-lc-fav img').addEventListener('error', (e) => (e.target.parentElement.innerHTML = svg('link', 18)), { once: true });
     linkCard.querySelector('.gcx-lc-thumb img')?.addEventListener('error', (e) => e.target.parentElement.remove(), { once: true });
-    linkCard.classList.add('show');
-    moveLinkCard(ev);
+    // Only appear once the favicon (and thumbnail) have arrived, so it never pops in half-built.
+    const imgs = [...linkCard.querySelectorAll('img')];
+    const settled = (img) =>
+      img.complete
+        ? null
+        : new Promise((r) => {
+            img.addEventListener('load', r, { once: true });
+            img.addEventListener('error', r, { once: true });
+          });
+    const ready = Promise.all(imgs.map(settled));
+    const card = linkCard;
+    const token = (card.dataset.token = String(Math.random()));
+    Promise.race([ready, new Promise((r) => setTimeout(r, 900))]).then(() => {
+      if (card.dataset.token !== token || !a.matches(':hover')) return;
+      card.classList.add('show');
+      moveLinkCard(lastPointer || ev);
+    });
   }
   function moveLinkCard(ev) {
     if (!linkCard || !linkCard.classList.contains('show')) return;
@@ -1208,19 +1236,31 @@
   }
   const hideLinkCard = () => {
     clearTimeout(linkTimer);
-    linkCard?.classList.remove('show');
+    if (linkCard) {
+      linkCard.dataset.token = '';
+      linkCard.classList.remove('show');
+    }
   };
   document.addEventListener('pointerover', (e) => {
     const a = e.target.closest && e.target.closest('a[data-gcx-ext]');
     if (!a || (e.relatedTarget && a.contains(e.relatedTarget))) return;
     clearTimeout(linkTimer);
-    linkTimer = setTimeout(() => showLinkCard(a, e), 280);
+    // A deliberate pause first: the card is for when he's lingering, not passing over.
+    linkTimer = setTimeout(() => showLinkCard(a, lastPointer || e), 1200);
   });
   document.addEventListener('pointerout', (e) => {
     const a = e.target.closest && e.target.closest('a[data-gcx-ext]');
     if (a && !(e.relatedTarget && a.contains(e.relatedTarget))) hideLinkCard();
   });
-  document.addEventListener('pointermove', (e) => linkCard && moveLinkCard(e), { passive: true });
+  document.addEventListener(
+    'pointermove',
+    (e) => {
+      if (!linkTimer && !linkCard) return;
+      lastPointer = e;
+      if (linkCard) moveLinkCard(e);
+    },
+    { passive: true },
+  );
   document.addEventListener('scroll', hideLinkCard, { passive: true, capture: true });
   document.addEventListener('click', (e) => {
     const a = e.target.closest && e.target.closest('a[data-gcx-track]');
@@ -1576,10 +1616,15 @@
     });
     if (c) view.style.setProperty('--c', c.color);
     try {
-      await swr('cw:' + id, () => fetchClasswork(id), (d, fromCache) => draw(d, fromCache));
+      barStart();
+      await swr('cw:' + id, () => fetchClasswork(id), (d, fromCache) => {
+        draw(d, fromCache);
+        barDone();
+      });
       const badge = view.querySelector('.gcx-sync');
       if (badge) badge.hidden = true;
     } catch (e) {
+      barDone();
       return showError(view, 'classwork', hasTab(/\/modules\/?$/) ? `/courses/${id}/modules?gcx-original=1` : `/courses/${id}?gcx-original=1`, e);
     }
   }
@@ -1752,6 +1797,7 @@
     // Saved list first (instant), then the fresh one; redraws only if something changed.
     const syncBadge = view.querySelector('.gcx-sync');
     syncBadge.hidden = false;
+    barStart();
     try {
       await swr(
         'todo:items',
@@ -1760,12 +1806,14 @@
           const first = !items;
           items = data;
           draw(first ? 'fade' : '');
+          barDone();
         },
         reviveItems,
       );
     } catch (e) {
       showError(view.querySelector('.gcx-todo-body'), 'your to-do list', '/', e);
     } finally {
+      barDone();
       syncBadge.hidden = true;
     }
   }
@@ -2676,6 +2724,45 @@
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
   window.gcx = { api, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs };
 
+  // ---------------------------------------------------------------- loading bar
+  // A thin bar across the top of the page (not the rail): dark grey track, filled with the
+  // course color. It runs from a click until the next page has drawn its content, and while a
+  // view with nothing cached is still fetching.
+  const bar = el('<div class="gcx-progress" aria-hidden="true"><div class="gcx-progress-fill"></div></div>');
+  document.body.append(bar);
+  let barTimer = 0;
+  let barLevel = 0;
+  function barColor() {
+    const cbar = document.getElementById('gcx-cbar');
+    return (cbar && cbar.style.getPropertyValue('--c')) || getComputedStyle(html).getPropertyValue('--gcx-link');
+  }
+  function barStart(color) {
+    clearInterval(barTimer);
+    bar.style.setProperty('--c', color || barColor());
+    bar.classList.remove('done');
+    bar.classList.add('on');
+    barLevel = Math.max(barLevel, 0.08);
+    bar.style.setProperty('--p', barLevel);
+    // Ease toward 90% and wait there; the real finish comes from barDone().
+    barTimer = setInterval(() => {
+      barLevel += (0.9 - barLevel) * 0.08;
+      bar.style.setProperty('--p', barLevel.toFixed(3));
+    }, 120);
+  }
+  function barDone() {
+    if (!bar.classList.contains('on')) return;
+    clearInterval(barTimer);
+    bar.style.setProperty('--p', 1);
+    bar.classList.add('done');
+    setTimeout(() => {
+      bar.classList.remove('on', 'done');
+      barLevel = 0;
+      bar.style.setProperty('--p', 0);
+    }, 450);
+  }
+  // Coming back with the Back button shows the old page from cache; don't leave a bar running.
+  addEventListener('pageshow', (e) => e.persisted && barDone());
+
   // ---------------------------------------------------------------- motion
   // Which way the next page should slide in. Course tabs are ordered Home, Classwork, People.
   const tabIndexOf = (url) => {
@@ -2703,6 +2790,9 @@
     try {
       sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, t: Date.now(), from: from ? from.i : -1, course: from ? from.course : null }));
     } catch {}
+    // Opening a course from outside it: use that course's color for the bar.
+    const target = to && (COURSES || []).find((c) => c.id === to.course);
+    barStart(to && to.course !== COURSE_ID && target ? target.color : undefined);
   });
   // The attribute only matters while the page transition runs.
   setTimeout(() => delete html.dataset.gcxNav, 2000);
@@ -2767,6 +2857,10 @@
   });
 
   // ---------------------------------------------------------------- boot
+  if (!VIEW) {
+    if (document.readyState === 'complete') barDone();
+    else addEventListener('load', barDone, { once: true });
+  }
   applyFontPref();
   applyShadePref();
   applySchoolPref();
