@@ -73,13 +73,13 @@ html.gcx .gcx-ask[data-state='open'] input.gcx-ask-input {
 html.gcx .gcx-ask-send {
   position: absolute; right: 7px; top: 50%; width: 32px; height: 32px; margin: -16px 0 0; padding: 0;
   display: grid; place-items: center; border: 0; border-radius: 50%; cursor: pointer;
-  background: var(--gcx-text) !important; color: var(--gcx-card) !important;
+  background: none !important; color: var(--gcx-muted) !important;
   opacity: 0; transform: scale(0.7); pointer-events: none;
   transition: opacity 0.18s ease, transform 0.25s var(--ask-soft), filter 0.15s ease;
 }
 html.gcx .gcx-ask-send svg { fill: currentColor; display: block; }
 html.gcx .gcx-ask[data-state='open'] .gcx-ask-send { opacity: 1; transform: none; pointer-events: auto; transition-delay: 0.16s; }
-html.gcx .gcx-ask-send:hover { filter: opacity(0.85); }
+html.gcx .gcx-ask-send:hover { color: var(--gcx-text) !important; }
 html.gcx .gcx-ask-send:active { transform: scale(0.92); }
 
 /* ---------- history above the input, inside the same box */
@@ -232,15 +232,5 @@ html.gcx .gcx-ask-sr { position: absolute; width: 1px; height: 1px; margin: -1px
 
 /* Ctrl+Space pill: no close button until it's a chat; clicking off shows "Esc to exit" at the pointer */
 html.gcx .gcx-ask.spot.compact .gcx-ask-x { display: none; }
-html.gcx .gcx-spot-hint {
-  position: fixed; z-index: 2147483300; transform: translate(-50%, -140%); pointer-events: none; white-space: nowrap;
-  padding: 6px 12px; border-radius: 14px; background: rgba(32, 33, 36, 0.88); color: #fff; font: 600 13px/1.2 system-ui, sans-serif;
-  animation: gcx-hint 1.6s cubic-bezier(.2,.7,.2,1) both;
-}
-@keyframes gcx-hint {
-  0% { opacity: 0; transform: translate(-50%, -100%) scale(0.92); }
-  12%, 75% { opacity: 1; transform: translate(-50%, -140%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
-}
 html.gcx .gcx-spot.nudge .gcx-ask-box { animation: gcx-nudge 0.38s cubic-bezier(.36,.07,.19,.97); }
 @keyframes gcx-nudge { 20% { transform: translateX(-5px); } 45% { transform: translateX(4px); } 70% { transform: translateX(-2px); } }

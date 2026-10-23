@@ -690,6 +690,65 @@
     return 'link';
   }
 
+  // Everything the More search can jump to, built from what's already cached: the To-do list
+  // (all classes), and the Classwork and file lists of classes he's opened.
+  async function buildSearchIndex() {
+    const courses = COURSES || (await coursesReady);
+    const code = new Map(courses.map((c) => [c.id, c.code || prettyName(c)]));
+    const out = new Map();
+    // One entry per thing: the To-do list, a module and an assignment group can all link the same
+    // assignment (the first one added, the direct link, wins); files dedupe by file id.
+    const add = (e) => {
+      if (!e.href || !e.label) return;
+      const k = e.fileId ? 'f' + e.fileId : `${e.courseId}|${e.icon}|${e.label.trim().toLowerCase()}`;
+      if (!out.has(k)) out.set(k, { ...e, sub: code.get(e.courseId) || '', hay: e.label.toLowerCase() + ' ' + (code.get(e.courseId) || '').toLowerCase() });
+    };
+    for (const it of (await cache.get('todo:items')) || []) {
+      if (it.courseId) add({ label: it.title, href: it.url, courseId: it.courseId, icon: TYPE_ICON[it.type] || 'assignment' });
+    }
+    await Promise.all(
+      courses.map(async (c) => {
+        const [cw, cwf] = await Promise.all([cache.get('cw:' + c.id), cache.get('cwf:' + c.id)]);
+        for (const m of (cw && cw.mods) || []) {
+          for (const it of m.items || []) {
+            if (it.type === 'SubHeader') continue;
+            const file = it.type === 'File' ? it.content_id : null;
+            add({
+              label: it.title,
+              href: file ? `/courses/${c.id}/files/${file}` : it.html_url || it.external_url,
+              courseId: c.id,
+              fileId: file,
+              icon: KIND_ICON[it.type] || 'link',
+            });
+          }
+        }
+        for (const g of (cw && cw.groups) || []) {
+          for (const a of g.assignments || []) add({ label: a.name, href: a.html_url, courseId: c.id, icon: a.quiz_id ? 'quiz' : a.discussion_topic ? 'discussion' : 'assignment' });
+        }
+        for (const f of (cwf && cwf.files) || []) add({ label: f.name, href: `/courses/${c.id}/files/${f.id}`, courseId: c.id, fileId: f.id, icon: 'file' });
+      }),
+    );
+    return [...out.values()];
+  }
+  // Every word must appear (in the title or the course code); titles that start with the query,
+  // and things from the current class, come first.
+  function searchIndex(index, q, courseId) {
+    const words = q.split(/\s+/).filter(Boolean);
+    const compact = q.replace(/\s+/g, '');
+    return index
+      .map((e) => {
+        const tight = e.hay.replace(/\s+/g, '');
+        if (!words.every((w) => e.hay.includes(w)) && !tight.includes(compact)) return null;
+        const t = e.label.toLowerCase();
+        const score = (t.startsWith(q) ? 0 : t.includes(q) ? 1 : 2) + (e.courseId === courseId ? 0 : 0.5);
+        return { e, score };
+      })
+      .filter(Boolean)
+      .sort((x, y) => x.score - y.score || x.e.label.length - y.e.label.length)
+      .slice(0, 8)
+      .map((x) => x.e);
+  }
+
   async function renderCourseBar() {
     const id = COURSE_ID;
     const base = `/courses/${id}`;
@@ -773,16 +832,23 @@
       ...(hasModules ? [{ label: 'Canvas modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' }] : []),
     ];
     let sel = 0;
+    let index = null;
     const drawList = () => {
       const q = input.value.trim().toLowerCase();
       const match = (t) => !q || t.label.toLowerCase().includes(q);
       const a = others.filter(match);
       const b = extras.filter(match);
-      const row = (t, i) =>
-        `<a class="gcx-more-item${i === sel ? ' sel' : ''}" href="${esc(t.href)}" role="option">${svg(t.icon || tabIcon(t.href), 20)}<span>${esc(t.label)}</span></a>`;
+      // Assignments, quizzes, pages and files across classes ("hw 7" -> HW 7 · BIO 315H).
+      const c = q.length >= 2 && index ? searchIndex(index, q, id) : [];
+      let n = 0;
+      const row = (t) =>
+        `<a class="gcx-more-item${n++ === sel ? ' sel' : ''}" href="${esc(t.href)}" role="option"${
+          t.fileId ? ` data-gcx-file="${esc(t.fileId)}" data-gcx-course="${esc(t.courseId)}"` : ''
+        }>${svg(t.icon || tabIcon(t.href), 20)}<span>${esc(t.label)}</span>${t.sub ? `<small>${esc(t.sub)}</small>` : ''}</a>`;
       list.innerHTML =
         (a.length ? a.map(row).join('') : '') +
-        (b.length ? `<div class="gcx-more-h">Original Canvas pages</div>` + b.map((t, i) => row(t, i + a.length)).join('') : '') ||
+        (c.length ? `<div class="gcx-more-h">Classwork and files</div>` + c.map(row).join('') : '') +
+        (b.length ? `<div class="gcx-more-h">Original Canvas pages</div>` + b.map(row).join('') : '') ||
         `<div class="gcx-more-empty">Nothing matches "${esc(input.value)}"</div>`;
     };
     const open = (show) => {
@@ -793,6 +859,11 @@
         sel = 0;
         drawList();
         input.focus();
+        if (!index)
+          buildSearchIndex().then((ix) => {
+            index = ix;
+            if (!panel.hidden && input.value.trim()) drawList();
+          });
       }
     };
     btn.addEventListener('click', () => open(panel.hidden));
@@ -808,7 +879,8 @@
         items.forEach((n, i) => n.classList.toggle('sel', i === sel));
         if (items[sel]) items[sel].scrollIntoView({ block: 'nearest' });
       } else if (e.key === 'Enter' && items[sel]) {
-        location.href = items[sel].href;
+        // A click, so files go to the in-page viewer like any other file link.
+        items[sel].click();
       } else if (e.key === 'Escape') {
         open(false);
         btn.focus();
@@ -2064,7 +2136,7 @@
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
-    school: false, shade: 1,
+    school: false, theme: '', shade: 1,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -2079,8 +2151,22 @@
 
   // School colors: the rail takes the school's Canvas nav color (and logo), like stock Canvas,
   // and the accent color follows it. Everything comes from Canvas's own brand variables.
+  // Color themes for the rail and accents: the school's own Canvas colors (with its logo), or a
+  // preset. `school: true` is the setting from before themes existed.
+  const THEMES = [
+    ['', 'Default', ''],
+    ['school', 'School', ''],
+    ['deepblue', 'Deep blue', '#1e3a8a'],
+    ['forest', 'Forest', '#166534'],
+    ['plum', 'Plum', '#6b21a8'],
+    ['crimson', 'Crimson', '#9f1239'],
+    ['teal', 'Teal', '#0f766e'],
+    ['slate', 'Slate', '#334155'],
+  ];
+  const themeOf = (p) => p.theme || (p.school ? 'school' : '');
   function applySchoolPref() {
-    const on = prefs().school;
+    const theme = themeOf(prefs());
+    const on = !!theme;
     html.classList.toggle('gcx-school', on);
     rail.querySelector('.gcx-rail-logo')?.remove();
     document.querySelector('.gcx-school-mark')?.remove();
@@ -2091,8 +2177,9 @@
       return;
     }
     const cs = getComputedStyle(html);
-    const nav = cs.getPropertyValue('--ic-brand-global-nav-bgd').trim() || cs.getPropertyValue('--ic-brand-primary').trim() || '#394b58';
-    const fg = cs.getPropertyValue('--ic-brand-global-nav-menu-item__text-color').trim() || (luminance(nav) > 0.55 ? '#1f1f1f' : '#ffffff');
+    const preset = (THEMES.find((t) => t[0] === theme) || [])[2];
+    const nav = preset || cs.getPropertyValue('--ic-brand-global-nav-bgd').trim() || cs.getPropertyValue('--ic-brand-primary').trim() || '#394b58';
+    const fg = (!preset && cs.getPropertyValue('--ic-brand-global-nav-menu-item__text-color').trim()) || (luminance(nav) > 0.55 ? '#1f1f1f' : '#ffffff');
     html.style.setProperty('--gcx-school', nav);
     html.style.setProperty('--gcx-school-fg', fg);
     // Accent follows the school color only when it has real contrast with the page (light or dark).
@@ -2100,6 +2187,7 @@
     const L = luminance(nav);
     if ((Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3) html.style.setProperty('--gcx-link', nav);
     else html.style.removeProperty('--gcx-link');
+    if (preset) return; // logos only come with the school theme
     const logo = (cs.getPropertyValue('--ic-brand-header-image').match(/url\(["']?([^"')]+)/) || [])[1];
     if (logo) {
       const a = el(`<a class="gcx-rail-logo" href="/" aria-label="Dashboard"></a>`);
@@ -2369,8 +2457,12 @@
       </div>
       <div class="gcx-set-h">Look</div>
       <div class="gcx-set-card">
-        ${toggle('school', 'School colors', "The menu rail in your school's Canvas color with its logo, and accents to match")}
         <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Theme (menu rail and accents; School uses your school's Canvas colors and logo)</div>
+          <div class="gcx-set-themes" role="radiogroup" aria-label="Theme">${THEMES.map(
+            ([k, label, color]) =>
+              `<button type="button" role="radio" data-theme="${k}" aria-checked="${themeOf(p) === k}" title="${label}"><span class="gcx-sw gcx-sw-${k || 'default'}" style="${color ? `--sw:${color}` : ''}"></span><small>${label}</small></button>`,
+          ).join('')}</div>
           <div class="gcx-set-lbl">Darken class images (so white titles stand out)</div>
           <div class="gcx-set-tone" role="radiogroup" aria-label="Darken class images">${SHADES.map(
             ([label, v]) => `<button type="button" role="radio" data-shade="${v}" aria-checked="${p.shade === v}">${label}</button>`,
@@ -2410,7 +2502,12 @@
       const t = e.target.closest('[data-tone]');
       const f = e.target.closest('[data-font]');
       const sh = e.target.closest('[data-shade]');
-      if (sh) {
+      const th = e.target.closest('[data-theme]');
+      if (th) {
+        save({ theme: th.dataset.theme, school: false });
+        applySchoolPref();
+        box.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-checked', String(b === th)));
+      } else if (sh) {
         save({ shade: Number(sh.dataset.shade) });
         box.querySelectorAll('[data-shade]').forEach((b) => b.setAttribute('aria-checked', String(b === sh)));
       } else if (t) {
@@ -2572,6 +2669,15 @@
     .gcx-set-fonts button:hover { background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-fonts button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); background: color-mix(in srgb, var(--gcx-link, #4f46e5) 8%, transparent); }
     .gcx-set-fonts span { font-size: 22px; line-height: 1.1; }
+    .gcx-set-themes { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-bottom: 4px; }
+    .gcx-set-themes button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px; border: 1px solid transparent; border-radius: 10px;
+      background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
+    .gcx-set-themes button:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-set-themes button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); }
+    .gcx-set-themes small { font-size: 10px; color: var(--gcx-muted, #71717a); white-space: nowrap; }
+    .gcx-sw { width: 26px; height: 26px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+    .gcx-sw-default { background: linear-gradient(135deg, #fff 50%, #e8eaed 50%); }
+    .gcx-sw-school { background: conic-gradient(var(--ic-brand-global-nav-bgd, #bf5700) 0 50%, var(--ic-brand-primary, #2b7abc) 0); }
     .gcx-set-fonts small { font-size: 10px; color: var(--gcx-muted, #71717a); }
     .gcx-font-fredoka { font-family: 'GCX Fredoka', sans-serif; font-weight: 700; }
     .gcx-font-poppins { font-family: 'GCX Poppins', sans-serif; font-weight: 800; }

@@ -29,7 +29,8 @@ installed: BetterCampus still supplies its to-do sidebar, themes and dark mode.
 
 The course menu becomes a top bar with **Home**, **Classwork** and **People**. Every other tool (Syllabus,
 Zoom, Course Evaluations, NameCoach, Lectures Online, ...) is in **More**: click it or press `/`, type,
-Enter.
+Enter. It also finds assignments, quizzes, pages and files across your classes: type "hw 7" and pick
+"HW 7 · BIO 315H", or a file name to open it in place.
 
 ![Course home](docs/screenshots/course-home.jpg)
 
@@ -79,8 +80,8 @@ Esc or browser Back closes it. Ctrl/Cmd-click still opens the normal page.
 The **AI** button next to the greeting rolls open into a pill on hover; click and type, and it grows into a
 chat. Or press **Ctrl + Space** on any regular Canvas page: the page blurs and a wide "Ask anything" pill
 opens in the middle (or wherever you last left it). Drag it anywhere; once you ask, the blur clears and it
-becomes the chat right where you left it. Esc or Ctrl + Space closes it (clicking the blurred page shows a
-reminder), and so does the red X once it's a chat.
+becomes the chat right where you left it. Esc or Ctrl + Space closes it, so does moving the pointer well away
+from it before you've asked anything, and so does the red X once it's a chat.
 
 It answers from your Canvas (courses, assignments, grades, feedback, modules, files including PDFs, slides
 and docs, announcements, quizzes, discussions, pages, the syllabus, people and the inbox) and links what it
@@ -90,10 +91,11 @@ explaining or planning goes to the full one (settings can turn that off).
 
 ![Ask anything](docs/screenshots/ask.jpg)
 
-## School colors
+## Themes and school colors
 
-Turn on **School colors** and the rail takes your school's Canvas color and logo, with accents to match and
-the school's wordmark above the to-do list. All of it comes from your school's own Canvas branding.
+Pick a theme in settings and the rail and accents take its color: Deep blue, Forest, Plum, Crimson, Teal or
+Slate. **School** uses your school's own Canvas branding instead: its color and logo on the rail, with its
+wordmark above the to-do list.
 
 ![School colors](docs/screenshots/school.jpg)
 
@@ -103,7 +105,8 @@ Settings are a **Classroom** tab inside BetterCampus's settings (its gear, top r
 
 - greeting on or off, tone and font
 - the AI button and the Ctrl + Space shortcut, separately, and the quick model for simple questions
-- school colors, and how dark class images get behind their white titles
+- the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), and how dark class images get
+  behind their white titles
 - page animations, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,
   New Year, Valentine's, St. Patrick's and the Fourth

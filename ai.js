@@ -781,7 +781,7 @@
 
   // ---------------------------------------------------------------- UI
   const ICON = {
-    send: 'M3.4 20.4l17.45-7.48a1 1 0 0 0 0-1.84L3.4 3.6a.99.99 0 0 0-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z',
+    send: 'M19 7v4H5.83l3.58-3.59L8 6l-6 6 6 6 1.41-1.41L5.83 13H21V7z', // the Enter key
     stop: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
     plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
@@ -1344,15 +1344,32 @@
       holder.classList.add('over-fv');
     }
     document.body.append(bg, holder);
-    // Clicking the blurred page doesn't close it; it says how, right where he clicked.
+    // Before he's asked anything, moving the pointer well away from the pill (or clicking far
+    // from it) closes it. Measured from where the pointer started, so it doesn't close at once
+    // when the pointer happens to be across the screen.
+    const distTo = (x, y) => {
+      const r = holder.getBoundingClientRect();
+      const dx = Math.max(r.left - x, 0, x - r.right);
+      const dy = Math.max(r.top - y, 0, y - r.bottom);
+      return Math.hypot(dx, dy);
+    };
+    const stillAPill = () => {
+      const root = holder.querySelector('.gcx-ask');
+      const input = holder.querySelector('input');
+      return root && root.classList.contains('compact') && !(input && input.value.trim()) && !holder.classList.contains('dragging');
+    };
+    let startDist = null;
+    const onFarMove = (e) => {
+      if (!stillAPill()) return;
+      const d = distTo(e.clientX, e.clientY);
+      if (startDist === null) startDist = d;
+      startDist = Math.min(startDist, Math.max(d, 0));
+      if (d > Math.max(280, startDist + 220)) closeSpot();
+    };
+    addEventListener('pointermove', onFarMove, { passive: true });
     bg.addEventListener('mousedown', (e) => {
       e.preventDefault();
-      document.querySelector('.gcx-spot-hint')?.remove();
-      const hint = gcx.el('<div class="gcx-spot-hint">Esc to exit</div>');
-      hint.style.left = e.clientX + 'px';
-      hint.style.top = e.clientY + 'px';
-      document.body.append(hint);
-      setTimeout(() => hint.remove(), 1600);
+      if (stillAPill() && distTo(e.clientX, e.clientY) > 140) return closeSpot();
       holder.classList.remove('nudge');
       void holder.offsetWidth;
       holder.classList.add('nudge');
@@ -1369,7 +1386,7 @@
     const top = pos ? pos.top : innerHeight * 0.36;
     holder.style.left = Math.round(Math.max(8, Math.min(left, innerWidth - W - 8))) + 'px';
     holder.style.top = Math.round(Math.max(8, Math.min(top, innerHeight - 120))) + 'px';
-    const ui = (spotUi = { bg, holder, back, root: null });
+    const ui = (spotUi = { bg, holder, back, root: null, onFarMove });
     const clearBg = () => {
       bg.classList.add('gone');
       setTimeout(() => bg.remove(), 400);
@@ -1438,6 +1455,7 @@
   function closeSpot() {
     const ui = spotUi;
     if (!ui) return;
+    removeEventListener('pointermove', ui.onFarMove);
     spotUi = null;
     ui.holder.classList.add('closing');
     ui.bg.classList.add('gone');

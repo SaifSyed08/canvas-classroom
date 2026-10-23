@@ -160,6 +160,8 @@ html.gcx-course #main { margin-left: 0 !important; }
 .gcx-more-item { display: flex; align-items: center; gap: 14px; padding: 9px 16px; color: var(--gcx-text) !important; text-decoration: none !important; }
 .gcx-more-item:hover, .gcx-more-item.sel { background: var(--gcx-bg2); }
 .gcx-more-item .gcx-svg { color: var(--gcx-muted); }
+.gcx-more-item span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gcx-more-item small { flex: none; font-size: 12px; color: var(--gcx-muted); }
 .gcx-more-empty { padding: 16px; color: var(--gcx-muted); }
 
 /* ---------- replacement views (Home, Classwork, To-do) */
