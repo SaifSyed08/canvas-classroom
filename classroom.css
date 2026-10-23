@@ -346,9 +346,13 @@ html.gcx-dash .bettercampus-card-grade { z-index: 3; }
 .gcx-card-ov {
   position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; justify-content: flex-end;
   padding: 14px 18px; color: #fff !important; text-decoration: none !important;
-  /* !important: BetterCampus's card styles clear link backgrounds, which hid this gradient. */
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%) !important;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+/* BetterCampus's card styles clear backgrounds with `.ic-DashboardCard__header a {background:none
+   !important}`, so the gradient needs a more specific !important rule than that to show. */
+html.gcx .ic-DashboardCard__header a.gcx-card-ov,
+html.gcx[data-gcx-shade="1"] .ic-DashboardCard__header a.gcx-card-ov {
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%) !important;
 }
 .gcx-card-title {
   font-size: 20px; font-weight: 700; line-height: 1.2;
@@ -622,9 +626,9 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 .gcx-lc-tx small { color: var(--gcx-muted); font-size: 12px; }
 
 /* ---------- darker class images behind white titles (Settings > Look) */
-html[data-gcx-shade="0"] .gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%) !important; }
-html[data-gcx-shade="2"] .gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%) !important; }
-html[data-gcx-shade="3"] .gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%) !important; }
+html.gcx[data-gcx-shade="0"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%) !important; }
+html.gcx[data-gcx-shade="2"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%) !important; }
+html.gcx[data-gcx-shade="3"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%) !important; }
 html[data-gcx-shade="0"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%); }
 html[data-gcx-shade="2"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3)); }
 html[data-gcx-shade="3"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5)); }
