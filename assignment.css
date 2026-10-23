@@ -1,0 +1,105 @@
+/* Assignment pages (assignment.js): Google Classroom-style layout above Canvas's own
+   Assignments 2 view. Only the parts we reproduce are hidden; the attempt row, rubric,
+   submission tabs and Submit footer are Canvas's and keep working. */
+
+html.gcx-asg [data-testid="assignment-student-header"],
+html.gcx-asg [data-testid="assignments-2-assignment-toggle-details"],
+html.gcx-asg [data-testid="assignments-2-assignment-description"] { display: none !important; }
+html.gcx-asg #content { padding-top: 28px !important; }
+
+#gcx-asg {
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; align-items: start;
+  max-width: 1100px; margin: 0 auto 28px; color: var(--gcx-text); font-size: 14px;
+  animation: gcx-asg-in 0.4s cubic-bezier(.16,.84,.3,1) both;
+}
+@keyframes gcx-asg-in { from { opacity: 0; transform: translateY(8px); } }
+#gcx-asg h1, #gcx-asg h2 { margin: 0; color: inherit; }
+
+/* ---- left: the assignment */
+.gcx-asg-head { display: flex; align-items: flex-start; gap: 16px; }
+.gcx-asg-ic {
+  width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: var(--c, var(--gcx-link)); color: #fff;
+}
+.gcx-asg-ic .gcx-svg { fill: #fff; }
+.gcx-asg-titles { min-width: 0; flex: 1; padding-top: 2px; }
+#gcx-asg .gcx-asg-title { font-size: 30px !important; font-weight: 400 !important; line-height: 1.2 !important; color: color-mix(in srgb, var(--c, var(--gcx-text)) 78%, var(--gcx-text)) !important; overflow-wrap: anywhere; }
+.gcx-asg-by { margin-top: 6px; font-size: 13px; color: var(--gcx-muted); }
+.gcx-asg-title .gcx-skel { height: 26px; margin: 4px 0; }
+.gcx-asg-by .gcx-skel { margin: 4px 0; }
+.gcx-asg-facts {
+  display: flex; justify-content: space-between; gap: 12px; margin: 14px 0 0 60px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--c, var(--gcx-border)); font-size: 14px; font-weight: 600;
+}
+.gcx-asg-due { color: var(--gcx-text); }
+.gcx-asg-body { margin: 18px 0 0 60px; line-height: 1.55; overflow-wrap: anywhere; }
+.gcx-asg-body img { max-width: 100%; height: auto; }
+.gcx-asg-body iframe { max-width: 100%; border: 0; border-radius: 8px; }
+.gcx-asg-body table { max-width: 100%; }
+.gcx-asg-body a { color: var(--gcx-link) !important; }
+.gcx-asg-body p { margin: 0 0 0.8em; }
+.gcx-asg-empty { color: var(--gcx-muted); }
+.gcx-asg-locked { color: var(--gcx-muted); font-size: 13px; padding: 8px 12px; border-radius: 8px; background: var(--gcx-bg2); }
+.gcx-asg-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin: 18px 0 0 60px; }
+.gcx-asg-files:empty { display: none; }
+
+/* file chips (attachments, and his own files in Your work) */
+.gcx-asg-chip {
+  display: flex; align-items: center; gap: 0; min-width: 0; overflow: hidden; border: 1px solid var(--gcx-border);
+  border-radius: 10px; color: var(--gcx-text) !important; text-decoration: none !important; background: var(--gcx-card);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.gcx-asg-chip:hover { background: var(--gcx-bg2); border-color: color-mix(in srgb, var(--c, var(--gcx-link)) 40%, var(--gcx-border)); }
+.gcx-asg-chip-ic { width: 56px; align-self: stretch; flex: none; display: grid; place-items: center; background: var(--gcx-bg2); color: var(--c, var(--gcx-muted)); border-right: 1px solid var(--gcx-border); }
+.gcx-asg-chip-tx { min-width: 0; display: flex; flex-direction: column; padding: 10px 12px; }
+.gcx-asg-chip-tx b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gcx-asg-chip-tx small { font-size: 12px; color: var(--gcx-muted); }
+.gcx-asg-chip.small { margin-top: 8px; }
+.gcx-asg-chip.small .gcx-asg-chip-ic { width: 40px; }
+.gcx-asg-chip.small .gcx-asg-chip-tx { padding: 8px 10px; font-size: 13px; }
+
+/* ---- right: Your work + private comments */
+.gcx-asg-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 84px; }
+.gcx-asg-work, .gcx-asg-comments {
+  border: 1px solid var(--gcx-border); border-radius: 12px; background: var(--gcx-card); padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+.gcx-asg-work-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+#gcx-asg .gcx-asg-work-h h2 { display: flex; align-items: center; gap: 8px; font-size: 18px !important; font-weight: 500 !important; }
+.gcx-asg-work-h h2 .gcx-svg { color: var(--gcx-muted); }
+.gcx-asg-status { font-size: 13px; font-weight: 600; text-align: right; }
+.gcx-asg-status.assigned { color: var(--gcx-green, #188038); }
+.gcx-asg-status.done { color: var(--gcx-muted); }
+.gcx-asg-status.late { color: #b06000; }
+.gcx-asg-status.missing { color: var(--gcx-red, #d93025); }
+.gcx-asg-status.graded { color: var(--gcx-text); font-size: 15px; }
+.gcx-asg-status.muted { color: var(--gcx-muted); font-weight: 500; }
+.gcx-asg-when, .gcx-asg-grade { font-size: 13px; color: var(--gcx-muted); }
+.gcx-asg-grade { color: var(--gcx-text); font-weight: 600; margin-bottom: 4px; }
+.gcx-asg-text { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: var(--gcx-bg2); font-size: 13px; white-space: pre-wrap; }
+.gcx-asg-note { font-size: 13px; color: var(--gcx-muted); }
+.gcx-asg-btn {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 40px; margin-top: 14px; box-sizing: border-box;
+  border: 0; border-radius: 8px; background: var(--c, var(--gcx-link)); color: #fff !important; font: inherit; font-weight: 600;
+  text-decoration: none !important; cursor: pointer; transition: filter 0.15s ease, transform 0.1s ease;
+}
+.gcx-asg-btn:hover { filter: brightness(1.08); }
+.gcx-asg-btn:active { transform: scale(0.98); }
+.gcx-asg-cmt { padding: 8px 0; border-bottom: 1px solid var(--gcx-border); }
+.gcx-asg-cmt:last-of-type { border-bottom: 0; }
+.gcx-asg-cmt-h { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.gcx-asg-cmt-h span { color: var(--gcx-muted); font-size: 12px; }
+.gcx-asg-cmt-tx { margin-top: 2px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.gcx-asg-link { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--gcx-link); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.gcx-asg-link:hover { text-decoration: underline; }
+.gcx-asg-original { align-self: flex-start; font-size: 12px; color: var(--gcx-muted) !important; }
+
+/* Canvas's submission area, below: brought into view (and pointed at) by the Your work button */
+html.gcx-asg [data-testid="assignments-2-student-view"] { max-width: 1100px; margin: 0 auto; }
+.gcx-asg-pulse { animation: gcx-asg-pulse 1.4s ease-out 0.35s; border-radius: 12px; }
+@keyframes gcx-asg-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gcx-link) 45%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+
+@media (max-width: 900px) {
+  #gcx-asg { grid-template-columns: 1fr; }
+  .gcx-asg-side { position: static; }
+}

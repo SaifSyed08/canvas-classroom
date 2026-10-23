@@ -8,7 +8,10 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "permissions": ["storage", "unlimitedStorage"],
+  "permissions": [
+    "storage",
+    "unlimitedStorage"
+  ],
   "host_permissions": [
     "https://api.openai.com/*",
     "https://*.instructure.com/*",
@@ -24,27 +27,57 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.instructure.com/*"],
-      "exclude_matches": ["https://canvadocs.instructure.com/*", "https://*.inscloudgate.net/*"],
-      "css": ["classroom.css", "fileview.css", "ai.css"],
-      "js": ["early.js"],
+      "matches": [
+        "https://*.instructure.com/*"
+      ],
+      "exclude_matches": [
+        "https://canvadocs.instructure.com/*",
+        "https://*.inscloudgate.net/*"
+      ],
+      "css": [
+        "classroom.css",
+        "fileview.css",
+        "ai.css",
+        "assignment.css"
+      ],
+      "js": [
+        "early.js"
+      ],
       "run_at": "document_start"
     },
     {
-      "matches": ["https://*.instructure.com/*"],
-      "exclude_matches": ["https://canvadocs.instructure.com/*", "https://*.inscloudgate.net/*"],
-      "js": ["classroom.js", "fileview.js", "ai.js"],
+      "matches": [
+        "https://*.instructure.com/*"
+      ],
+      "exclude_matches": [
+        "https://canvadocs.instructure.com/*",
+        "https://*.inscloudgate.net/*"
+      ],
+      "js": [
+        "classroom.js",
+        "assignment.js",
+        "fileview.js",
+        "ai.js"
+      ],
       "run_at": "document_end"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["fonts/*.woff2"],
-      "matches": ["https://*.instructure.com/*"]
+      "resources": [
+        "fonts/*.woff2"
+      ],
+      "matches": [
+        "https://*.instructure.com/*"
+      ]
     },
     {
-      "resources": ["viewer/*"],
-      "matches": ["https://*.instructure.com/*"],
+      "resources": [
+        "viewer/*"
+      ],
+      "matches": [
+        "https://*.instructure.com/*"
+      ],
       "use_dynamic_url": true
     }
   ]
