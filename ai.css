@@ -229,3 +229,18 @@ html.gcx .gcx-spot.over-fv { z-index: 2147483200; }
 
 /* status line for screen readers (visually hidden) */
 html.gcx .gcx-ask-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Ctrl+Space pill: no close button until it's a chat; clicking off shows "Esc to exit" at the pointer */
+html.gcx .gcx-ask.spot.compact .gcx-ask-x { display: none; }
+html.gcx .gcx-spot-hint {
+  position: fixed; z-index: 2147483300; transform: translate(-50%, -140%); pointer-events: none; white-space: nowrap;
+  padding: 6px 12px; border-radius: 14px; background: rgba(32, 33, 36, 0.88); color: #fff; font: 600 13px/1.2 system-ui, sans-serif;
+  animation: gcx-hint 1.6s cubic-bezier(.2,.7,.2,1) both;
+}
+@keyframes gcx-hint {
+  0% { opacity: 0; transform: translate(-50%, -100%) scale(0.92); }
+  12%, 75% { opacity: 1; transform: translate(-50%, -140%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -150%) scale(1); }
+}
+html.gcx .gcx-spot.nudge .gcx-ask-box { animation: gcx-nudge 0.38s cubic-bezier(.36,.07,.19,.97); }
+@keyframes gcx-nudge { 20% { transform: translateX(-5px); } 45% { transform: translateX(4px); } 70% { transform: translateX(-2px); } }

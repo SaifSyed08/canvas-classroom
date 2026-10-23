@@ -2045,7 +2045,7 @@
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
-    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, confetti: true, motion: true, annReveal: true,
+    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
     school: false, shade: 1,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
@@ -2347,6 +2347,7 @@
         </div>
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden')}
+        ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
       </div>
       <div class="gcx-set-h">Look</div>
       <div class="gcx-set-card">

@@ -35,8 +35,9 @@ Enter.
 
 **Home** has the banner (name, instructor, grade), an Upcoming panel (missing work from the last two weeks
 plus the next two weeks), a **Pinned** panel where **+ Add** pins any course tool (Instapoll, the original
-home page, ...) or any link, and the announcements. Past the first two, announcements fade and slide up as
-you scroll to them.
+home page, ...) or any link, and the stream: announcements, plus Classroom-style posts like "Su Chen posted
+a new assignment: HW 5" and "posted 3 new materials" (file chips open in place) from the last three weeks.
+Past the first two, items fade and slide up as you scroll to them.
 
 ![Classwork](docs/screenshots/classwork.jpg)
 
@@ -49,6 +50,14 @@ preview by the cursor (title, site and favicon, with the thumbnail for YouTube):
 ![Link preview](docs/screenshots/link-preview.jpg)
 
 The original Canvas pages are still reachable from More (or add `?gcx-original=1` to a URL).
+
+**Assignment pages** look like Classroom's: the title with a course-colored icon, instructor and date,
+points and due date, the instructions and attached files on the left; on the right a **Your work** card with
+the status (Assigned, Turned in, Missing, a score, Excused...), what you turned in, one button into Canvas's own
+submission flow, and private comments. Canvas's submission area, rubric and Submit bar still do the actual
+work; "View in Canvas" shows the stock page.
+
+![Assignment](docs/screenshots/assignment.jpg)
 
 ## To-do
 
@@ -69,12 +78,15 @@ Esc or browser Back closes it. Ctrl/Cmd-click still opens the normal page.
 
 The **AI** button next to the greeting rolls open into a pill on hover; click and type, and it grows into a
 chat. Or press **Ctrl + Space** on any regular Canvas page: the page blurs and a wide "Ask anything" pill
-opens in the middle. Drag it anywhere; once you ask, the blur clears and it becomes the chat right where you
-left it. Close it with the red X, Esc, or Ctrl + Space again.
+opens in the middle (or wherever you last left it). Drag it anywhere; once you ask, the blur clears and it
+becomes the chat right where you left it. Esc or Ctrl + Space closes it (clicking the blurred page shows a
+reminder), and so does the red X once it's a chat.
 
 It answers from your Canvas (courses, assignments, grades, feedback, modules, files including PDFs, slides
 and docs, announcements, quizzes, discussions, pages, the syllabus, people and the inbox) and links what it
-cites. It can only read; it can't submit or post anything.
+cites. Ask it to "take me to my Genetics grades" and it opens the page. It can only read and navigate; it
+can't submit or post anything. Quick lookups go to a smaller, cheaper model and anything that needs reading,
+explaining or planning goes to the full one (settings can turn that off).
 
 ![Ask anything](docs/screenshots/ask.jpg)
 
@@ -90,7 +102,7 @@ the school's wordmark above the to-do list. All of it comes from your school's o
 Settings are a **Classroom** tab inside BetterCampus's settings (its gear, top right of the to-do list):
 
 - greeting on or off, tone and font
-- the AI button and the Ctrl + Space shortcut, separately
+- the AI button and the Ctrl + Space shortcut, separately, and the quick model for simple questions
 - school colors, and how dark class images get behind their white titles
 - page animations, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,

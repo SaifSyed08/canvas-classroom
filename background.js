@@ -5,6 +5,8 @@
 // Files are downloaded here because Canvas redirects downloads to other hosts.
 
 const MODEL = 'gpt-6.1-sol';
+// Simple lookups ("when is HW 8 due?") go to a small model; ai.js decides per question.
+const MODEL_FAST = 'gpt-5.4-mini';
 const REASONING = { effort: 'low' };
 const MAX_FILE = 25e6;
 const MAX_TEXT = 24000;
@@ -132,13 +134,13 @@ async function readFile(att) {
 }
 
 // ---------------------------------------------------------------- Responses API stream
-async function stream(port, body, signal) {
+async function stream(port, body, signal, tier) {
   const key = await getKey();
   if (!key) return port.postMessage({ type: 'error', code: 'nokey', message: 'No OpenAI key set.' });
   const r = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, reasoning: REASONING, stream: true, ...body }),
+    body: JSON.stringify({ model: tier === 'fast' ? MODEL_FAST : MODEL, reasoning: REASONING, stream: true, ...body }),
     signal,
   });
   if (!r.ok) {
@@ -182,7 +184,8 @@ async function stream(port, body, signal) {
         return port.postMessage({ type: 'error', code: 'failed', message: (ev.response && ev.response.error && ev.response.error.message) || ev.message || 'The model failed.' });
     }
   }
-  port.postMessage(calls.length ? { type: 'tool_calls', response_id: id, calls } : { type: 'done', response_id: id });
+  const model = tier === 'fast' ? MODEL_FAST : MODEL;
+  port.postMessage(calls.length ? { type: 'tool_calls', response_id: id, calls, model } : { type: 'done', response_id: id, model });
 }
 
 // The pill's "Add key" button: the key is entered on options.html, not on the Canvas page.
@@ -199,7 +202,7 @@ chrome.runtime.onConnect.addListener((port) => {
       if (msg.type === 'start') {
         const body = { instructions: msg.instructions, tools: msg.tools, input: msg.input };
         if (msg.previous_response_id) body.previous_response_id = msg.previous_response_id;
-        await stream(port, body, ctrl.signal);
+        await stream(port, body, ctrl.signal, msg.tier);
       } else if (msg.type === 'continue') {
         const input = [];
         const parts = [];
@@ -213,7 +216,7 @@ chrome.runtime.onConnect.addListener((port) => {
           input.push({ type: 'function_call_output', call_id: o.call_id, output });
         }
         if (parts.length) input.push({ role: 'user', content: [{ type: 'input_text', text: '(Attached file contents for the tool call above.)' }, ...parts] });
-        await stream(port, { instructions: msg.instructions, tools: msg.tools, input, previous_response_id: msg.previous_response_id }, ctrl.signal);
+        await stream(port, { instructions: msg.instructions, tools: msg.tools, input, previous_response_id: msg.previous_response_id }, ctrl.signal, msg.tier);
       }
     } catch (e) {
       if (e.name !== 'AbortError') {

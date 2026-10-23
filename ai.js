@@ -524,6 +524,24 @@
       run: async ({ course_id }) => (await api(`/courses/${course_id}/tabs?per_page=100`, true)).map((t) => ({ label: t.label, external: t.type === 'external' || undefined, url: rel(t.html_url) })),
     },
     {
+      name: 'open_page',
+      label: 'Opening the page',
+      description:
+        "Take Saif to a Canvas page in this tab when he asks to go to / open / take him to something (a course's grades, an assignment, Classwork, a file, the To-do). Use a url from the other tools or a known Canvas path like /courses/123/grades, /courses/123/modules, /?gcx=todo. It opens once your reply finishes.",
+      parameters: obj({ url: { type: 'string' }, label: { type: 'string', description: 'Short name of the page, e.g. "Genetics grades"' } }, ['url']),
+      run: async ({ url, label }) => {
+        let u;
+        try {
+          u = new URL(String(url), location.origin);
+        } catch {
+          return { error: 'Not a valid address' };
+        }
+        if (u.origin !== location.origin) return { error: 'Only Canvas pages on this site can be opened' };
+        navRequest = { url: u.pathname + u.search + u.hash, label: String(label || 'that page').slice(0, 60) };
+        return { ok: true, note: 'It opens after your reply; keep the reply to one short line.' };
+      },
+    },
+    {
       name: 'list_inbox',
       label: 'Checking your inbox',
       description: "Saif's Canvas Inbox: recent conversations with subject, people, course, last message, unread.",
@@ -560,6 +578,16 @@
     },
   ];
   const TOOL_BY = new Map(TOOLS.map((t) => [t.name, t]));
+
+  // Model routing: short, factual lookups go to the small model; anything that needs reading,
+  // explaining, planning or writing goes to the full one. Settings can turn this off.
+  const DEEP = /\b(summar|explain|why|how (?:do|does|did|should|can|would)|compare|analy[sz]|plan|study|strateg|quiz me|practice|write|draft|essay|feedback|improve|understand|mean|read|pdf|slides?|lecture|notes?|file|syllabus|rubric|calculat|what do i need|predict|help me|advice|should i|teach|walk me|step)/i;
+  const routeTier = (q) => {
+    if (gcx.prefs().routing === false) return 'smart';
+    return q.length > 140 || DEEP.test(q) ? 'smart' : 'fast';
+  };
+  // Set by the open_page tool; followed once the answer has finished.
+  let navRequest = null;
   const TOOL_DEFS = TOOLS.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false }));
 
   async function runTool(call) {
@@ -610,6 +638,7 @@
       '- Link Canvas items with markdown links using the url fields from the tools (relative /courses/... links are fine), e.g. [Exam 2](/courses/1/assignments/2).',
       '- Give dates in his local time like "Wed, Oct 28 at 1:00 PM", and say "today"/"tomorrow" when that applies.',
       '- You can only read. You cannot submit, post, message, or change anything; say so if asked, and link the page where he can do it.',
+      '- If he asks to go to, open or be taken to a page, find its URL (with the tools if needed) and call open_page, then reply in one short line like "Opening your Genetics grades." Only do this when he asks.',
       '- If a tool fails or something is hidden by the instructor, say what you could not get.',
     ].join('\n');
   }
@@ -1101,6 +1130,9 @@
       };
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
+      const tier = routeTier(q);
+      let answeredBy = '';
+      navRequest = null;
       // Both chats share one history; if either starts a new chat meanwhile, this answer is stale.
       const myHist = hist;
       const cancelled = new Promise((r) => (me.onCancel = r));
@@ -1147,8 +1179,8 @@
       if (me.cancelled && !text) text = '_Stopped._';
       const history = hist.msgs.slice(-12, -1).filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text }));
       let req = hist.prev
-        ? { type: 'start', instructions: instr, tools: TOOL_DEFS, previous_response_id: hist.prev, input: [{ role: 'user', content: q }] }
-        : { type: 'start', instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: q }] };
+        ? { type: 'start', tier, instructions: instr, tools: TOOL_DEFS, previous_response_id: hist.prev, input: [{ role: 'user', content: q }] }
+        : { type: 'start', tier, instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: q }] };
 
       let finalId = null;
       let error = null;
@@ -1184,7 +1216,7 @@
         } catch {}
         if (res.type === 'error' && res.code === 'noprev' && req.previous_response_id && round === 0) {
           hist.prev = null;
-          req = { type: 'start', instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: q }] };
+          req = { type: 'start', tier, instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: q }] };
           round--;
           continue;
         }
@@ -1200,6 +1232,7 @@
         }
         if (res.type === 'done') {
           finalId = res.response_id;
+          answeredBy = res.model || '';
           settled = true;
           break;
         }
@@ -1213,7 +1246,7 @@
           break;
         }
         status('Thinking');
-        req = { type: 'continue', instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
+        req = { type: 'continue', tier, instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
       }
       clearTimeout(raf);
       if (run === me) run = null;
@@ -1226,6 +1259,13 @@
         renderLog();
         return;
       }
+      if (navRequest && !error && !me.cancelled && !me.discard && hist === myHist) {
+        const go = navRequest;
+        navRequest = null;
+        gcx.toast(`Opening ${go.label}…`);
+        setTimeout(() => location.assign(go.url), 700);
+      }
+      navRequest = null;
       if (error) {
         bot.remove();
         if (error.code === 'nokey' || error.code === 'badkey') {
@@ -1244,7 +1284,7 @@
         hist.prev = null;
         announce(`Stopped after ${MAX_ROUNDS} lookups. Try a narrower question.`);
       } else {
-        hist.msgs.push({ role: 'assistant', text: text || '(no answer)' });
+        hist.msgs.push({ role: 'assistant', text: text || '(no answer)', model: answeredBy || undefined });
         if (finalId) hist.prev = finalId;
         announce(previewText(text || 'No answer.').slice(0, 600));
       }
@@ -1286,10 +1326,31 @@
       holder.classList.add('over-fv');
     }
     document.body.append(bg, holder);
+    // Clicking the blurred page doesn't close it; it says how, right where he clicked.
+    bg.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      document.querySelector('.gcx-spot-hint')?.remove();
+      const hint = gcx.el('<div class="gcx-spot-hint">Esc to exit</div>');
+      hint.style.left = e.clientX + 'px';
+      hint.style.top = e.clientY + 'px';
+      document.body.append(hint);
+      setTimeout(() => hint.remove(), 1600);
+      holder.classList.remove('nudge');
+      void holder.offsetWidth;
+      holder.classList.add('nudge');
+      holder.querySelector('input')?.focus({ preventScroll: true });
+    });
     const W = Math.min(600, innerWidth - 32);
     holder.style.width = W + 'px';
-    holder.style.left = Math.round((innerWidth - W) / 2) + 'px';
-    holder.style.top = Math.round(innerHeight * 0.36) + 'px';
+    // Back where he last left it (kept inside the window), or centered the first time.
+    let pos = null;
+    try {
+      pos = JSON.parse(localStorage.getItem('gcx:spotPos') || 'null');
+    } catch {}
+    const left = pos ? pos.left : (innerWidth - W) / 2;
+    const top = pos ? pos.top : innerHeight * 0.36;
+    holder.style.left = Math.round(Math.max(8, Math.min(left, innerWidth - W - 8))) + 'px';
+    holder.style.top = Math.round(Math.max(8, Math.min(top, innerHeight - 120))) + 'px';
     const ui = (spotUi = { bg, holder, back, root: null });
     const clearBg = () => {
       bg.classList.add('gone');
@@ -1340,6 +1401,7 @@
       const up = (ev) => {
         if (ev.pointerId !== e.pointerId) return;
         holder.classList.remove('dragging');
+        saveSpotPos(holder);
         removeEventListener('pointermove', move, true);
         removeEventListener('pointerup', up, true);
         removeEventListener('pointercancel', up, true);
@@ -1349,9 +1411,16 @@
       addEventListener('pointercancel', up, true);
     });
   }
+  const saveSpotPos = (holder) => {
+    const r = holder.getBoundingClientRect();
+    try {
+      localStorage.setItem('gcx:spotPos', JSON.stringify({ left: Math.round(r.left), top: Math.round(r.top) }));
+    } catch {}
+  };
   function closeSpot() {
     const ui = spotUi;
     if (!ui) return;
+    saveSpotPos(ui.holder);
     spotUi = null;
     ui.holder.classList.add('closing');
     ui.bg.classList.add('gone');
