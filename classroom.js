@@ -46,7 +46,6 @@
     sync: 'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z',
     more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
     add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
-    done: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     folder: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     open: 'M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
@@ -386,7 +385,6 @@
     );
     return {
       key: `${it.plannable_type}:${it.plannable_id}`,
-      overrideId: (it.planner_override && it.planner_override.id) || null,
       type: it.plannable_type,
       title: (it.plannable && (it.plannable.title || it.plannable.name)) || 'Untitled',
       due,
@@ -447,86 +445,6 @@
     return [...missing, ...upcoming];
   }
   // Groups items under "Missing" / "Due Today" / "Due Tomorrow" / "Due Friday" / "Due Nov 4" labels.
-  // Mark as done, like BetterCampus's circles: Canvas's planner "marked complete" override.
-  const dueByKey = new Map();
-  function csrfToken() {
-    const m = document.cookie.match(/(?:^|;\s*)_csrf_token=([^;]+)/);
-    return m ? decodeURIComponent(m[1]) : '';
-  }
-  // A Canvas write (POST/PUT) with the page's session; used for mark-as-done and hand-ins.
-  async function apiSend(path, method, body) {
-    const r = await fetch(path.startsWith('http') ? path : location.origin + '/api/v1' + path, {
-      method,
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': csrfToken() },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const text = (await r.text()).replace(/^while\(1\);/, '');
-    if (!r.ok) throw Object.assign(new Error(`${r.status} ${path}`), { status: r.status, body: text });
-    return text ? JSON.parse(text) : null;
-  }
-  async function setDone(it, done) {
-    const [type, id] = it.key.split(':');
-    const plannable_type = type === 'quiz' ? 'quiz' : type === 'discussion_topic' ? 'discussion_topic' : type;
-    if (it.overrideId) return apiSend(`/planner/overrides/${it.overrideId}`, 'PUT', { marked_complete: done });
-    try {
-      const o = await apiSend('/planner/overrides', 'POST', { plannable_type, plannable_id: Number(id), marked_complete: done });
-      it.overrideId = o && o.id;
-    } catch (e) {
-      // There's already an override for it: find it and flip it.
-      const all = await api('/planner/overrides?per_page=100', true);
-      const o = all.find((x) => x.plannable_type === plannable_type && String(x.plannable_id) === id);
-      if (!o) throw e;
-      it.overrideId = o.id;
-      await apiSend(`/planner/overrides/${o.id}`, 'PUT', { marked_complete: done });
-    }
-  }
-  document.addEventListener('click', async (e) => {
-    const b = e.target.closest && e.target.closest('.gcx-due-done');
-    if (!b) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const it = dueByKey.get(b.dataset.key);
-    if (!it || b.disabled) return;
-    const row = b.closest('.gcx-due-row');
-    b.disabled = true;
-    row.classList.add('gcx-checking');
-    try {
-      await setDone(it, true);
-    } catch (err) {
-      console.warn('[canvas-classroom] mark done', err);
-      row.classList.remove('gcx-checking');
-      b.disabled = false;
-      toast("Couldn't mark it done");
-      return;
-    }
-    it.done = true;
-    row.classList.add('gcx-done-out');
-    // Collapse the row, and its group label when it was the only one. Remember where they were
-    // so Undo can put them back.
-    const grp = row.closest('.gcx-due-grp');
-    const spot = { row, rowNext: row.nextSibling, grp, grpParent: grp && grp.parentElement, grpNext: grp && grp.nextSibling };
-    setTimeout(() => {
-      row.remove();
-      if (grp && !grp.querySelector('.gcx-due-row')) grp.remove();
-    }, 420);
-    toast(`Marked ${it.title} done`, 'Undo', async () => {
-      try {
-        await setDone(it, false);
-        it.done = false;
-        b.disabled = false;
-        row.classList.remove('gcx-done-out', 'gcx-checking');
-        if (spot.grp && !spot.grp.isConnected && spot.grpParent) spot.grpParent.insertBefore(spot.grp, spot.grpNext && spot.grpNext.isConnected ? spot.grpNext : null);
-        if (!row.isConnected && spot.grp) spot.grp.insertBefore(row, spot.rowNext && spot.rowNext.parentNode === spot.grp ? spot.rowNext : null);
-        reveal(row);
-        if (dashItems) refreshCards();
-        toast('Back on your list');
-      } catch {
-        toast("Couldn't undo that");
-      }
-    });
-  });
-
   function dueGroupsHtml(items, limit, colorOf) {
     const groups = [];
     for (const it of items.slice(0, limit)) {
@@ -539,14 +457,12 @@
     return groups
       .map(
         (g) => `<div class="gcx-due-grp"><div class="gcx-due-h ${g.cls}">${esc(g.label)}</div>${g.items
-          .map((it) => {
-            dueByKey.set(it.key, it);
-            return `<div class="gcx-due-row"><a class="gcx-due-item" href="${esc(it.url)}" style="--c:${esc(colorOf(it))}" title="${esc(
-              it.title + (it.due ? ' · ' + shortDate(it.due) + ', ' + timeOf(it.due) : ''),
-            )}">${esc(it.title)}</a><button type="button" class="gcx-due-done" data-key="${esc(it.key)}" title="Mark as done" aria-label="Mark ${esc(
-              it.title,
-            )} as done">${svg('done', 18)}</button></div>`;
-          })
+          .map(
+            (it) =>
+              `<a class="gcx-due-item" href="${esc(it.url)}" style="--c:${esc(colorOf(it))}" title="${esc(
+                it.title + (it.due ? ' · ' + shortDate(it.due) + ', ' + timeOf(it.due) : ''),
+              )}">${esc(it.title)}</a>`,
+          )
           .join('')}</div>`,
       )
       .join('');
@@ -1213,6 +1129,7 @@
       }
       if (anns.length >= 15) stream.append(el(`<a class="gcx-chip" style="align-self:center" href="/courses/${id}/announcements">Older announcements</a>`));
       stream.querySelectorAll('[data-av]').forEach((n) => (n.style.backgroundImage = `url(${JSON.stringify(n.dataset.av)})`));
+      fixInlineColors(stream);
       // Past the first two, announcements fade and slide up as they scroll into view. This runs
       // on every draw (the fresh copy replaces the cached one), but anything already on screen or
       // above it stays put so a refresh never hides what he's looking at.
@@ -3157,8 +3074,28 @@
     toastTimer = setTimeout(() => toastEl.classList.remove('show'), actionLabel ? 5000 : 2600);
   }
 
+  // ---------------------------------------------------------------- readable rich content in dark mode
+  const rgbOf = (str) => (String(str).match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
+  const lum = ([r, g, b]) => {
+    const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+  };
+  function fixInlineColors(root) {
+    if (!root) return;
+    const bg = rgbOf(getComputedStyle(document.body).backgroundColor);
+    if (bg.length < 3 || lum(bg) > 0.25) return; // only on a dark page
+    const bgL = lum(bg);
+    for (const n of root.querySelectorAll('[style*="color"]:not([data-gcx-lit]), font[color]:not([data-gcx-lit])')) {
+      n.setAttribute('data-gcx-lit', '');
+      const c = rgbOf(getComputedStyle(n).color);
+      if (c.length < 3) continue;
+      const contrast = (Math.max(lum(c), bgL) + 0.05) / (Math.min(lum(c), bgL) + 0.05);
+      if (contrast < 4) n.style.setProperty('color', `color-mix(in srgb, rgb(${c.join(',')}) 45%, #fff)`, 'important');
+    }
+  }
+
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = { api, apiSend, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, confetti };
+  window.gcx = { api, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
 
   // ---------------------------------------------------------------- loading bar
   // A thin bar across the top of the page (not the rail): dark grey track, filled with the
@@ -3290,7 +3227,7 @@
   document.addEventListener('pointerdown', (e) => {
     // Whole class cards ripple too (a setting); a click on something inside that has its own
     // ripple (a due item, the mail button) uses that one instead.
-    const own = e.target.closest && e.target.closest('.gcx-due-item, .gcx-iconbtn, .gcx-more-link, .gcx-due-done');
+    const own = e.target.closest && e.target.closest('.gcx-due-item, .gcx-iconbtn, .gcx-more-link');
     const card = !own && prefs().cardRipple && e.target.closest && e.target.closest('#DashboardCard_Container .ic-DashboardCard');
     const t = card || (e.target.closest && e.target.closest('.gcx-row, .gcx-chip, .gcx-ri, .gcx-tab, .gcx-due-item, .gcx-more-btn, .gcx-seg button, .gcx-link a, .gcx-iconbtn, .gcx-links-add'));
     if (!t || e.button) return;

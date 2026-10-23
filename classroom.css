@@ -128,7 +128,9 @@ html.gcx-course #main { margin-left: 0 !important; }
   font-size: 15px; font-weight: 600; color: var(--gcx-muted) !important; text-decoration: none !important;
 }
 #gcx-cbar .gcx-tab:hover { background: var(--gcx-bg2); color: var(--gcx-text) !important; }
-#gcx-cbar .gcx-tab.on { color: var(--c) !important; }
+/* Course colors are picked for white; as text they're blended with the text color so a navy or
+   brown course stays readable on BetterCampus's dark theme too. */
+#gcx-cbar .gcx-tab.on { color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)) !important; }
 #gcx-cbar .gcx-tabs { position: relative; }
 #gcx-cbar .gcx-tabs-ink {
   position: absolute; bottom: 0; height: 4px; border-radius: 4px 4px 0 0; background: var(--c); opacity: 0; pointer-events: none;
@@ -209,7 +211,7 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-ann-who { min-width: 0; }
 .gcx-ann-who b { display: block; font-weight: 600; }
 .gcx-ann-who span { font-size: 12px; color: var(--gcx-muted); }
-.gcx-ann-new { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--c); }
+.gcx-ann-new { margin-left: auto; font-size: 12px; font-weight: 700; color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)); }
 .gcx-ann-title { display: block; margin-top: 12px; font-size: 16px; font-weight: 600; color: var(--gcx-text) !important; }
 .gcx-ann-title:hover { text-decoration: underline !important; }
 .gcx-ann-body { margin-top: 6px; line-height: 1.5; overflow: hidden !important; max-height: 7.5em !important; position: relative; overflow-wrap: anywhere; contain: paint; font-size: 14px; }
@@ -226,7 +228,7 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-due { display: flex; flex-direction: column; gap: 10px; }
 .gcx-due-h { font-size: 12px; font-weight: 700; color: var(--gcx-muted); margin-bottom: 2px; }
 .gcx-due-h.missing { color: var(--gcx-red); }
-.gcx-due-h.soon { color: var(--c, var(--gcx-link)); }
+.gcx-due-h.soon { color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)); }
 .gcx-due-item {
   display: block; margin-top: 4px; padding: 7px 10px; border-radius: 8px; border-left: 3px solid var(--c, var(--gcx-link));
   background: var(--gcx-bg2); color: var(--gcx-text) !important; font-size: 14px; line-height: 1.3;
@@ -271,12 +273,12 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-toc { position: sticky; top: 88px; display: flex; flex-direction: column; max-height: calc(100vh - 110px); overflow-y: auto; }
 .gcx-toc a { padding: 8px 12px; border-radius: 0 18px 18px 0; color: var(--gcx-text) !important; font-size: 14px; line-height: 1.3; }
 .gcx-toc a:hover { background: var(--gcx-bg2); }
-.gcx-toc a.on { color: var(--c) !important; font-weight: 600; background: color-mix(in srgb, var(--c) 12%, transparent); }
+.gcx-toc a.on { color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)) !important; font-weight: 600; background: color-mix(in srgb, var(--c) 12%, transparent); }
 .gcx-topics { display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 .gcx-topic { scroll-margin-top: 84px; }
 .gcx-topic-h {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 4px 10px; margin: 0 0 4px; cursor: pointer;
-  border: 0; border-bottom: 2px solid var(--c); background: none; color: var(--c); font: inherit; text-align: left;
+  border: 0; border-bottom: 2px solid var(--c); background: none; color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)); font: inherit; text-align: left;
 }
 .gcx-topic-h h2 { flex: 1; font-size: 22px !important; line-height: 1.25; }
 .gcx-topic-h .gcx-count { font-size: 13px; color: var(--gcx-muted); font-weight: 600; }
@@ -567,8 +569,9 @@ html[data-gcx-nav="left"]::view-transition-new(root) { animation-name: gcx-vt-in
 html[data-gcx-nav="right"]::view-transition-old(root) { animation-name: gcx-vt-out-right; }
 html[data-gcx-nav="right"]::view-transition-new(root) { animation-name: gcx-vt-in-left; }
 /* Opening a class: the old page dissolves, the new one rises gently into place. */
-html:is([data-gcx-nav="in"], [data-gcx-nav="out"], [data-gcx-nav="fade"])::view-transition-old(root) { animation: gcx-vt-fade-out 0.18s ease both; }
-html:is([data-gcx-nav="in"], [data-gcx-nav="out"], [data-gcx-nav="fade"])::view-transition-new(root) { animation: gcx-vt-fade-in 0.24s ease both; }
+/* (the browser's own crossfade: both halves stay complementary, so white never shows through) */
+html:is([data-gcx-nav="in"], [data-gcx-nav="out"], [data-gcx-nav="fade"])::view-transition-old(root),
+html:is([data-gcx-nav="in"], [data-gcx-nav="out"], [data-gcx-nav="fade"])::view-transition-new(root) { animation-duration: 0.22s; }
 /* The course name animates on its own: class to class, the old name lifts out as the new one
    settles in while the bar stays put. From the dashboard there's no bar yet, so it fades in. */
 #gcx-cbar .gcx-cbar-title { view-transition-name: gcx-ctitle; }
@@ -701,21 +704,6 @@ html.gcx::-webkit-scrollbar-thumb:hover, html.gcx *::-webkit-scrollbar-thumb:hov
 html.gcx::-webkit-scrollbar-corner, html.gcx *::-webkit-scrollbar-corner { background: transparent; }
 html.gcx::-webkit-scrollbar-button, html.gcx *::-webkit-scrollbar-button { display: none; }
 
-/* ---------- upcoming items: a check on hover marks them done (Canvas's planner "complete") */
-.gcx-due-row { position: relative; margin-top: 4px; transition: opacity 0.3s ease, max-height 0.35s ease, margin 0.35s ease; max-height: 60px; }
-.gcx-due-row .gcx-due-item { margin-top: 0; padding-right: 38px; }
-.gcx-due-done {
-  position: absolute; right: 5px; top: 50%; width: 26px; height: 26px; margin-top: -13px; padding: 0; border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--c, var(--gcx-link)) 70%, transparent); background: var(--gcx-card); color: transparent;
-  display: grid; place-items: center; cursor: pointer; opacity: 0; transform: scale(0.85);
-  transition: opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease, color 0.15s ease;
-}
-.gcx-due-row:hover .gcx-due-done, .gcx-due-done:focus-visible { opacity: 1; transform: none; }
-.gcx-due-done:hover { color: var(--c, var(--gcx-link)); }
-.gcx-due-row.gcx-checking .gcx-due-done, .gcx-due-row.gcx-done-out .gcx-due-done { opacity: 1; transform: none; background: var(--c, var(--gcx-link)); border-color: transparent; color: #fff; }
-.gcx-due-row.gcx-done-out .gcx-due-item { text-decoration: line-through !important; opacity: 0.6; }
-.gcx-due-row.gcx-done-out { animation: gcx-done-out 0.42s ease 0.12s forwards; }
-@keyframes gcx-done-out { to { opacity: 0; max-height: 0; margin: 0; } }
 .gcx-toast { display: flex; align-items: center; gap: 16px; pointer-events: none; }
 .gcx-toast.show { pointer-events: auto; }
 .gcx-toast-btn { border: 0; background: none; color: #8ab4f8; font: inherit; font-weight: 700; cursor: pointer; padding: 0; }

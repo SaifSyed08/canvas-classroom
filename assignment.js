@@ -190,6 +190,7 @@
     if (a.description && a.description.trim()) {
       const body = cleanHtml(a.description);
       bodyEl.replaceChildren(...body.childNodes);
+      if (gcx.fixInlineColors) gcx.fixInlineColors(bodyEl);
       // Inline images that don't load (Canvas's own little download icons, expired links) go,
       // instead of leaving a broken-image box in the text.
       bodyEl.querySelectorAll('img').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));

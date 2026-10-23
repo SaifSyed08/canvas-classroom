@@ -113,12 +113,7 @@ async function readFile(att) {
   }
   const buf = new Uint8Array(await r.arrayBuffer());
   if (buf.length > MAX_FILE) return { text: `${att.name} is ${Math.round(buf.length / 1e6)} MB, too big to read here.` };
-  return fromBuffer(att.name, ext, att.mime || r.headers.get('content-type') || '', buf);
-}
-
-// A file's bytes as something the model can read: a PDF or image part, or text.
-async function fromBuffer(name, ext, mime, buf) {
-  const att = { name };
+  const mime = att.mime || r.headers.get('content-type') || '';
   if (ext === 'pdf' || /pdf/.test(mime))
     return {
       text: `${att.name} is attached below as a PDF.`,
@@ -206,25 +201,6 @@ chrome.runtime.onConnect.addListener((port) => {
     try {
       if (msg.type === 'start') {
         const body = { instructions: msg.instructions, tools: msg.tools, input: msg.input };
-        if (Array.isArray(msg.attachments) && msg.attachments.length) {
-          const texts = [];
-          const parts = [];
-          for (const a of msg.attachments.slice(0, 5)) {
-            const bin = atob(String(a.data || ''));
-            const buf = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-            if (buf.length > MAX_FILE) {
-              texts.push(`${a.name} is too big to read here.`);
-              continue;
-            }
-            const ext = (String(a.name).match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
-            const f = await fromBuffer(a.name, ext, a.mime || '', buf).catch(() => ({ text: `Couldn't read ${a.name}.` }));
-            texts.push(f.text);
-            if (f.part) parts.push(f.part);
-          }
-          const last = body.input[body.input.length - 1];
-          last.content = [{ type: 'input_text', text: `${last.content}\n\n${texts.join('\n\n')}` }, ...parts];
-        }
         if (msg.previous_response_id) body.previous_response_id = msg.previous_response_id;
         await stream(port, body, ctrl.signal, msg.tier);
       } else if (msg.type === 'continue') {

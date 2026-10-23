@@ -51,8 +51,9 @@
     still = (JSON.parse(localStorage.getItem('gcx:prefs') || '{}') || {}).motion === false;
   } catch {}
   if (still) html.classList.add('gcx-still');
-  // Page pieces ease in one by one, except when sliding between a course's tabs.
-  if (!still && html.dataset.gcxNav !== 'left' && html.dataset.gcxNav !== 'right') html.classList.add('gcx-enter');
+  // Page pieces ease in one by one only when opening a class; anywhere else (like going back to
+  // the dashboard) the page is just there, instead of washing in from white.
+  if (!still && html.dataset.gcxNav === 'in') html.classList.add('gcx-enter');
   const vt = document.createElement('style');
   vt.id = 'gcx-vt';
   vt.textContent = '@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }';
