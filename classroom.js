@@ -2584,20 +2584,40 @@
     if (m === 7 && d === 4) return ['🎆', '🇺🇸', '✨'];
     return null;
   }
+  // Each emoji and paper color is drawn once into a small sprite; every frame then only stamps
+  // sprites with a transform (no text layout, no save/restore), so it stays smooth.
   function confetti() {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || document.querySelector('.gcx-confetti')) return;
     const emoji = confettiTheme();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const sprite = (w, h, paint) => {
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(w * dpr);
+      c.height = Math.ceil(h * dpr);
+      const x = c.getContext('2d');
+      x.scale(dpr, dpr);
+      paint(x);
+      return { c, w, h };
+    };
+    const colors = ['#1a73e8', '#d93025', '#f9ab00', '#188038', '#9334e6', '#e8710a', '#12a4af'];
+    const paper = colors.map((col) => sprite(8, 12, (x) => ((x.fillStyle = col), x.fillRect(0, 0, 8, 12))));
+    const pics = (emoji || []).map((e) =>
+      sprite(40, 40, (x) => {
+        x.font = '30px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif';
+        x.textAlign = 'center';
+        x.textBaseline = 'middle';
+        x.fillText(e, 20, 22);
+      }),
+    );
     const cv = document.createElement('canvas');
     cv.className = 'gcx-confetti';
-    const dpr = window.devicePixelRatio || 1;
-    cv.width = innerWidth * dpr;
-    cv.height = innerHeight * dpr;
+    cv.width = Math.round(innerWidth * dpr);
+    cv.height = Math.round(innerHeight * dpr);
     document.body.append(cv);
     const ctx = cv.getContext('2d');
-    ctx.scale(dpr, dpr);
-    const colors = ['#1a73e8', '#d93025', '#f9ab00', '#188038', '#9334e6', '#e8710a', '#12a4af'];
-    const parts = Array.from({ length: emoji ? 70 : 140 }, (_, i) => {
+    const parts = Array.from({ length: pics.length ? 56 : 90 }, (_, i) => {
       const fromLeft = i % 2 === 0;
+      const isPic = pics.length && Math.random() < 0.7;
       return {
         x: fromLeft ? -10 : innerWidth + 10,
         y: innerHeight * (0.55 + Math.random() * 0.3),
@@ -2605,36 +2625,34 @@
         vy: -(11 + Math.random() * 9),
         r: Math.random() * Math.PI,
         vr: (Math.random() - 0.5) * 0.3,
-        w: 6 + Math.random() * 6,
-        h: 8 + Math.random() * 8,
-        c: colors[i % colors.length],
-        e: emoji && Math.random() < 0.75 ? emoji[i % emoji.length] : null,
-        s: 22 + Math.random() * 14,
+        s: isPic ? 0.85 + Math.random() * 0.45 : 0.8 + Math.random() * 0.6,
+        sp: isPic ? pics[i % pics.length] : paper[i % paper.length],
+        flip: !isPic,
       };
     });
     const t0 = performance.now();
+    let last = t0;
     const frame = (t) => {
       const age = t - t0;
-      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      // Step physics by real elapsed time (60 fps units) so a slow frame doesn't slow the fall.
+      const k = Math.min(3, (t - last) / 16.7);
+      last = t;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, cv.width, cv.height);
       ctx.globalAlpha = Math.max(0, Math.min(1, (3200 - age) / 700));
       for (const p of parts) {
-        p.vy += 0.38;
-        p.vx *= 0.985;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.r += p.vr;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.r);
-        if (p.e) {
-          ctx.font = `${p.s}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.fillText(p.e, 0, 0);
-        } else {
-          ctx.fillStyle = p.c;
-          ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2)));
-        }
-        ctx.restore();
+        p.vy += 0.38 * k;
+        p.vx *= Math.pow(0.985, k);
+        p.x += p.vx * k;
+        p.y += p.vy * k;
+        p.r += p.vr * k;
+        if (p.y > innerHeight + 60) continue;
+        const cos = Math.cos(p.r) * p.s * dpr;
+        const sin = Math.sin(p.r) * p.s * dpr;
+        // Paper pieces "flip" by squashing one axis as they spin.
+        const sq = p.flip ? Math.abs(Math.cos(p.r * 2)) + 0.15 : 1;
+        ctx.setTransform(cos, sin, -sin * sq, cos * sq, p.x * dpr, p.y * dpr);
+        ctx.drawImage(p.sp.c, -p.sp.w / 2, -p.sp.h / 2, p.sp.w, p.sp.h);
       }
       if (age < 3200) requestAnimationFrame(frame);
       else cv.remove();
