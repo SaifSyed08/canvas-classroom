@@ -106,7 +106,8 @@ Settings are a **Classroom** tab inside BetterCampus's settings (its gear, top r
 
 - greeting on or off, tone and font
 - the AI button and the Ctrl + Space shortcut, separately, and the quick model for simple questions
-- the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), and how dark class images get
+- the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), a course-color wash over class
+  images (like Canvas's own color overlay; it steps aside if that's turned on), and how dark class images get
   behind their white titles
 - page animations, the click ripple on class cards, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,

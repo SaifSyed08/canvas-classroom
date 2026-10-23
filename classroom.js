@@ -2116,6 +2116,7 @@
     const body = card.querySelector('.gcx-card-body');
     if (!ov || !body) return;
     body.dataset.color = c.color;
+    ov.style.setProperty('--c', c.color);
     body.style.setProperty('--c', c.color);
     if (c.name) ov.querySelector('.gcx-card-title').textContent = prettyName(c);
     ov.querySelector('.gcx-card-teacher').textContent = teacherLine(c);
@@ -2151,7 +2152,7 @@
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
-    school: false, theme: '', shade: 1, cardRipple: true,
+    school: false, theme: '', shade: 1, cardRipple: true, tint: true,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -2162,7 +2163,18 @@
     ['Strong', 2],
     ['Max', 3],
   ];
-  const applyShadePref = () => (html.dataset.gcxShade = String(prefs().shade));
+  const CANVAS_OVERLAY = (() => {
+    for (const sc of document.scripts) {
+      const m = !sc.src && sc.textContent.match(/"hide_dashcard_color_overlays":(true|false)/);
+      if (m) return m[1] === 'false';
+    }
+    return false;
+  })();
+  const applyShadePref = () => {
+    html.dataset.gcxShade = String(prefs().shade);
+    // Canvas's own color overlay, when he has it on, already does this.
+    html.classList.toggle('gcx-tint', prefs().tint !== false && !CANVAS_OVERLAY);
+  };
 
   // School colors: the rail takes the school's Canvas nav color (and logo), like stock Canvas,
   // and the accent color follows it. Everything comes from Canvas's own brand variables.
@@ -2478,6 +2490,9 @@
             ([k, label, color]) =>
               `<button type="button" role="radio" data-theme="${k}" aria-checked="${themeOf(p) === k}" title="${label}"><span class="gcx-sw gcx-sw-${k || 'default'}" style="${color ? `--sw:${color}` : ''}"></span><small>${label}</small></button>`,
           ).join('')}</div>
+          </div>
+        ${toggle('tint', 'Color over class images', "Each class image takes a wash of that class's color, like Canvas's own color overlay")}
+        <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Darken class images (so white titles stand out)</div>
           <div class="gcx-set-tone" role="radiogroup" aria-label="Darken class images">${SHADES.map(
             ([label, v]) => `<button type="button" role="radio" data-shade="${v}" aria-checked="${p.shade === v}">${label}</button>`,

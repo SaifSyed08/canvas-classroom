@@ -711,3 +711,15 @@ html.gcx::-webkit-scrollbar-button, html.gcx *::-webkit-scrollbar-button { displ
 .gcx-toast { display: flex; align-items: center; gap: 16px; pointer-events: none; }
 .gcx-toast.show { pointer-events: auto; }
 .gcx-toast-btn { border: 0; background: none; color: #8ab4f8; font: inherit; font-weight: 700; cursor: pointer; padding: 0; }
+
+/* ---------- course-color wash over class images (Settings > Look), under the darkening gradient.
+   Canvas's own color overlay is off in his Canvas preferences, so this draws one. */
+html.gcx-tint .ic-DashboardCard__header a.gcx-card-ov::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: color-mix(in srgb, var(--c, transparent) 55%, transparent);
+}
+html.gcx-tint .gcx-banner::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--c, transparent) 45%, transparent);
+}
+.gcx-banner-tx, .gcx-banner-grade { z-index: 1; }
