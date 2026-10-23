@@ -3075,24 +3075,72 @@
   }
 
   // ---------------------------------------------------------------- readable rich content in dark mode
-  const rgbOf = (str) => (String(str).match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
+  // Reads rgb(…) and Chrome's color(srgb 0-1 …) forms.
+  const rgbOf = (str) => {
+    const n = (String(str).match(/\d+(?:\.\d+)?/g) || []).slice(0, 3).map(Number);
+    return /^color\(srgb/.test(String(str)) ? n.map((v) => v * 255) : n;
+  };
   const lum = ([r, g, b]) => {
     const f = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
     return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
   };
+  // On (or inside) a highlight that's actually drawn (BetterCampus's dark theme clears most pasted
+  // backgrounds; what's left is a real highlight): its color was picked for that highlight.
+  const highlighted = (n, root, pageL) => {
+    for (let x = n; x && x !== root; x = x.parentElement) {
+      const bg = getComputedStyle(x).backgroundColor;
+      const a = (String(bg).match(/rgba\([^)]*,\s*([\d.]+)\)/) || [])[1];
+      if (/transparent/.test(bg) || (a != null && Number(a) < 0.3)) continue;
+      const c = rgbOf(bg);
+      if (c.length === 3 && Math.abs(lum(c) - pageL) > 0.08) return true;
+    }
+    return false;
+  };
+  // Only text the instructor colored themselves (an inline color), with no highlight of its own
+  // behind it. The original color is kept, so switching back to light mode restores it.
   function fixInlineColors(root) {
     if (!root) return;
-    const bg = rgbOf(getComputedStyle(document.body).backgroundColor);
-    if (bg.length < 3 || lum(bg) > 0.25) return; // only on a dark page
-    const bgL = lum(bg);
-    for (const n of root.querySelectorAll('[style*="color"]:not([data-gcx-lit]), font[color]:not([data-gcx-lit])')) {
-      n.setAttribute('data-gcx-lit', '');
+    const bodyBg = rgbOf(getComputedStyle(document.body).backgroundColor);
+    const dark = bodyBg.length === 3 && lum(bodyBg) <= 0.25;
+    for (const n of root.querySelectorAll('[style*="color"], font[color]')) {
+      // A white background pasted in from another page (a bright bar on a dark page) goes in dark
+      // mode; the original comes back in light mode.
+      if (n.hasAttribute('data-gcx-bg')) {
+        n.style.setProperty('background-color', n.getAttribute('data-gcx-bg'));
+        n.removeAttribute('data-gcx-bg');
+      }
+      if (dark && n.style.backgroundColor) {
+        const b = rgbOf(getComputedStyle(n).backgroundColor);
+        if (b.length === 3 && lum(b) > 0.85) {
+          n.setAttribute('data-gcx-bg', n.style.backgroundColor);
+          n.style.setProperty('background-color', 'transparent', 'important');
+        }
+      }
+      if (n.hasAttribute('data-gcx-color')) {
+        // Put the original back first; it's re-checked below for the current theme.
+        const orig = n.getAttribute('data-gcx-color');
+        if (orig) n.style.setProperty('color', orig);
+        else n.style.removeProperty('color');
+      } else {
+        n.setAttribute('data-gcx-color', n.style.color || '');
+      }
+      if (!dark) continue;
+      if (highlighted(n, root, lum(bodyBg))) {
+        // A highlight inside lightened text keeps the color the instructor chose for it.
+        const up = n.parentElement && n.parentElement.closest('[data-gcx-color]');
+        if (!n.style.color && n.tagName !== 'FONT' && up && root.contains(up) && up.getAttribute('data-gcx-color'))
+          n.style.setProperty('color', up.getAttribute('data-gcx-color'), 'important');
+        continue;
+      }
+      if (!n.style.color && n.tagName !== 'FONT') continue; // only a background: nothing to recolor
       const c = rgbOf(getComputedStyle(n).color);
       if (c.length < 3) continue;
-      const contrast = (Math.max(lum(c), bgL) + 0.05) / (Math.min(lum(c), bgL) + 0.05);
-      if (contrast < 4) n.style.setProperty('color', `color-mix(in srgb, rgb(${c.join(',')}) 45%, #fff)`, 'important');
+      const contrast = (Math.max(lum(c), lum(bodyBg)) + 0.05) / (Math.min(lum(c), lum(bodyBg)) + 0.05);
+      if (contrast < 4) n.style.setProperty('color', `color-mix(in srgb, rgb(${c.map(Math.round).join(',')}) 45%, #fff)`, 'important');
     }
   }
+  // After a dark/light switch, re-check everything that was adjusted.
+  const refreshInlineColors = () => document.querySelectorAll('.gcx-stream, .gcx-asg-body').forEach(fixInlineColors);
 
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
   window.gcx = { api, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
@@ -3192,6 +3240,7 @@
     const isTheme = changed.some((n) => n.id === 'darkcss' || n.id === 'bettercanvas-theme-preset');
     if (!changed.length || !isTheme || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
       snapTheme();
+      if (isTheme) refreshInlineColors();
       return;
     }
     themeBusy = true;
@@ -3205,6 +3254,7 @@
       html.classList.remove('gcx-theme-vt');
       snapTheme();
       themeBusy = false;
+      refreshInlineColors();
     };
     try {
       document
