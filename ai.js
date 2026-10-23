@@ -524,6 +524,55 @@
       run: async ({ course_id }) => (await api(`/courses/${course_id}/tabs?per_page=100`, true)).map((t) => ({ label: t.label, external: t.type === 'external' || undefined, url: rel(t.html_url) })),
     },
     {
+      name: 'prepare_submission',
+      label: 'Getting the hand-in ready',
+      description:
+        "Get files Saif attached in this chat ready to hand in to an assignment. It only shows him a confirm card with a Submit button; nothing is turned in unless he presses it. Use it only when he asks to submit / turn in / upload his file to an assignment. Find the assignment with the other tools first.",
+      parameters: obj(
+        {
+          course_id: ID,
+          assignment_id: ID,
+          files: { type: 'array', items: { type: 'string' }, description: 'Names of his attached files to hand in' },
+          comment: { type: 'string', description: 'Optional comment, only if he asked for one' },
+        },
+        ['course_id', 'assignment_id'],
+      ),
+      run: async ({ course_id, assignment_id, files, comment }) => {
+        const names = Array.isArray(files) && files.length ? files.map(String) : [...attached.keys()];
+        if (!attached.size) return { error: 'He has not attached any file in this chat. Ask him to attach it with the + button.' };
+        const picked = names.map((n) => attached.get(n) || [...attached.values()].find((f) => f.name.toLowerCase() === n.toLowerCase()));
+        if (picked.some((f) => !f)) return { error: `Unknown file. Attached: ${[...attached.keys()].join(', ')}` };
+        const a = await api(`/courses/${course_id}/assignments/${assignment_id}?include[]=submission`);
+        const types = a.submission_types || [];
+        if (!types.includes('online_upload')) return { error: `"${a.name}" doesn't take file uploads (it takes: ${types.join(', ') || 'nothing online'}).` };
+        if (a.locked_for_user) return { error: `"${a.name}" is locked and isn't taking submissions.` };
+        const allowed = (a.allowed_extensions || []).map((x) => x.toLowerCase());
+        for (const f of picked) {
+          const ext = (f.name.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || '';
+          if (allowed.length && !allowed.includes(ext)) return { error: `"${a.name}" only takes ${allowed.map((x) => '.' + x).join(', ')}, and ${f.name} is .${ext || '(none)'}.` };
+        }
+        const sub = a.submission || {};
+        const used = sub.attempt || 0;
+        if (a.allowed_attempts > 0 && used >= a.allowed_attempts) return { error: `No attempts left on "${a.name}" (${used} of ${a.allowed_attempts} used).` };
+        const courses = await gcx.coursesReady.catch(() => []);
+        const c = courses.find((x) => String(x.id) === String(course_id));
+        pendingSubmit = {
+          courseId: course_id,
+          assignmentId: assignment_id,
+          course: c ? c.code || gcx.prettyName(c) : '',
+          name: a.name,
+          url: a.html_url,
+          due: a.due_at,
+          points: a.points_possible,
+          files: picked,
+          comment: comment ? String(comment).slice(0, 2000) : '',
+          attempt: used + 1,
+          resubmit: !!sub.submitted_at,
+        };
+        return { ready: true, assignment: a.name, note: 'A confirm card with a Submit button appears under your reply. It is NOT turned in until he presses Submit; say that in one short line.' };
+      },
+    },
+    {
       name: 'open_page',
       label: 'Opening the page',
       description:
@@ -601,6 +650,11 @@
   // question asked to go somewhere (navAllowed). Otherwise it becomes a link under the reply.
   let navRequest = null;
   let navAllowed = false;
+  // Files he attached on the Ctrl+Space pill this page (name -> File), and a hand-in waiting for
+  // his Submit click (set by prepare_submission).
+  const attached = new Map();
+  let pendingSubmit = null;
+  const MAX_ATTACH = 25 * 1024 * 1024;
   const NAV_ASK = /\b(go to|take me|bring me|get me to|navigate|pull up|open (?:up )?(?:my|the|it|that|this)|show me (?:the|my))\b/i;
   const TOOL_DEFS = TOOLS.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false }));
 
@@ -652,6 +706,7 @@
       '- Link Canvas items with markdown links using the url fields from the tools (relative /courses/... links are fine), e.g. [Exam 2](/courses/1/assignments/2).',
       '- Give dates in his local time like "Wed, Oct 28 at 1:00 PM", and say "today"/"tomorrow" when that applies.',
       '- You can only read. You cannot submit, post, message, or change anything; say so if asked, and link the page where he can do it.',
+      '- Files he attached are in his message. If he asks to submit / turn in / upload one to an assignment, find the assignment and call prepare_submission; it only shows him a confirm card, and you must say it is not turned in until he presses Submit. Never claim something was submitted. Never write or change the work itself.',
       '- If he asks to go to, open or be taken to a page, find its URL (with the tools if needed) and call open_page, then reply in one short line like "Opening your Genetics grades." Only do this when he asks.',
       '- If a tool fails or something is hidden by the instructor, say what you could not get.',
     ].join('\n');
@@ -789,6 +844,7 @@
     send: 'M19 7v4H5.83l3.58-3.59L8 6l-6 6 6 6 1.41-1.41L5.83 13H21V7z', // the Enter key
     stop: 'M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z',
     plus: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    clip: 'M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
   };
   const icon = (d, s = 20) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" aria-hidden="true"><path d="${d}"/></svg>`;
@@ -825,12 +881,14 @@
         ${spot ? '<span class="gcx-ask-grip" title="Drag to move" aria-hidden="true"></span>' : ''}
         <div class="gcx-ask-top"><button class="gcx-ask-new" type="button" title="Start a new chat" tabindex="-1">${icon(ICON.plus, 16)}New chat</button></div>
         <div class="gcx-ask-log"></div>
+        ${spot ? '<div class="gcx-ask-files" hidden></div>' : ''}
         <div class="gcx-ask-row" role="button" tabindex="0" aria-label="Ask anything about your classes" aria-expanded="false">
           <span class="gcx-ask-hint" aria-hidden="true">Ask anything…</span>
           <input class="gcx-ask-input" type="text" autocomplete="off" spellcheck="false" placeholder="${spot ? 'Ask anything…' : 'Ask about your classes'}" aria-label="Ask about your classes" tabindex="-1">
           <button class="gcx-ask-send" type="button" tabindex="-1" aria-label="Send">${icon(ICON.send, 16)}</button>
         </div>
         <span class="gcx-ask-icon"><span class="gcx-ask-ai">AI</span></span>
+        ${spot ? `<button class="gcx-ask-plus" type="button" title="Attach a file" aria-label="Attach a file">${icon(ICON.plus, 18)}</button><input class="gcx-ask-pick" type="file" multiple hidden>` : ''}
       </div>
       ${spot ? `<button class="gcx-ask-x" type="button" title="Close" aria-label="Close">${icon(ICON.close, 14)}</button>` : ''}
       <div class="gcx-ask-peek" aria-hidden="true"><span class="gcx-ask-pdot"></span><span class="gcx-ask-ptext"></span></div>
@@ -1005,7 +1063,10 @@
 
     // ----- rendering
     function msgHtml(m) {
-      if (m.role === 'user') return `<div class="gcx-ask-msg user"><div class="gcx-ask-bubble">${esc(m.text)}</div></div>`;
+      if (m.role === 'user')
+        return `<div class="gcx-ask-msg user"><div class="gcx-ask-bubble">${esc(m.text)}${
+          m.files && m.files.length ? `<div class="gcx-ask-bfiles">${m.files.map((n) => `<span>${icon(ICON.clip, 13)}${esc(n)}</span>`).join('')}</div>` : ''
+        }</div></div>`;
       return `<div class="gcx-ask-msg bot${m.error ? ' err' : ''}">${m.error ? esc(m.text) : md(m.text)}</div>`;
     }
     function renderLog() {
@@ -1061,6 +1122,150 @@
       // were swallowing the space bar.
       e.stopPropagation();
     });
+
+    // ----- attachments (Ctrl+Space pill only): + button, drag-and-drop, paste
+    let pending = []; // files waiting to go with the next question
+    const chips = root.querySelector('.gcx-ask-files');
+    const drawChips = () => {
+      if (!chips) return;
+      chips.hidden = !pending.length;
+      chips.innerHTML = pending
+        .map((f, i) => `<span class="gcx-ask-chip">${icon(ICON.clip, 14)}<b>${esc(f.name)}</b><button type="button" data-i="${i}" aria-label="Remove ${esc(f.name)}">${icon(ICON.close, 12)}</button></span>`)
+        .join('');
+      root.classList.toggle('has-files', !!pending.length);
+      if (state === 'open') fit();
+    };
+    const addFiles = (list) => {
+      for (const f of [...list]) {
+        if (f.size > MAX_ATTACH) {
+          gcx.toast(`${f.name} is over 25 MB`);
+          continue;
+        }
+        if (pending.length >= 5) break;
+        if (!pending.some((p) => p.name === f.name && p.size === f.size)) pending.push(f);
+      }
+      drawChips();
+      input.focus({ preventScroll: true });
+    };
+    if (spot) {
+      const pick = root.querySelector('.gcx-ask-pick');
+      on(root.querySelector('.gcx-ask-plus'), 'click', (e) => {
+        e.stopPropagation();
+        pick.click();
+      });
+      on(pick, 'change', () => {
+        addFiles(pick.files);
+        pick.value = '';
+      });
+      on(chips, 'click', (e) => {
+        const b = e.target.closest('button[data-i]');
+        if (!b) return;
+        e.stopPropagation();
+        pending.splice(Number(b.dataset.i), 1);
+        drawChips();
+      });
+      on(box, 'dragover', (e) => {
+        if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) {
+          e.preventDefault();
+          root.classList.add('drop');
+        }
+      });
+      on(box, 'dragleave', () => root.classList.remove('drop'));
+      on(box, 'drop', (e) => {
+        root.classList.remove('drop');
+        if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+        e.preventDefault();
+        addFiles(e.dataTransfer.files);
+      });
+      on(input, 'paste', (e) => {
+        const files = e.clipboardData && e.clipboardData.files;
+        if (files && files.length) {
+          e.preventDefault();
+          addFiles(files);
+        }
+      });
+    }
+    const toB64 = (file) =>
+      new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(',')[1] || '');
+        r.onerror = () => rej(r.error);
+        r.readAsDataURL(file);
+      });
+
+    // ----- the hand-in confirm card: nothing is sent until he presses Submit
+    function submitCard(d) {
+      const due = d.due ? new Date(d.due) : null;
+      const late = due && due < new Date();
+      const warn = [
+        late ? `Past due (was due ${due.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}): it will be marked late.` : '',
+        d.resubmit ? `You already turned this in; this becomes attempt ${d.attempt}.` : '',
+      ].filter(Boolean);
+      const card = gcx.el(`<div class="gcx-ask-card" role="group" aria-label="Hand in">
+        <div class="gcx-ask-card-h"><b>${esc(d.name)}</b><span>${esc([d.course, due ? 'Due ' + due.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '', d.points != null ? d.points + ' pts' : ''].filter(Boolean).join(' · '))}</span></div>
+        <div class="gcx-ask-card-files">${d.files.map((f) => `<span>${icon(ICON.clip, 13)}${esc(f.name)}</span>`).join('')}</div>
+        ${d.comment ? `<div class="gcx-ask-card-note">Comment: ${esc(d.comment)}</div>` : ''}
+        ${warn.map((w) => `<div class="gcx-ask-card-warn">${esc(w)}</div>`).join('')}
+        <div class="gcx-ask-card-act"><span class="gcx-ask-card-status"></span><button type="button" class="gcx-ask-card-no">Cancel</button><button type="button" class="gcx-ask-card-go">Submit</button></div>
+      </div>`);
+      const status = card.querySelector('.gcx-ask-card-status');
+      const go = card.querySelector('.gcx-ask-card-go');
+      const no = card.querySelector('.gcx-ask-card-no');
+      no.addEventListener('click', () => {
+        card.classList.add('done');
+        card.querySelector('.gcx-ask-card-act').innerHTML = '<span class="gcx-ask-card-status">Not turned in.</span>';
+      });
+      go.addEventListener('click', async () => {
+        go.disabled = no.disabled = true;
+        try {
+          await handIn(d, (t) => (status.textContent = t));
+          card.classList.add('done', 'ok');
+          card.querySelector('.gcx-ask-card-act').innerHTML = `<span class="gcx-ask-card-status">Turned in. <a href="${esc(d.url)}">View submission</a></span>`;
+          if (gcx.prefs().confetti && gcx.confetti) gcx.confetti();
+          gcx.toast(`Turned in ${d.name}`);
+        } catch (e) {
+          console.warn('[canvas-classroom] hand-in', e);
+          status.textContent = `Couldn't turn it in: ${e.message}`;
+          go.disabled = no.disabled = false;
+        }
+      });
+      return card;
+    }
+    // Canvas's three steps: announce the file, send the bytes where Canvas says, attach the ids.
+    async function handIn(d, say) {
+      const ids = [];
+      for (const f of d.files) {
+        say(`Uploading ${f.name}…`);
+        const pre = await gcx.apiSend(`/courses/${d.courseId}/assignments/${d.assignmentId}/submissions/self/files`, 'POST', {
+          name: f.name,
+          size: f.size,
+          content_type: f.type || 'application/octet-stream',
+          on_duplicate: 'rename',
+        });
+        if (!pre || !pre.upload_url) throw new Error("Canvas didn't give an upload address");
+        const form = new FormData();
+        for (const [k, v] of Object.entries(pre.upload_params || {})) form.append(k, v);
+        form.append('file', f, f.name);
+        const same = new URL(pre.upload_url, location.href).origin === location.origin;
+        const up = await fetch(pre.upload_url, { method: 'POST', body: form, credentials: same ? 'same-origin' : 'omit' });
+        if (!up.ok) throw new Error(`upload failed (${up.status})`);
+        const parse = async (r) => {
+          try {
+            return JSON.parse((await r.text()).replace(/^while\(1\);/, ''));
+          } catch {
+            return null;
+          }
+        };
+        let done = await parse(up);
+        if (done && done.id == null && done.location) done = await parse(await fetch(done.location, { credentials: 'same-origin' }));
+        if (!done || done.id == null) throw new Error("Canvas didn't confirm the upload");
+        ids.push(done.id);
+      }
+      say('Turning it in…');
+      const body = { submission: { submission_type: 'online_upload', file_ids: ids } };
+      if (d.comment) body.comment = { text_comment: d.comment };
+      return gcx.apiSend(`/courses/${d.courseId}/assignments/${d.assignmentId}/submissions`, 'POST', body);
+    }
 
     // The key is typed into the extension's own options page, never into a field on the Canvas page.
     function showKeyPrompt(msg) {
@@ -1144,7 +1349,11 @@
       };
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
-      let tier = routeTier(q);
+      const sending = pending.splice(0);
+      drawChips();
+      for (const f of sending) attached.set(f.name, f);
+      pendingSubmit = null;
+      let tier = sending.length ? 'smart' : routeTier(q);
       lastTier = tier;
       // Only navigate when he asked to go somewhere; otherwise the page is offered as a button.
       const wantsNav = NAV_ASK.test(q);
@@ -1158,7 +1367,7 @@
       unseen = false;
       input.value = '';
       setState('open');
-      hist.msgs.push({ role: 'user', text: q });
+      hist.msgs.push(sending.length ? { role: 'user', text: q, files: sending.map((f) => f.name) } : { role: 'user', text: q });
       saveHist();
       renderLog();
       const bot = gcx.el(`<div class="gcx-ask-msg bot live"><div class="gcx-ask-status"><span class="gcx-ask-dot"></span><span>Thinking</span></div></div>`);
@@ -1196,9 +1405,11 @@
       const instr = await Promise.race([instructions(), cancelled.then(() => null)]);
       if (me.cancelled && !text) text = '_Stopped._';
       const history = hist.msgs.slice(-12, -1).filter((m) => !m.error).map((m) => ({ role: m.role, content: m.text }));
+      const attachments = sending.length ? await Promise.all(sending.map(async (f) => ({ name: f.name, mime: f.type, data: await toB64(f) }))) : undefined;
+      const qText = sending.length ? `${q}\n\n(Attached: ${sending.map((f) => f.name).join(', ')})` : q;
       let req = hist.prev
-        ? { type: 'start', tier, instructions: instr, tools: TOOL_DEFS, previous_response_id: hist.prev, input: [{ role: 'user', content: q }] }
-        : { type: 'start', tier, instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: q }] };
+        ? { type: 'start', tier, attachments, instructions: instr, tools: TOOL_DEFS, previous_response_id: hist.prev, input: [{ role: 'user', content: qText }] }
+        : { type: 'start', tier, attachments, instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: qText }] };
 
       let finalId = null;
       let error = null;
@@ -1234,7 +1445,19 @@
         } catch {}
         if (res.type === 'error' && res.code === 'noprev' && req.previous_response_id && round === 0) {
           hist.prev = null;
-          req = { type: 'start', tier, instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: q }] };
+          req = { type: 'start', tier, attachments, instructions: instr, tools: TOOL_DEFS, input: [...history, { role: 'user', content: qText }] };
+          round--;
+          continue;
+        }
+        // A file OpenAI can't read shouldn't block the question (or a hand-in, which only Canvas
+        // needs the file for): ask again without it, saying it couldn't be read.
+        if (res.type === 'error' && req.type === 'start' && req.attachments && /file|image|pdf/i.test(res.message || '')) {
+          const names = req.attachments.map((x) => x.name).join(', ');
+          req = { ...req, attachments: undefined };
+          const last = req.input[req.input.length - 1];
+          req.input = [...req.input.slice(0, -1), { ...last, content: `${last.content}
+
+(The AI couldn't read ${names}; it is still attached and can be handed in.)` }];
           round--;
           continue;
         }
@@ -1289,6 +1512,8 @@
         } else offer = go;
       }
       navRequest = null;
+      const card = pendingSubmit && !error && !me.cancelled && !me.discard && hist === myHist ? pendingSubmit : null;
+      pendingSubmit = null;
       if (offer) text = `${text || ''}\n\n[Open ${offer.label.replace(/[[\]]/g, '')}](${new URL(offer.url).pathname}${new URL(offer.url).search})`;
       if (error) {
         bot.remove();
@@ -1314,6 +1539,10 @@
       }
       saveHist();
       renderLog();
+      if (card) {
+        log.append(submitCard(card));
+        fit();
+      }
       log.scrollTop = log.scrollHeight;
       // Finished while closed: leave the start of the answer in the preview until he looks.
       const last = hist.msgs[hist.msgs.length - 1];

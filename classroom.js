@@ -46,6 +46,7 @@
     sync: 'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z',
     more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
     add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+    done: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
     folder: 'M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z',
     open: 'M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
@@ -222,9 +223,21 @@
     if (n > 1 && n < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
     return shortDate(d);
   }
+  // "3 PM" rather than "3:00 PM"
+  const shortTime = (d) => timeOf(d).replace(/:00(?=\s|$)/, '');
+  // Due later today and within 12 hours: say the time. Otherwise the day.
+  const soonToday = (d) => dayDiff(d) === 0 && d - Date.now() > 0 && d - Date.now() < 12 * 36e5;
+  const dueWhen = (d) => (soonToday(d) ? shortTime(d) : dayName(d));
   const dueText = (d) => {
     const n = dayDiff(d);
+    if (soonToday(d)) return `Due ${shortTime(d)}`;
     return `Due ${dayName(d)}${n >= 0 && n <= 1 ? ', ' + timeOf(d) : ''}`;
+  };
+  // "Today, 3:30 PM" / "Yesterday, 9 AM" / "Oct 23, 4 PM"
+  const postedWhen = (d, withTime = true) => {
+    const n = dayDiff(d);
+    const day = n === 0 ? 'Today' : n === -1 ? 'Yesterday' : shortDate(d);
+    return withTime || n >= -1 ? `${day}, ${shortTime(d)}` : day;
   };
   // Sunday-start weeks, like Canvas's calendar in the US.
   const weekStart = (offsetWeeks = 0) => {
@@ -373,6 +386,7 @@
     );
     return {
       key: `${it.plannable_type}:${it.plannable_id}`,
+      overrideId: (it.planner_override && it.planner_override.id) || null,
       type: it.plannable_type,
       title: (it.plannable && (it.plannable.title || it.plannable.name)) || 'Untitled',
       due,
@@ -433,10 +447,90 @@
     return [...missing, ...upcoming];
   }
   // Groups items under "Missing" / "Due Today" / "Due Tomorrow" / "Due Friday" / "Due Nov 4" labels.
+  // Mark as done, like BetterCampus's circles: Canvas's planner "marked complete" override.
+  const dueByKey = new Map();
+  function csrfToken() {
+    const m = document.cookie.match(/(?:^|;\s*)_csrf_token=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  // A Canvas write (POST/PUT) with the page's session; used for mark-as-done and hand-ins.
+  async function apiSend(path, method, body) {
+    const r = await fetch(path.startsWith('http') ? path : location.origin + '/api/v1' + path, {
+      method,
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-Token': csrfToken() },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const text = (await r.text()).replace(/^while\(1\);/, '');
+    if (!r.ok) throw Object.assign(new Error(`${r.status} ${path}`), { status: r.status, body: text });
+    return text ? JSON.parse(text) : null;
+  }
+  async function setDone(it, done) {
+    const [type, id] = it.key.split(':');
+    const plannable_type = type === 'quiz' ? 'quiz' : type === 'discussion_topic' ? 'discussion_topic' : type;
+    if (it.overrideId) return apiSend(`/planner/overrides/${it.overrideId}`, 'PUT', { marked_complete: done });
+    try {
+      const o = await apiSend('/planner/overrides', 'POST', { plannable_type, plannable_id: Number(id), marked_complete: done });
+      it.overrideId = o && o.id;
+    } catch (e) {
+      // There's already an override for it: find it and flip it.
+      const all = await api('/planner/overrides?per_page=100', true);
+      const o = all.find((x) => x.plannable_type === plannable_type && String(x.plannable_id) === id);
+      if (!o) throw e;
+      it.overrideId = o.id;
+      await apiSend(`/planner/overrides/${o.id}`, 'PUT', { marked_complete: done });
+    }
+  }
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest && e.target.closest('.gcx-due-done');
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const it = dueByKey.get(b.dataset.key);
+    if (!it || b.disabled) return;
+    const row = b.closest('.gcx-due-row');
+    b.disabled = true;
+    row.classList.add('gcx-checking');
+    try {
+      await setDone(it, true);
+    } catch (err) {
+      console.warn('[canvas-classroom] mark done', err);
+      row.classList.remove('gcx-checking');
+      b.disabled = false;
+      toast("Couldn't mark it done");
+      return;
+    }
+    it.done = true;
+    row.classList.add('gcx-done-out');
+    // Collapse the row, and its group label when it was the only one. Remember where they were
+    // so Undo can put them back.
+    const grp = row.closest('.gcx-due-grp');
+    const spot = { row, rowNext: row.nextSibling, grp, grpParent: grp && grp.parentElement, grpNext: grp && grp.nextSibling };
+    setTimeout(() => {
+      row.remove();
+      if (grp && !grp.querySelector('.gcx-due-row')) grp.remove();
+    }, 420);
+    toast(`Marked ${it.title} done`, 'Undo', async () => {
+      try {
+        await setDone(it, false);
+        it.done = false;
+        b.disabled = false;
+        row.classList.remove('gcx-done-out', 'gcx-checking');
+        if (spot.grp && !spot.grp.isConnected && spot.grpParent) spot.grpParent.insertBefore(spot.grp, spot.grpNext && spot.grpNext.isConnected ? spot.grpNext : null);
+        if (!row.isConnected && spot.grp) spot.grp.insertBefore(row, spot.rowNext && spot.rowNext.parentNode === spot.grp ? spot.rowNext : null);
+        reveal(row);
+        if (dashItems) refreshCards();
+        toast('Back on your list');
+      } catch {
+        toast("Couldn't undo that");
+      }
+    });
+  });
+
   function dueGroupsHtml(items, limit, colorOf) {
     const groups = [];
     for (const it of items.slice(0, limit)) {
-      const label = it.flagged ? 'Missing' : it.missing ? 'Past due' : `Due ${dayName(it.due)}`;
+      const label = it.flagged ? 'Missing' : it.missing ? 'Past due' : `Due ${dueWhen(it.due)}`;
       const cls = it.flagged ? 'missing' : it.missing ? '' : dayDiff(it.due) <= 1 ? 'soon' : '';
       let g = groups[groups.length - 1];
       if (!g || g.label !== label) groups.push((g = { label, cls, items: [] }));
@@ -445,12 +539,14 @@
     return groups
       .map(
         (g) => `<div class="gcx-due-grp"><div class="gcx-due-h ${g.cls}">${esc(g.label)}</div>${g.items
-          .map(
-            (it) =>
-              `<a class="gcx-due-item" href="${esc(it.url)}" style="--c:${esc(colorOf(it))}" title="${esc(
-                it.title + (it.due ? ' · ' + shortDate(it.due) + ', ' + timeOf(it.due) : ''),
-              )}">${esc(it.title)}</a>`,
-          )
+          .map((it) => {
+            dueByKey.set(it.key, it);
+            return `<div class="gcx-due-row"><a class="gcx-due-item" href="${esc(it.url)}" style="--c:${esc(colorOf(it))}" title="${esc(
+              it.title + (it.due ? ' · ' + shortDate(it.due) + ', ' + timeOf(it.due) : ''),
+            )}">${esc(it.title)}</a><button type="button" class="gcx-due-done" data-key="${esc(it.key)}" title="Mark as done" aria-label="Mark ${esc(
+              it.title,
+            )} as done">${svg('done', 18)}</button></div>`;
+          })
           .join('')}</div>`,
       )
       .join('');
@@ -1051,7 +1147,7 @@
       const c = COURSES && COURSES.find((x) => x.id === id);
       const who = (c && c.teachers[0] && c.teachers[0].name) || 'Your instructor';
       const when = new Date(pst.t);
-      const date = `${shortDate(when)}${dayDiff(when) === 0 ? ', ' + timeOf(when) : ''}`;
+      const date = postedWhen(when, false);
       if (pst.kind === 'files') {
         const shown = pst.files.slice(0, 4);
         const more = pst.files.length - shown.length;
@@ -1098,7 +1194,7 @@
             return `<article class="gcx-card gcx-ann" style="--i:${Math.min(i, 8)}">
             <div class="gcx-ann-head">
               <span class="gcx-ann-av" ${av}>${av ? '' : esc(firstChar(author.name))}</span>
-              <div class="gcx-ann-who"><b>${esc(author.name || 'Instructor')}</b><span>${when ? esc(shortDate(when) + ', ' + timeOf(when)) : ''}</span></div>
+              <div class="gcx-ann-who"><b>${esc(author.name || 'Instructor')}</b><span>${when ? esc(postedWhen(when)) : ''}</span></div>
               ${a.read_state === 'unread' ? '<span class="gcx-ann-new">New</span>' : ''}
             </div>
             <a class="gcx-ann-title" href="${esc(a.html_url)}">${esc(a.title)}</a>
@@ -2138,7 +2234,7 @@
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
-    school: false, theme: '', shade: 1,
+    school: false, theme: '', shade: 1, cardRipple: true,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -2474,6 +2570,7 @@
       <div class="gcx-set-h">Motion</div>
       <div class="gcx-set-card">
         ${toggle('motion', 'Page animations', 'Slides between tabs, pages easing in')}
+        ${toggle('cardRipple', 'Ripple on class cards', 'The circle that spreads from where you click a class card')}
         ${toggle('annReveal', 'Reveal announcements as you scroll', 'Past the first two, each one fades and slides up as it comes into view')}
       </div>
       <div class="gcx-set-h">Fun</div>
@@ -3039,21 +3136,29 @@
   // ---------------------------------------------------------------- toast
   let toastEl = null;
   let toastTimer = 0;
-  function toast(msg) {
+  function toast(msg, actionLabel, action) {
     if (!toastEl) {
       toastEl = el('<div class="gcx-toast" role="status" aria-live="polite"></div>');
       document.body.append(toastEl);
     }
     toastEl.textContent = msg;
+    if (actionLabel && action) {
+      const b = el(`<button type="button" class="gcx-toast-btn">${esc(actionLabel)}</button>`);
+      b.addEventListener('click', () => {
+        toastEl.classList.remove('show');
+        action();
+      });
+      toastEl.append(b);
+    }
     toastEl.classList.remove('show');
     void toastEl.offsetWidth;
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), actionLabel ? 5000 : 2600);
   }
 
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = { api, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs };
+  window.gcx = { api, apiSend, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, confetti };
 
   // ---------------------------------------------------------------- loading bar
   // A thin bar across the top of the page (not the rail): dark grey track, filled with the
@@ -3183,7 +3288,11 @@
 
   // Little press ripple on rows, chips and buttons we own.
   document.addEventListener('pointerdown', (e) => {
-    const t = e.target.closest && e.target.closest('.gcx-row, .gcx-chip, .gcx-ri, .gcx-tab, .gcx-due-item, .gcx-more-btn, .gcx-seg button, .gcx-link a, .gcx-iconbtn, .gcx-links-add');
+    // Whole class cards ripple too (a setting); a click on something inside that has its own
+    // ripple (a due item, the mail button) uses that one instead.
+    const own = e.target.closest && e.target.closest('.gcx-due-item, .gcx-iconbtn, .gcx-more-link, .gcx-due-done');
+    const card = !own && prefs().cardRipple && e.target.closest && e.target.closest('#DashboardCard_Container .ic-DashboardCard');
+    const t = card || (e.target.closest && e.target.closest('.gcx-row, .gcx-chip, .gcx-ri, .gcx-tab, .gcx-due-item, .gcx-more-btn, .gcx-seg button, .gcx-link a, .gcx-iconbtn, .gcx-links-add'));
     if (!t || e.button) return;
     const r = t.getBoundingClientRect();
     const size = Math.max(r.width, r.height) * 2;

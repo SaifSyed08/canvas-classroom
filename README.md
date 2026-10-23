@@ -17,7 +17,8 @@ installed: BetterCampus still supplies its to-do sidebar, themes and dark mode.
   been away and what's due soon, and it stays the same for the session. Pick its tone (Calm, Normal, or
   Extra with emoji) and font in settings.
 - **Class cards** with the course name and instructor over the image, then the next two weeks of work
-  grouped under "Missing", "Due Today", "Due Friday", three at a time, plus an email-the-instructor button.
+  grouped under "Missing", "Due 3 PM" (anything due within 12 hours shows its time), "Due Friday", three at a
+  time, plus an email-the-instructor button. Hover an item to tick it done.
   The "+" and action icons, the streak, the progress ring, the Day/Week/Month picker, BetterCampus's
   premium Sync button and its Announcements/Completed tabs are gone.
 - **To-do sidebar** restyled like Google Classroom's (overdue work keeps its red pill), cut off at two
@@ -35,7 +36,7 @@ Enter. It also finds assignments, quizzes, pages and files across your classes: 
 ![Course home](docs/screenshots/course-home.jpg)
 
 **Home** has the banner (name, instructor, grade), an Upcoming panel (missing work from the last two weeks
-plus the next two weeks), a **Pinned** panel where **+ Add** pins any course tool (Instapoll, the original
+plus the next two weeks; hover an item and tick it to mark it done, with Undo), a **Pinned** panel where **+ Add** pins any course tool (Instapoll, the original
 home page, ...) or any link, and the stream: announcements, plus Classroom-style posts like "Su Chen posted
 a new assignment: HW 5" and "posted 3 new materials" (file chips open in place) from the last three weeks.
 Past the first two, items fade and slide up as you scroll to them.
@@ -83,10 +84,15 @@ opens in the middle (or wherever you last left it). Drag it anywhere; once you a
 becomes the chat right where you left it. Esc or Ctrl + Space closes it, so does moving the pointer well away
 from it before you've asked anything, and so does the red X once it's a chat.
 
+On the Ctrl + Space pill, **+** attaches files (or drop / paste them in). Ask about them, or ask it to hand one
+in ("turn in my-hw8.pdf for HW 8 in Genetics"): it checks the assignment takes that file type and still has
+attempts left, then shows a confirm card with the assignment, due date and any late / resubmission warning.
+**Nothing is turned in until you press Submit on that card.**
+
 It answers from your Canvas (courses, assignments, grades, feedback, modules, files including PDFs, slides
 and docs, announcements, quizzes, discussions, pages, the syllabus, people and the inbox) and links what it
-cites. Ask it to "take me to my Genetics grades" and it opens the page. It can only read and navigate; it
-can't submit or post anything. Quick lookups go to a smaller, cheaper model and anything that needs reading,
+cites. Ask it to "take me to my Genetics grades" and it opens the page. Apart from a hand-in you confirm, it
+only reads and navigates; it never posts or changes anything. Quick lookups go to a smaller, cheaper model and anything that needs reading,
 explaining or planning goes to the full one (settings can turn that off).
 
 ![Ask anything](docs/screenshots/ask.jpg)
@@ -107,7 +113,7 @@ Settings are a **Classroom** tab inside BetterCampus's settings (its gear, top r
 - the AI button and the Ctrl + Space shortcut, separately, and the quick model for simple questions
 - the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), and how dark class images get
   behind their white titles
-- page animations, and announcements easing in as you scroll
+- page animations, the click ripple on class cards, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,
   New Year, Valentine's, St. Patrick's and the Fourth
 

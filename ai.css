@@ -234,3 +234,51 @@ html.gcx .gcx-ask-sr { position: absolute; width: 1px; height: 1px; margin: -1px
 html.gcx .gcx-ask.spot.compact .gcx-ask-x { display: none; }
 html.gcx .gcx-spot.nudge .gcx-ask-box { animation: gcx-nudge 0.38s cubic-bezier(.36,.07,.19,.97); }
 @keyframes gcx-nudge { 20% { transform: translateX(-5px); } 45% { transform: translateX(4px); } 70% { transform: translateX(-2px); } }
+
+/* ---------- Ctrl+Space pill: + to attach files, chips above the input, the hand-in confirm card */
+html.gcx .gcx-ask-plus {
+  position: absolute; left: 40px; bottom: 9px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; background: none !important; color: var(--gcx-muted) !important;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.2s ease;
+}
+html.gcx .gcx-ask-plus:hover { background: color-mix(in srgb, var(--gcx-text) 8%, transparent) !important; color: var(--gcx-text) !important; }
+html.gcx .gcx-ask-plus svg { fill: currentColor; }
+html.gcx .gcx-ask.spot .gcx-ask-hint { left: 78px; }
+html.gcx .gcx-ask.spot input.gcx-ask-input { left: 78px !important; }
+html.gcx .gcx-ask.drop .gcx-ask-box { box-shadow: inset 0 0 0 2px var(--gcx-link); }
+html.gcx .gcx-ask-files { order: 2; flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0 18px; }
+html.gcx .gcx-ask-files[hidden] { display: none; }
+html.gcx .gcx-ask-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 220px; height: 28px; padding: 0 4px 0 10px; border-radius: 14px;
+  background: color-mix(in srgb, var(--gcx-text) 7%, transparent); font-size: 12.5px; animation: gcx-chip-in 0.2s ease both;
+}
+html.gcx .gcx-ask-chip b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.gcx .gcx-ask-chip svg { fill: var(--gcx-muted); flex: none; }
+html.gcx .gcx-ask-chip button { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: none; display: grid; place-items: center; cursor: pointer; flex: none; }
+html.gcx .gcx-ask-chip button:hover { background: color-mix(in srgb, var(--gcx-text) 12%, transparent); }
+html.gcx .gcx-ask-chip button svg { fill: var(--gcx-text); }
+@keyframes gcx-chip-in { from { opacity: 0; transform: scale(0.9); } }
+html.gcx .gcx-ask-bfiles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+html.gcx .gcx-ask-bfiles span { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; opacity: 0.85; }
+html.gcx .gcx-ask-bfiles svg { fill: currentColor; }
+html.gcx .gcx-ask-card {
+  margin: 6px 0 10px; padding: 12px 14px; border-radius: 14px; background: var(--gcx-card); border: 1px solid var(--gcx-border);
+  animation: gcx-chip-in 0.25s ease both; font-size: 13.5px;
+}
+html.gcx .gcx-ask-card-h b { display: block; font-size: 14.5px; font-weight: 600; }
+html.gcx .gcx-ask-card-h span { font-size: 12px; color: var(--gcx-muted); }
+html.gcx .gcx-ask-card-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+html.gcx .gcx-ask-card-files span { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 12px; background: var(--gcx-bg2); font-size: 12.5px; }
+html.gcx .gcx-ask-card-files svg { fill: var(--gcx-muted); }
+html.gcx .gcx-ask-card-note { margin-top: 8px; font-size: 12.5px; color: var(--gcx-muted); }
+html.gcx .gcx-ask-card-warn { margin-top: 8px; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; background: color-mix(in srgb, #f9ab00 16%, transparent); }
+html.gcx .gcx-ask-card-act { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+html.gcx .gcx-ask-card-status { flex: 1; min-width: 0; font-size: 12.5px; color: var(--gcx-muted); }
+html.gcx .gcx-ask-card.ok .gcx-ask-card-status { color: var(--gcx-green, #188038); font-weight: 600; }
+html.gcx .gcx-ask-card-status a { color: var(--gcx-link) !important; }
+html.gcx .gcx-ask-card-no, html.gcx .gcx-ask-card-go {
+  height: 32px; padding: 0 16px; border-radius: 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+html.gcx .gcx-ask-card-no { border: 1px solid var(--gcx-border); background: none; color: var(--gcx-text); }
+html.gcx .gcx-ask-card-go { border: 0; background: var(--gcx-link); color: #fff; }
+html.gcx .gcx-ask-card-go:disabled, html.gcx .gcx-ask-card-no:disabled { opacity: 0.5; cursor: default; }
