@@ -538,7 +538,9 @@
         }
         if (u.origin !== location.origin || u.pathname.startsWith('//')) return { error: 'Only Canvas pages on this site can be opened' };
         navRequest = { url: u.href, label: String(label || 'that page').slice(0, 60) };
-        return { ok: true, note: 'It opens after your reply; keep the reply to one short line.' };
+        return navAllowed
+          ? { ok: true, note: 'It opens after your reply; keep the reply to one short line.' }
+          : { ok: true, note: "A link to this page will be shown under your reply. Don't say you're opening it; answer his question normally." };
       },
     },
     {
@@ -595,8 +597,11 @@
   };
   // Tools that read course content: once one has run, the rest of the answer uses the full model.
   const READING = new Set(['read_file', 'get_page', 'get_syllabus', 'get_discussion', 'get_assignment', 'get_grades', 'get_feedback', 'list_announcements']);
-  // Set by the open_page tool; followed once the answer has finished.
+  // Set by the open_page tool; followed once the answer has finished, but only if his own
+  // question asked to go somewhere (navAllowed). Otherwise it becomes a link under the reply.
   let navRequest = null;
+  let navAllowed = false;
+  const NAV_ASK = /\b(go to|take me|bring me|get me to|navigate|pull up|open (?:up )?(?:my|the|it|that|this)|show me (?:the|my))\b/i;
   const TOOL_DEFS = TOOLS.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false }));
 
   async function runTool(call) {
@@ -1142,7 +1147,8 @@
       let tier = routeTier(q);
       lastTier = tier;
       // Only navigate when he asked to go somewhere; otherwise the page is offered as a button.
-      const wantsNav = /\b(go|open|take|bring|navigate|show)\b/i.test(q);
+      const wantsNav = NAV_ASK.test(q);
+      navAllowed = wantsNav;
       let answeredBy = '';
       navRequest = null;
       // Both chats share one history; if either starts a new chat meanwhile, this answer is stale.

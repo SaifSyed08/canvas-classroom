@@ -859,8 +859,8 @@
         sel = 0;
         drawList();
         input.focus();
-        if (!index)
-          buildSearchIndex().then((ix) => {
+        // Rebuilt on every open (a few cache reads), so a class opened since then is included.
+        buildSearchIndex().then((ix) => {
             index = ix;
             if (!panel.hidden && input.value.trim()) drawList();
           });
@@ -2094,6 +2094,8 @@
       );
       fillCard(card, id);
     }
+    // Canvas may render an empty card box (no favorites); that also ends the stand-ins.
+    maybeReleaseGhosts();
   }
   async function fillCard(card, id) {
     const c = (COURSES || []).find((x) => x.id === id) || (await coursesReady).find((x) => x.id === id) || (await courseById(id));
