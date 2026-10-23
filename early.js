@@ -28,7 +28,9 @@
   if (path === '/' && !view) {
     html.classList.add('gcx-dash');
     // Canvas's loading state stays hidden until our stand-in cards (or the real ones) are up.
+    // The timer is a failsafe in case classroom.js never gets that far.
     html.classList.add('gcx-dash-wait');
+    setTimeout(() => html.classList.remove('gcx-dash-wait'), 10000);
   }
 
   // Page transitions: the page we came from leaves a direction ('left'/'right' between

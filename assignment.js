@@ -130,6 +130,11 @@
     view.remove();
     html.classList.remove('gcx-asg');
   };
+  // The classic (pre-"Assignments 2") page is already rendered by now: leave it as is.
+  if (document.querySelector('#assignment_show, .student-assignment-overview, #submit_assignment')) {
+    giveUp();
+    return;
+  }
   // Not the Assignments 2 view after all (or it never showed): leave Canvas's page alone.
   const check = setInterval(() => {
     if (q('assignments-2-student-view')) {

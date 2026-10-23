@@ -11,7 +11,7 @@
 
   // Login pages and borderless LTI tools have no global nav; leave them alone.
   if (!document.getElementById('header') || !document.getElementById('wrapper')) {
-    html.classList.remove('gcx', 'gcx-pinned', 'gcx-course', 'gcx-dash', 'gcx-takeover');
+    html.classList.remove('gcx', 'gcx-pinned', 'gcx-course', 'gcx-dash', 'gcx-takeover', 'gcx-dash-wait');
     return;
   }
 
@@ -314,10 +314,14 @@
   if (PAGE_USER && (store.get('me', null) || {}).id && String(store.get('me', null).id) !== PAGE_USER) {
     store.set('courses', null);
     store.set('me', null);
+    store.set('coursesAt', 0);
+    store.set('unread', 0);
+    store.set('unreadAt', 0);
   }
   let COURSES = store.get('courses', null);
   const COURSES_TTL = 10 * 6e4;
-  const coursesReady = (COURSES && Date.now() - store.get('coursesAt', 0) < COURSES_TTL ? Promise.resolve(COURSES) : fetchCourses())
+  const coursesFresh = COURSES && Date.now() - store.get('coursesAt', 0) < COURSES_TTL && !html.classList.contains('gcx-dash');
+  const coursesReady = (coursesFresh ? Promise.resolve(COURSES) : fetchCourses())
     .then((c) => {
       if (c !== COURSES) {
         COURSES = c;
@@ -1945,7 +1949,15 @@
   // (early.js adds gcx-dash-wait) until the real cards are ready, then they swap in place.
   let ghosts = null;
   const snapKey = () => 'dashsnap:' + (PAGE_USER || 'anon');
+  const DASH_VIEW = (() => {
+    for (const sc of document.scripts) {
+      const m = !sc.src && sc.textContent.match(/"dashboard_view":"(\w+)"/);
+      if (m) return m[1];
+    }
+    return 'cards';
+  })();
   function mountGhosts() {
+    if (DASH_VIEW !== 'cards') return releaseGhosts();
     const container = document.getElementById('DashboardCard_Container');
     if (!container || document.querySelector('.ic-DashboardCard .gcx-card-body')) return releaseGhosts();
     const snap = store.get(snapKey(), null);
@@ -1970,9 +1982,15 @@
   function maybeReleaseGhosts() {
     if (!ghosts && !html.classList.contains('gcx-dash-wait')) return;
     const cards = [...document.querySelectorAll('#DashboardCard_Container .ic-DashboardCard')];
-    if (!cards.length) return;
+    if (!cards.length) {
+      if (document.querySelector('#DashboardCard_Container .ic-DashboardCard__box')) releaseGhosts();
+      return;
+    }
     const filled = cards.every((c) => c.querySelector('.gcx-card-body[data-color]'));
-    if (filled && (!dashItems || cards.every((c) => c.querySelector('.gcx-card-due-wrap[data-markup]')))) releaseGhosts();
+    if (filled && (!dashItems || cards.every((c) => c.querySelector('.gcx-card-due-wrap[data-markup]')))) {
+      releaseGhosts();
+      if (dashItems) saveSnapshot();
+    }
   }
   // After a fresh load, keep a copy of the finished cards for next time.
   const saveSnapshot = debounce(() => {
@@ -1984,7 +2002,7 @@
     });
     copy.querySelectorAll('script, iframe').forEach((n) => n.remove());
     const markup = copy.outerHTML;
-    if (markup.length < 300000) store.set(snapKey(), markup);
+    if (markup.length < 300000 && store.get(snapKey(), null) !== markup) store.set(snapKey(), markup);
   }, 800);
   function enhanceCards() {
     const cards = document.querySelectorAll('#DashboardCard_Container .ic-DashboardCard');
@@ -2998,6 +3016,7 @@
     // Opening a course from outside it: use that course's color for the bar.
     const target = to && (COURSES || []).find((c) => c.id === to.course);
     barStart(to && to.course !== COURSE_ID && target ? target.color : undefined);
+    setTimeout(barDone, 8000);
   });
   // The attribute only matters while the page transition runs.
   setTimeout(() => delete html.dataset.gcxNav, 2000);

@@ -536,8 +536,8 @@
         } catch {
           return { error: 'Not a valid address' };
         }
-        if (u.origin !== location.origin) return { error: 'Only Canvas pages on this site can be opened' };
-        navRequest = { url: u.pathname + u.search + u.hash, label: String(label || 'that page').slice(0, 60) };
+        if (u.origin !== location.origin || u.pathname.startsWith('//')) return { error: 'Only Canvas pages on this site can be opened' };
+        navRequest = { url: u.href, label: String(label || 'that page').slice(0, 60) };
         return { ok: true, note: 'It opens after your reply; keep the reply to one short line.' };
       },
     },
@@ -581,11 +581,20 @@
 
   // Model routing: short, factual lookups go to the small model; anything that needs reading,
   // explaining, planning or writing goes to the full one. Settings can turn this off.
-  const DEEP = /\b(summar|explain|why|how (?:do|does|did|should|can|would)|compare|analy[sz]|plan|study|strateg|quiz me|practice|write|draft|essay|feedback|improve|understand|mean|read|pdf|slides?|lecture|notes?|file|syllabus|rubric|calculat|what do i need|predict|help me|advice|should i|teach|walk me|step)/i;
+  // Only clear, short lookups ("when is HW 8 due?", "any unread messages?", "take me to my
+  // grades") go to the small model; anything else, and short follow-ups to a full-model turn,
+  // goes to the full one.
+  const QUICK = /^(?:(?:when|what time|where)\b|(?:what(?:'s| is)) (?:due|my (?:next|latest))\b|is (?:there|it|.+) due\b|(?:due|deadline)s?\b|(?:do i have|any) (?:new |unread )?(?:messages?|announcements?|inbox)|(?:open|go to|take me|bring me|show me)\b|(?:link|url) (?:to|for)\b|how many (?:unread|messages|assignments are due))/i;
+  const DEEP = /\b(summar|explain|why|how (?:do|does|did|should|can|would|much)|compare|analy[sz]|plan|study|strateg|quiz me|practice|write|draft|essay|feedback|improve|understand|mean|read|pdf|slides?|lecture|notes?|file|syllabus|rubric|calculat|need|grade|points?|score|pass|predict|help|advice|should i|teach|walk me|step|topics?|exam|midterm|final|cover|requirement|prompt|break down|go over|problem)/i;
+  let lastTier = 'smart';
   const routeTier = (q) => {
     if (gcx.prefs().routing === false) return 'smart';
-    return q.length > 140 || DEEP.test(q) ? 'smart' : 'fast';
+    const followUp = q.length < 40 && /^(and|what about|how about|also|ok|okay|same|now|then)\b|\?$/i.test(q) && !QUICK.test(q);
+    if (followUp && lastTier === 'smart') return 'smart';
+    return q.length <= 90 && QUICK.test(q) && !DEEP.test(q) ? 'fast' : 'smart';
   };
+  // Tools that read course content: once one has run, the rest of the answer uses the full model.
+  const READING = new Set(['read_file', 'get_page', 'get_syllabus', 'get_discussion', 'get_assignment', 'get_grades', 'get_feedback', 'list_announcements']);
   // Set by the open_page tool; followed once the answer has finished.
   let navRequest = null;
   const TOOL_DEFS = TOOLS.map((t) => ({ type: 'function', name: t.name, description: t.description, parameters: t.parameters, strict: false }));
@@ -1130,7 +1139,10 @@
       };
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
-      const tier = routeTier(q);
+      let tier = routeTier(q);
+      lastTier = tier;
+      // Only navigate when he asked to go somewhere; otherwise the page is offered as a button.
+      const wantsNav = /\b(go|open|take|bring|navigate|show)\b/i.test(q);
       let answeredBy = '';
       navRequest = null;
       // Both chats share one history; if either starts a new chat meanwhile, this answer is stale.
@@ -1246,6 +1258,7 @@
           break;
         }
         status('Thinking');
+        if (tier === 'fast' && res.calls.some((c) => READING.has(c.name))) tier = lastTier = 'smart';
         req = { type: 'continue', tier, instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
       }
       clearTimeout(raf);
@@ -1259,13 +1272,18 @@
         renderLog();
         return;
       }
+      // Course content can't steer this: it only goes when his own question asked to go somewhere.
+      // Otherwise the answer ends with a link to the page instead.
+      let offer = null;
       if (navRequest && !error && !me.cancelled && !me.discard && hist === myHist) {
         const go = navRequest;
-        navRequest = null;
-        gcx.toast(`Opening ${go.label}…`);
-        setTimeout(() => location.assign(go.url), 700);
+        if (wantsNav) {
+          gcx.toast(`Opening ${go.label}…`);
+          setTimeout(() => location.assign(go.url), 700);
+        } else offer = go;
       }
       navRequest = null;
+      if (offer) text = `${text || ''}\n\n[Open ${offer.label.replace(/[[\]]/g, '')}](${new URL(offer.url).pathname}${new URL(offer.url).search})`;
       if (error) {
         bot.remove();
         if (error.code === 'nokey' || error.code === 'badkey') {
@@ -1420,7 +1438,6 @@
   function closeSpot() {
     const ui = spotUi;
     if (!ui) return;
-    saveSpotPos(ui.holder);
     spotUi = null;
     ui.holder.classList.add('closing');
     ui.bg.classList.add('gone');
