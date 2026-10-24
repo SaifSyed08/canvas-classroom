@@ -2272,7 +2272,7 @@
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
-    school: false, theme: '', shade: 1, cardRipple: true, tint: true,
+    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -2294,6 +2294,7 @@
     html.dataset.gcxShade = String(prefs().shade);
     // Canvas's own color overlay, when he has it on, already does this.
     html.classList.toggle('gcx-tint', prefs().tint !== false && !CANVAS_OVERLAY);
+    html.style.setProperty('--gcx-tint', `${prefs().tintAmt}%`);
   };
 
   // School colors: the rail takes the school's Canvas nav color (and logo), like stock Canvas,
@@ -2612,6 +2613,10 @@
           ).join('')}</div>
           </div>
         ${toggle('tint', 'Color over class images', "Each class image takes a wash of that class's color, like Canvas's own color overlay")}
+        <div class="gcx-set-sub" data-needs="tint">
+          <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p.tintAmt}%</span></div>
+          <input type="range" class="gcx-set-range" data-range="tintAmt" min="10" max="90" step="5" value="${p.tintAmt}" aria-label="Color strength">
+        </div>
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Darken class images (so white titles stand out)</div>
           <div class="gcx-set-tone" role="radiogroup" aria-label="Darken class images">${SHADES.map(
@@ -2648,6 +2653,14 @@
       const k = e.target.dataset && e.target.dataset.k;
       if (k) save({ [k]: e.target.checked });
       sync();
+    });
+    // Sliders save as they move, so the cards behind the panel change live.
+    box.addEventListener('input', (e) => {
+      const k = e.target.dataset && e.target.dataset.range;
+      if (!k) return;
+      save({ [k]: Number(e.target.value) });
+      const val = e.target.parentElement.querySelector('.gcx-set-val');
+      if (val) val.textContent = `${e.target.value}%`;
     });
     box.addEventListener('click', (e) => {
       const t = e.target.closest('[data-tone]');
@@ -2814,6 +2827,8 @@
     .gcx-set-tone { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-tone button { flex: 1; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--gcx-muted, #71717a); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     .gcx-set-tone button[aria-checked="true"] { background: var(--gcx-card, #fff); color: var(--gcx-text, #18181b); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+    .gcx-set-val { float: right; font-variant-numeric: tabular-nums; }
+    .gcx-set-range { display: block; width: 100%; margin: 4px 0 0; accent-color: var(--gcx-link, #4f46e5); cursor: pointer; }
     .gcx-set-fonts { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
     .gcx-set-fonts button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px; border: 1px solid var(--gcx-border, #e4e4e7);
       border-radius: 10px; background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
@@ -3372,6 +3387,24 @@
     const near = a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) < 10);
     html.classList.toggle('gcx-flat2', near);
   };
+  // BetterCampus paints each page's first 1.5 s from a saved copy of the theme's background, and
+  // only re-saves it 1.5 s after a page loads. Right after a dark/light switch, the next page
+  // would open in the old mode's background, so save the new one as soon as the switch lands.
+  const syncFirstPaint = () => {
+    try {
+      const KEY = '_bettercampus_theme_cache';
+      const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (!saved || typeof saved !== 'object') return;
+      const c = probe('var(--bcbackground-0, #fff)');
+      if (/(,|\/)\s*0(\.\d+)?\)$/.test(c)) return; // see-through: an image or gradient background
+      const [r, g, b] = rgbOf(c);
+      if (b === undefined) return;
+      const dark = lum([r, g, b]) < 0.2;
+      const bg = '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+      if (saved.dark_mode === dark && (!saved.theme_enabled || saved.bg === bg)) return;
+      localStorage.setItem(KEY, JSON.stringify({ ...saved, dark_mode: dark, ...(saved.theme_enabled ? { bg } : {}) }));
+    } catch {}
+  };
   const snapTheme = () => {
     checkFlatSurface();
     themeSnap.clear();
@@ -3390,7 +3423,10 @@
     const isTheme = changed.some((n) => n.id === 'darkcss' || n.id === 'bettercanvas-theme-preset');
     if (!changed.length || !isTheme || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
       snapTheme();
-      if (isTheme) refreshInlineColors();
+      if (isTheme) {
+        refreshInlineColors();
+        syncFirstPaint();
+      }
       return;
     }
     themeBusy = true;
@@ -3405,6 +3441,7 @@
       snapTheme();
       themeBusy = false;
       refreshInlineColors();
+      syncFirstPaint();
     };
     try {
       document
