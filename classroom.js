@@ -178,6 +178,46 @@
       } catch {}
     },
   };
+  // When each key was last fetched fresh (cache entries only get rewritten when the data changes).
+  const FETCHED = 'fetched:' + (PAGE_USER || 'anon');
+  const fetchedAt = (key) => store.get(FETCHED, {})[key] || 0;
+  const markFetched = (key, t = Date.now()) => {
+    const all = store.get(FETCHED, {});
+    all[key] = t;
+    for (const k in all) if (Date.now() - all[k] > 864e5) delete all[k];
+    store.set(FETCHED, all);
+  };
+  // For background refreshes: a failed request should fail the refresh (keeping the saved copy),
+  // not quietly save an empty list over it. "Not allowed" / "not found" are real answers, though.
+  let softFails = 0; // fallbacks used for real errors; a fetch that needed one isn't marked fresh
+  const softFail = (strict, fallback) => (e) => {
+    const real = !(e && (e.status === 401 || e.status === 404));
+    // Background refreshes keep only 404 as an answer: 401 is also what a signed-out session gets.
+    if (strict && !(e && e.status === 404)) throw e;
+    if (real) softFails++;
+    return fallback;
+  };
+  // Keys a background fetch has claimed and not finished. If the page goes away first, the claims
+  // are dropped so the next page fetches them.
+  const claimed = new Set();
+  const claim = (key) => {
+    claimed.add(key);
+    markFetched(key);
+  };
+  const release = (key, ok) => {
+    claimed.delete(key);
+    if (!ok) markFetched(key, 0);
+  };
+  let warmStamp = 0; // set while this page's warm pass runs
+  addEventListener('pagehide', () => {
+    for (const k of claimed) markFetched(k, 0);
+    if (warmStamp && store.get('warmedAt', 0) === warmStamp) store.set('warmedAt', 0);
+  });
+  addEventListener('pageshow', (e) => {
+    if (!e.persisted) return;
+    for (const k of claimed) markFetched(k);
+    if (warmStamp) store.set('warmedAt', (warmStamp = Date.now()));
+  });
   // Stale-while-revalidate: draw the cached copy at once, fetch, redraw only if it changed.
   // onData(data, fromCache). Throws only when there was no cached copy to fall back on.
   async function swr(key, fetcher, onData, revive = (x) => x) {
@@ -189,6 +229,7 @@
       onData(revive(cached), true);
     }
     let fresh;
+    const fails = softFails;
     try {
       fresh = JSON.parse(JSON.stringify(await fetcher()));
     } catch (e) {
@@ -196,6 +237,7 @@
       console.warn('[canvas-classroom] refresh failed, showing saved copy', key, e);
       return null;
     }
+    if (softFails === fails) markFetched(key);
     const now = JSON.stringify(fresh);
     // Write only when something changed (or the copy is a day old, so the sweep keeps it).
     if (now !== shown || !ent || Date.now() - ent.t > 864e5) cache.set(key, fresh);
@@ -958,6 +1000,53 @@
     return doc.body.innerHTML;
   }
 
+  // ----- course Home data (also warmed from other pages; see warmCourses)
+  const fetchAnns = async (id) =>
+    (
+      await api(
+        `/announcements?context_codes[]=course_${id}&start_date=2000-01-01&end_date=${new Date(Date.now() + DAY).toISOString()}&active_only=true&per_page=15`,
+      )
+    ).map((a) => ({
+      title: a.title,
+      html_url: a.html_url,
+      message: a.message,
+      posted_at: a.posted_at,
+      read_state: a.read_state,
+      replies: a.discussion_subentry_count || 0,
+      author: { name: (a.author || {}).display_name, avatar: (a.author || {}).avatar_image_url },
+    }));
+  // Classroom-style "posted a new assignment / new material" items from the last three weeks.
+  // Assignments count from when they opened (unlock date) if that's later than when they were made.
+  const POST_DAYS = 21;
+  const fetchPosts = async (id, strict = false) => {
+    const since = Date.now() - POST_DAYS * DAY;
+    const now = Date.now();
+    const [assigns, files] = await Promise.all([
+      api(`/courses/${id}/assignments?per_page=100`, true).catch(softFail(strict, [])),
+      courseHasFiles(id) ? api(`/courses/${id}/files?sort=created_at&order=desc&per_page=40`).catch(softFail(strict, [])) : Promise.resolve([]),
+    ]);
+    const posts = [];
+    for (const a of assigns) {
+      if (!a.published && a.published !== undefined) continue;
+      const opened = [a.created_at, a.unlock_at].filter(Boolean).map(Date.parse).filter((t) => t <= now);
+      const t = opened.length ? Math.max(...opened) : 0;
+      if (t >= since) posts.push({ kind: a.quiz_id ? 'quiz' : a.discussion_topic ? 'discussion' : 'assignment', t, title: a.name, url: a.html_url, due: a.due_at });
+    }
+    // Files posted the same day become one "posted N new materials" item.
+    const byDay = new Map();
+    for (const f of files) {
+      const t = Date.parse(f.created_at);
+      if (!(t >= since) || f.locked_for_user || f.hidden_for_user) continue;
+      const day = startOfDay(t).getTime();
+      if (!byDay.has(day)) byDay.set(day, { kind: 'files', t, files: [] });
+      const g = byDay.get(day);
+      g.t = Math.max(g.t, t);
+      g.files.push({ id: f.id, name: f.display_name });
+    }
+    posts.push(...byDay.values());
+    return posts;
+  };
+
   // ----- Home: banner, Upcoming, announcements stream
   async function renderHome(view, cPromise) {
     const id = COURSE_ID;
@@ -1014,51 +1103,6 @@
     ).catch((e) => showError(view.querySelector('.gcx-upc-list'), 'upcoming work', `/courses/${id}/assignments`, e));
 
     const stream = view.querySelector('.gcx-stream');
-    const fetchAnns = async () =>
-      (
-        await api(
-          `/announcements?context_codes[]=course_${id}&start_date=2000-01-01&end_date=${new Date(Date.now() + DAY).toISOString()}&active_only=true&per_page=15`,
-        )
-      ).map((a) => ({
-        title: a.title,
-        html_url: a.html_url,
-        message: a.message,
-        posted_at: a.posted_at,
-        read_state: a.read_state,
-        replies: a.discussion_subentry_count || 0,
-        author: { name: (a.author || {}).display_name, avatar: (a.author || {}).avatar_image_url },
-      }));
-    // Classroom-style "posted a new assignment / new material" items from the last three weeks.
-    // Assignments count from when they opened (unlock date) if that's later than when they were made.
-    const POST_DAYS = 21;
-    const fetchPosts = async () => {
-      const since = Date.now() - POST_DAYS * DAY;
-      const now = Date.now();
-      const [assigns, files] = await Promise.all([
-        api(`/courses/${id}/assignments?per_page=100`, true).catch(() => []),
-        hasTab(/\/files\/?$/) ? api(`/courses/${id}/files?sort=created_at&order=desc&per_page=40`).catch(() => []) : Promise.resolve([]),
-      ]);
-      const posts = [];
-      for (const a of assigns) {
-        if (!a.published && a.published !== undefined) continue;
-        const opened = [a.created_at, a.unlock_at].filter(Boolean).map(Date.parse).filter((t) => t <= now);
-        const t = opened.length ? Math.max(...opened) : 0;
-        if (t >= since) posts.push({ kind: a.quiz_id ? 'quiz' : a.discussion_topic ? 'discussion' : 'assignment', t, title: a.name, url: a.html_url, due: a.due_at });
-      }
-      // Files posted the same day become one "posted N new materials" item.
-      const byDay = new Map();
-      for (const f of files) {
-        const t = Date.parse(f.created_at);
-        if (!(t >= since) || f.locked_for_user || f.hidden_for_user) continue;
-        const day = startOfDay(t).getTime();
-        if (!byDay.has(day)) byDay.set(day, { kind: 'files', t, files: [] });
-        const g = byDay.get(day);
-        g.t = Math.max(g.t, t);
-        g.files.push({ id: f.id, name: f.display_name });
-      }
-      posts.push(...byDay.values());
-      return posts;
-    };
     const postHtml = (pst, i) => {
       const c = COURSES && COURSES.find((x) => x.id === id);
       const who = (c && c.teachers[0] && c.teachers[0].name) || 'Your instructor';
@@ -1173,14 +1217,14 @@
       }
     };
     barStart();
-    swr('home:ann:' + id, fetchAnns, (anns) => {
+    swr('home:ann:' + id, () => fetchAnns(id), (anns) => {
       annsNow = anns;
       drawStream();
       barDone();
     })
       .catch((e) => showError(stream, 'announcements', `/courses/${id}/announcements`, e))
       .finally(barDone);
-    swr('home:posts:' + id, fetchPosts, (posts) => {
+    swr('home:posts:' + id, () => fetchPosts(id), (posts) => {
       postsNow = posts;
       drawStream();
     }).catch(() => {});
@@ -1506,10 +1550,10 @@
   }
 
   // Canvas data trimmed to what Classwork draws, so it caches small.
-  async function fetchClasswork(id) {
+  async function fetchClasswork(id, strict = false) {
     const [mods, groups] = await Promise.all([
-      api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(() => null),
-      api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(() => null),
+      api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(softFail(strict, null)),
+      api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(softFail(strict, null)),
     ]);
     if (!mods && !groups) throw new Error('Canvas returned nothing');
     // Big modules come back without inline items.
@@ -1517,7 +1561,7 @@
       (mods || [])
         .filter((m) => !m.items && m.items_url)
         .map(async (m) => {
-          m.items = await api(`${m.items_url}${m.items_url.includes('?') ? '&' : '?'}include[]=content_details&per_page=100`, true).catch(() => []);
+          m.items = await api(`${m.items_url}${m.items_url.includes('?') ? '&' : '?'}include[]=content_details&per_page=100`, true).catch(softFail(strict, []));
         }),
     );
     const sub = (s) =>
@@ -1568,15 +1612,91 @@
     };
   }
   const hasTab = (re) => courseTabs().some((t) => re.test(t.href));
+  const courseHasFiles = (id) => {
+    if (id === COURSE_ID) return hasTab(/\/files\/?$/);
+    const tabs = store.get('tabs:' + id, []);
+    return !tabs.length || tabs.some((t) => /\/files\/?$/.test(t.href));
+  };
+
+  // Every class's Home and Classwork data is kept warm in the background, so opening any class
+  // draws at once from the saved copy (and still refreshes if anything changed).
+  const WARM_EVERY = 10 * 6e4;
+  async function warmCourses() {
+    // One pass at a time across tabs; each key below is skipped if it's fresh, so a pass cut short
+    // by leaving the page picks up where it stopped on the next page.
+    if (Date.now() - store.get('warmedAt', 0) < 6e4) return;
+    // Leaving the page mid-pass frees the next page to carry on right away (see pagehide).
+    store.set('warmedAt', (warmStamp = Date.now()));
+    try {
+      await warmPass();
+    } finally {
+      warmStamp = 0;
+    }
+  }
+  async function warmPass() {
+    const courses = await coursesReady.catch(() => null);
+    for (const c of courses || []) {
+      if (document.hidden) await new Promise((r) => document.addEventListener('visibilitychange', r, { once: true }));
+      const jobs = [
+        ['home:upc:' + c.id, () => planner(-HORIZON_DAYS, HORIZON_DAYS, c.id)],
+        ['home:ann:' + c.id, () => fetchAnns(c.id)],
+        ['home:posts:' + c.id, () => fetchPosts(c.id, true)],
+        ['cw:' + c.id, () => fetchClasswork(c.id, true)],
+      ];
+      await Promise.all(
+        jobs.map(async ([key, fetcher]) => {
+          if (Date.now() - fetchedAt(key) < WARM_EVERY) return;
+          claim(key); // now, so the page's own prefetch doesn't fetch it too
+          let d;
+          try {
+            d = JSON.parse(JSON.stringify(await fetcher()));
+          } catch (e) {
+            release(key, false);
+            throw e;
+          }
+          release(key, true);
+          const ent = await cache.entry(key); // after the fetch: the page may have saved a copy meanwhile
+          if (!ent || JSON.stringify(ent.d) !== JSON.stringify(d) || Date.now() - ent.t > 864e5) cache.set(key, d);
+        }).map((p) => p.catch(() => {})),
+      );
+    }
+  }
+
+  // Pressing on a class (rail, class card, course tabs) starts fetching the page before the click
+  // completes. Not on hover: Canvas would log a visit to every class he passed over.
+  function prefetchCoursePages() {
+    if (!HTMLScriptElement.supports || !HTMLScriptElement.supports('speculationrules')) return;
+    const s = document.createElement('script');
+    s.type = 'speculationrules';
+    s.textContent = JSON.stringify({
+      prefetch: [
+        {
+          source: 'document',
+          where: {
+            and: [
+              { href_matches: '/courses/*' },
+              { selector_matches: '#gcx-rail a.gcx-ri-course, #gcx-cbar a.gcx-tab, .ic-DashboardCard__link, .ic-DashboardCard a.gcx-card-ov' },
+              { not: { href_matches: '/courses/*/files/*' } },
+            ],
+          },
+          eagerness: 'conservative',
+        },
+      ],
+    });
+    document.head.append(s);
+  }
 
   // Warm the Classwork cache while he's on any other page of the course.
   function prefetchClasswork(id) {
     const go = async () => {
-      const ent = await cache.entry('cw:' + id);
-      if (ent && Date.now() - ent.t < 10 * 6e4) return;
-      fetchClasswork(id)
-        .then((d) => cache.set('cw:' + id, JSON.parse(JSON.stringify(d))))
-        .catch(() => {});
+      if (Date.now() - fetchedAt('cw:' + id) < WARM_EVERY) return;
+      claim('cw:' + id);
+      fetchClasswork(id, true)
+        .then((d) => {
+          release('cw:' + id, true);
+          cache.set('cw:' + id, JSON.parse(JSON.stringify(d)));
+        })
+        .catch(() => release('cw:' + id, false));
       if (hasTab(/\/files\/?$/)) fetchFiles(id).then((d) => cache.set('cwf:' + id, d)).catch(() => {});
     };
     (window.requestIdleCallback || setTimeout)(go, { timeout: 2500 });
@@ -3238,7 +3358,22 @@
   // one frame and let a view transition crossfade to the new one.
   const THEME_STYLE = /^(darkcss|bettercanvas-|bettercampus-)/;
   const themeSnap = new Map();
+  const probe = (v) => {
+    const n = document.createElement('i');
+    n.style.cssText = `position:absolute;visibility:hidden;background:${v}`;
+    document.body.append(n);
+    const c = getComputedStyle(n).backgroundColor;
+    n.remove();
+    return c;
+  };
+  const checkFlatSurface = () => {
+    const a = rgbOf(probe('var(--bcbackground-1, #f1f3f4)'));
+    const b = rgbOf(probe('var(--bccards, #fff)'));
+    const near = a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) < 10);
+    html.classList.toggle('gcx-flat2', near);
+  };
   const snapTheme = () => {
+    checkFlatSurface();
     themeSnap.clear();
     for (const n of document.querySelectorAll('head style[id]')) if (THEME_STYLE.test(n.id)) themeSnap.set(n, n.textContent);
   };
@@ -3278,6 +3413,7 @@
             n.textContent = text;
             n.media = '';
           }
+          checkFlatSurface();
         })
         .finished.finally(done);
     } catch {
@@ -3324,6 +3460,8 @@
   hookBcSettings();
   watchSubmissions();
   (window.requestIdleCallback || setTimeout)(() => cache.sweep(), { timeout: 5000 });
+  prefetchCoursePages();
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(warmCourses, { timeout: 5000 }), 3000);
   if (COURSE_ID) {
     const cPromise = renderCourseBar();
     if (VIEW === 'home' || VIEW === 'classwork') {
