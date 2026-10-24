@@ -15,6 +15,9 @@ html.gcx {
   --gcx-red: #d93025;
   --gcx-green: #188038;
 }
+/* The theme's second surface matches its card color (BetterCampus dark does this), so anything
+   drawn on a card with it would disappear. Set from classroom.js. */
+html.gcx.gcx-flat2 { --gcx-bg2: color-mix(in srgb, var(--bcbackground-1, #f1f3f4) 90%, var(--bctext-0, #1f1f1f)); }
 
 /* ---------- global layout: our rail replaces Canvas's nav and BetterCampus's sidebar */
 html.gcx #header { display: none !important; }
