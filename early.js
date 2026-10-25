@@ -24,6 +24,7 @@
     if (path === '/' && q.get('gcx') === 'todo') view = 'todo';
     else if (course && rest === '/') view = q.get('gcx') === 'classwork' ? 'classwork' : 'home';
     else if (course && /^\/modules\/?$/.test(rest)) view = 'classwork';
+    else if (course && /^\/users\/?$/.test(rest)) view = 'people';
   }
   if (path === '/' && !view) {
     html.classList.add('gcx-dash');

@@ -140,7 +140,7 @@
 
   const giveUp = () => {
     view.remove();
-    html.classList.remove('gcx-asg');
+    html.classList.remove('gcx-asg', 'gcx-asg-split');
   };
   // The classic (pre-"Assignments 2") page is already rendered by now: leave it as is.
   if (document.querySelector('#assignment_show, .student-assignment-overview, #submit_assignment')) {
@@ -148,8 +148,20 @@
     return;
   }
   // Not the Assignments 2 view after all (or it never showed): leave Canvas's page alone.
+  // Canvas's submission area moves into the right column (assignment.css) once it's there: the
+  // child of #content that holds it is marked, and the page switches to the two-column grid.
+  const placeCanvas = () => {
+    const sv = q('assignments-2-student-view');
+    if (!sv) return false;
+    let box = sv;
+    while (box.parentElement && box.parentElement !== content) box = box.parentElement;
+    if (box.parentElement !== content || box === view) return true;
+    box.classList.add('gcx-asg-canvas');
+    html.classList.add('gcx-asg-split');
+    return true;
+  };
   const check = setInterval(() => {
-    if (q('assignments-2-student-view')) {
+    if (placeCanvas()) {
       clearInterval(check);
       clearTimeout(bail);
     }
@@ -214,7 +226,7 @@
             (f) => `<a class="gcx-asg-chip" href="${esc(f.href)}" data-gcx-file="${esc(f.id)}" data-gcx-course="${esc(f.course)}"${
               f.verifier ? ` data-gcx-verifier="${esc(f.verifier)}"` : ''
             } data-gcx-name="${esc(f.name)}" title="${esc(f.name)}">
-              <span class="gcx-asg-chip-ic">${svg('file', 22)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.name)}</b><small>File</small></span></a>`,
+              <span class="gcx-asg-chip-ic">${gcx.fileTile ? gcx.fileTile(f.name, 30) : svg('file', 22)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.name)}</b><small>File</small></span></a>`,
           )
           .join('');
     } else bodyEl.innerHTML = lockNote || '<p class="gcx-asg-empty">No instructions.</p>';
@@ -231,7 +243,7 @@
       parts.push(`<div class="gcx-asg-when">Turned in ${esc(fmtDue(new Date(s.submitted_at)))}${s.attempt > 1 ? ` · attempt ${esc(s.attempt)}` : ''}</div>`);
       for (const f of s.attachments || [])
         parts.push(`<a class="gcx-asg-chip small" href="${esc(f.url || f.preview_url || '#')}" data-gcx-file="${esc(f.id)}" data-gcx-name="${esc(f.display_name)}" title="${esc(f.display_name)}">
-          <span class="gcx-asg-chip-ic">${svg('file', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.display_name)}</b></span></a>`);
+          <span class="gcx-asg-chip-ic">${gcx.fileTile ? gcx.fileTile(f.display_name, 24) : svg('file', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.display_name)}</b></span></a>`);
       if (s.url) parts.push(`<a class="gcx-asg-chip small" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"><span class="gcx-asg-chip-ic">${svg('link', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(s.url)}</b></span></a>`);
       if (s.body && !(s.attachments || []).length)
         parts.push(`<div class="gcx-asg-text">${esc(new DOMParser().parseFromString(s.body, 'text/html').body.textContent.trim().slice(0, 280))}</div>`);

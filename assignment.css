@@ -59,7 +59,7 @@ html.gcx-asg #content { padding-top: 28px !important; }
 .gcx-asg-chip.small .gcx-asg-chip-tx { padding: 8px 10px; font-size: 13px; }
 
 /* ---- right: Your work + private comments */
-.gcx-asg-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 84px; }
+.gcx-asg-side { display: flex; flex-direction: column; gap: 16px; }
 .gcx-asg-work, .gcx-asg-comments {
   border: 1px solid var(--gcx-border); border-radius: 12px; background: var(--gcx-card); padding: 16px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
@@ -94,8 +94,27 @@ html.gcx-asg #content { padding-top: 28px !important; }
 .gcx-asg-link:hover { text-decoration: underline; }
 .gcx-asg-original { align-self: flex-start; font-size: 12px; color: var(--gcx-muted) !important; }
 
-/* Canvas's submission area, below: brought into view (and pointed at) by the Your work button */
-html.gcx-asg [data-testid="assignments-2-student-view"] { max-width: 1100px; margin: 0 auto; }
+/* Canvas's submission area (attempts, upload/text/link tabs, rubric) sits in the right column
+   under Your work, like Classroom's side panel. Its nodes stay where React put them: the page's
+   content area becomes a two-column grid, our section dissolves into it (display: contents), and
+   Canvas's block is placed in the right column by CSS alone, so its handlers keep working. */
+@media (min-width: 901px) {
+  html.gcx-asg.gcx-asg-split #content {
+    display: grid !important; grid-template-columns: minmax(0, 1fr) 380px; column-gap: 32px; align-items: start;
+    max-width: 1180px; margin: 0 auto !important; box-sizing: border-box;
+  }
+  html.gcx-asg.gcx-asg-split #content > * { grid-column: 1 / -1; min-width: 0; }
+  html.gcx-asg.gcx-asg-split #gcx-asg { display: contents; }
+  html.gcx-asg.gcx-asg-split .gcx-asg-main { grid-column: 1; grid-row: 1 / span 3; animation: gcx-asg-in 0.4s cubic-bezier(.16,.84,.3,1) both; }
+  html.gcx-asg.gcx-asg-split .gcx-asg-side { grid-column: 2; grid-row: 1; animation: gcx-asg-in 0.4s 60ms cubic-bezier(.16,.84,.3,1) both; }
+  html.gcx-asg.gcx-asg-split #content > .gcx-asg-canvas { grid-column: 2; grid-row: 2; margin-top: 16px; }
+  html.gcx-asg.gcx-asg-split .gcx-asg-canvas {
+    border: 1px solid var(--gcx-border); border-radius: 12px; background: var(--gcx-card); padding: 4px 12px 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); overflow: hidden;
+  }
+  html.gcx-asg.gcx-asg-split .gcx-asg-canvas [data-testid="assignments-2-student-view"] { max-width: none; margin: 0; }
+}
+/* Brought into view (and pointed at) by the Your work button */
 .gcx-asg-pulse { animation: gcx-asg-pulse 1.4s ease-out 0.35s; border-radius: 12px; }
 @keyframes gcx-asg-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gcx-link) 45%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
 

@@ -252,8 +252,41 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 }
 .gcx-row:hover { background: var(--gcx-bg2); }
 .gcx-row:hover .gcx-row-title { color: var(--gcx-text) !important; }
-.gcx-row + .gcx-row { border-top: 1px solid var(--gcx-border); }
+.gcx-row + .gcx-row, .gcx-pv + .gcx-row { border-top: 1px solid var(--gcx-border); }
+/* Classwork: an assignment opened in place (classroom.js togglePreview) */
+.gcx-row.gcx-pv-on { background: var(--gcx-bg2); }
+.gcx-pv { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s cubic-bezier(.2,.7,.2,1); background: var(--gcx-bg2); }
+.gcx-pv.open { grid-template-rows: 1fr; }
+.gcx-pv-in { overflow: hidden; min-height: 0; padding: 0 16px 0 68px; opacity: 0; transition: opacity 0.2s ease, padding 0.25s ease; }
+.gcx-pv.open .gcx-pv-in { opacity: 1; padding: 4px 16px 14px 68px; }
+.gcx-pv-meta { font-size: 12px; color: var(--gcx-muted); margin-bottom: 8px; }
+.gcx-pv-desc { font-size: 14px; line-height: 1.5; max-height: 14em; overflow: hidden; overflow-wrap: anywhere;
+  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent); mask-image: linear-gradient(to bottom, #000 75%, transparent); }
+.gcx-pv-desc p { margin: 0 0 0.6em; }
+.gcx-pv-desc img { max-width: 100%; height: auto; }
+.gcx-pv-desc a { color: var(--gcx-link) !important; }
+.gcx-pv-desc.gcx-pv-none { color: var(--gcx-muted); -webkit-mask-image: none; mask-image: none; }
+.gcx-pv-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.gcx-pv-foot { display: flex; justify-content: flex-end; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gcx-border); }
+.gcx-pv-open { font-weight: 600; font-size: 14px; color: var(--gcx-link) !important; text-decoration: none !important; padding: 6px 12px; border-radius: 8px; }
+.gcx-pv-open:hover { background: color-mix(in srgb, var(--gcx-link) 10%, transparent); }
 .gcx-row-ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--c, var(--gcx-link)); color: #fff; }
+/* file type tiles (classroom.js fileTile) */
+.gcx-ftype {
+  display: inline-grid; place-items: center; flex: none; width: var(--s); height: var(--s); border-radius: calc(var(--s) * 0.24);
+  background: #5f6368; color: #fff !important; font: 700 calc(var(--s) * 0.32) / 1 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: 0.02em;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+}
+.gcx-ft-pdf { background: #d93025; }
+.gcx-ft-doc { background: #1a73e8; }
+.gcx-ft-ppt { background: #e8710a; }
+.gcx-ft-xls { background: #188038; }
+.gcx-ft-img { background: #9334e6; }
+.gcx-ft-vid { background: #c2185b; }
+.gcx-ft-aud { background: #12a4af; }
+.gcx-ft-txt { background: #455a64; }
+.gcx-row-ic:has(> .gcx-ftype), .gcx-row.done .gcx-row-ic:has(> .gcx-ftype) { background: none; border-radius: 0; }
+.gcx-post-file .gcx-ftype { --s: 20px; }
 .gcx-row.done .gcx-row-ic { background: var(--gcx-bg2); color: var(--gcx-muted); }
 .gcx-row.locked { opacity: 0.6; }
 .gcx-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -701,6 +734,11 @@ html.gcx-pinned .gcx-progress { left: var(--gcx-rail-open); }
   transition: transform 0.2s ease-out;
 }
 @media (max-width: 767px) { .gcx-progress { left: 0; } }
+
+/* ---------- BetterCampus's to-do list while it loads: last visit's copy stands in (classroom.js mountBcGhost) */
+html.gcx-bc-wait bettercampus-todo-list { position: absolute !important; visibility: hidden !important; pointer-events: none !important; }
+.gcx-bc-ghost { display: block; transition: opacity 0.25s ease; }
+.gcx-bc-ghost.gcx-out { opacity: 0; pointer-events: none; z-index: 1; }
 
 /* ---------- dashboard while loading: last visit's cards (or placeholders) stand in */
 html.gcx-dash-wait :is(#DashboardCard_Container, #dashboard_header_container) { display: none !important; }

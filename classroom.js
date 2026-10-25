@@ -102,6 +102,25 @@
       } catch {}
     },
   };
+  // Files show their type as a small colored tile (PDF in white on red, like Drive) instead of a
+  // plain page icon. Anything unrecognized keeps the page icon.
+  const FILE_TYPES = [
+    [/^pdf$/, 'pdf', 'PDF'],
+    [/^(docx?|odt|rtf|pages)$/, 'doc', 'DOC'],
+    [/^(pptx?|key|odp)$/, 'ppt', 'PPT'],
+    [/^(xlsx?|csv|ods|numbers)$/, 'xls', 'XLS'],
+    [/^(png|jpe?g|gif|webp|heic|svg|bmp)$/, 'img', 'IMG'],
+    [/^(zip|rar|7z|tar|gz)$/, 'zip', 'ZIP'],
+    [/^(mp4|mov|webm|m4v|avi|mkv)$/, 'vid', 'VID'],
+    [/^(mp3|wav|m4a|aac|flac)$/, 'aud', 'AUD'],
+    [/^(txt|md|py|java|c|cpp|h|js|ts|r|rmd|qmd|ipynb|html|json|tex|sql|m)$/, 'txt', ''],
+  ];
+  const fileTile = (name, size = 20) => {
+    const ext = ((String(name || '').match(/\.([a-z0-9]{1,8})\s*$/i) || [])[1] || '').toLowerCase();
+    const t = ext && FILE_TYPES.find(([re]) => re.test(ext));
+    if (!t) return svg('file', size);
+    return `<span class="gcx-ftype gcx-ft-${t[1]}" style="--s:${size}px" aria-hidden="true">${t[2] || ext.toUpperCase().slice(0, 4)}</span>`;
+  };
 
   // Canvas REST call with the page's own session. all=true follows Link: rel="next".
   async function api(path, all = false) {
@@ -1284,7 +1303,7 @@
           <div class="gcx-post-head"><span class="gcx-post-ic">${svg('file', 20)}</span>
             <div class="gcx-post-tx"><span><b>${esc(who)}</b> posted ${pst.files.length === 1 ? 'a new material' : `${pst.files.length} new materials`}</span><small>${esc(date)}</small></div></div>
           <div class="gcx-post-files">${shown
-            .map((f) => `<a class="gcx-post-file" href="/courses/${id}/files/${f.id}" data-gcx-file="${f.id}" data-gcx-course="${id}">${svg('file', 18)}<span>${esc(f.name)}</span></a>`)
+            .map((f) => `<a class="gcx-post-file" href="/courses/${id}/files/${f.id}" data-gcx-file="${f.id}" data-gcx-course="${id}">${fileTile(f.name, 20)}<span>${esc(f.name)}</span></a>`)
             .join('')}${more > 0 ? `<a class="gcx-post-more" href="/courses/${id}/files">+${more} more</a>` : ''}</div>
         </article>`;
       }
@@ -1568,10 +1587,12 @@
     const host = r.ext ? hostOf(r.url) : '';
     return `<a class="gcx-row${st.done || r.kind === 'File' || r.kind === 'Page' ? ' done' : ''}${locked ? ' locked' : ''}" href="${esc(r.url)}"${
       r.fileId ? ` data-gcx-file="${esc(r.fileId)}" data-gcx-course="${COURSE_ID}"` : ''
-    }${r.ext ? ` target="_blank" rel="noopener noreferrer" data-gcx-ext="1"${r.track ? ` data-gcx-track="${esc(r.track)}"` : ''}` : ''} data-q="${esc(
+    }${r.ext ? ` target="_blank" rel="noopener noreferrer" data-gcx-ext="1"${r.track ? ` data-gcx-track="${esc(r.track)}"` : ''}` : ''}${
+      r.a && r.a.id ? ` data-aid="${esc(r.a.id)}"` : ''
+    } data-q="${esc(
       r.title.toLowerCase(),
     )}" style="${pad}--i:${Math.min(i, 12)}">
-      <span class="gcx-row-ic">${svg(locked ? 'lock' : KIND_ICON[r.kind] || 'link', 20)}</span>
+      <span class="gcx-row-ic">${!locked && r.kind === 'File' ? fileTile(r.title, 34) : svg(locked ? 'lock' : KIND_ICON[r.kind] || 'link', 20)}</span>
       <span class="gcx-row-main"><span class="gcx-row-title">${esc(r.title)}</span>${sub ? `<span class="gcx-row-sub">${esc(sub)}</span>` : ''}</span>
       <span class="gcx-row-meta ${st.cls}">${host ? `${esc(host)}${svg('open', 14)}` : esc(r.meta != null ? r.meta : st.text)}</span></a>`;
   }
@@ -1974,7 +1995,9 @@
     let drawn = false;
     let c = COURSES && COURSES.find((x) => x.id === id);
 
+    let lastData = null;
     const draw = (data, fromCache) => {
+      lastData = data;
       const { topics, missing, dueThisWeek } = buildTopics(data);
       const scrollY = window.scrollY;
       const oldInput = drawn ? view.querySelector('.gcx-filter input') : null;
@@ -2044,7 +2067,77 @@
       });
     }
 
+    // Clicking an assignment opens it in place, like Classroom: when it was posted, the
+    // instructions, its files and a way into the full page. Everything comes from the classwork
+    // data already on hand, so it opens at once. Ctrl/middle-click still opens the page.
+    const findAssignment = (aid) => {
+      for (const g of (lastData && lastData.groups) || []) for (const a of g.assignments || []) if (String(a.id) === aid) return a;
+      return null;
+    };
+    function previewHtml(a, href) {
+      const posted = [a.unlock_at, a.created_at].filter(Boolean).map(Date.parse).filter((t) => t <= Date.now());
+      const when = posted.length ? `Posted ${shortDate(new Date(Math.max(...posted)))}` : '';
+      const pts = a.points_possible ? `${+a.points_possible} point${a.points_possible === 1 ? '' : 's'}` : '';
+      const body = a.description && a.description.trim() ? cleanHtml(a.description) : '';
+      const doc = new DOMParser().parseFromString(body, 'text/html');
+      const files = [];
+      const seen = new Set();
+      for (const link of doc.querySelectorAll('a[href]')) {
+        const m = link.getAttribute('href').match(/(?:\/courses\/(\d+))?\/files\/(\d+)/);
+        if (!m || seen.has(m[2])) continue;
+        seen.add(m[2]);
+        files.push({ id: m[2], course: m[1] || COURSE_ID, name: (link.getAttribute('title') || link.textContent || 'File').replace(/\s+/g, ' ').trim() });
+      }
+      const label = a.quiz_id ? 'View quiz' : a.discussion_topic ? 'View discussion' : 'View assignment';
+      return `<div class="gcx-pv-in">
+        <div class="gcx-pv-meta">${esc([when, pts].filter(Boolean).join(' · '))}</div>
+        ${body ? `<div class="gcx-pv-desc">${body}</div>` : '<div class="gcx-pv-desc gcx-pv-none">No instructions.</div>'}
+        ${
+          files.length
+            ? `<div class="gcx-pv-files">${files
+                .map(
+                  (f) =>
+                    `<a class="gcx-post-file" href="/courses/${esc(f.course)}/files/${esc(f.id)}" data-gcx-file="${esc(f.id)}" data-gcx-course="${esc(f.course)}">${fileTile(f.name, 20)}<span>${esc(f.name)}</span></a>`,
+                )
+                .join('')}</div>`
+            : ''
+        }
+        <div class="gcx-pv-foot"><a class="gcx-pv-open" href="${esc(href)}">${label}</a></div>
+      </div>`;
+    }
+    function togglePreview(row) {
+      const open = view.querySelector('.gcx-row.gcx-pv-on');
+      const close = (r) => {
+        r.classList.remove('gcx-pv-on');
+        r.setAttribute('aria-expanded', 'false');
+        const pv = r.nextElementSibling;
+        if (!pv || !pv.classList.contains('gcx-pv')) return;
+        pv.classList.remove('open');
+        setTimeout(() => pv.remove(), 260);
+      };
+      if (open) close(open);
+      if (open === row) return;
+      const a = findAssignment(row.dataset.aid);
+      if (!a) return (location.href = row.href);
+      const pv = el(`<div class="gcx-pv" role="region" aria-label="${esc(a.name)}">${previewHtml(a, row.href)}</div>`);
+      fixInlineColors(pv);
+      pv.querySelectorAll('.gcx-pv-desc img').forEach((img) => img.addEventListener('error', () => img.remove(), { once: true }));
+      row.after(pv);
+      row.classList.add('gcx-pv-on');
+      row.setAttribute('aria-expanded', 'true');
+      void pv.offsetWidth;
+      pv.classList.add('open');
+    }
+
     function wire() {
+      // Assignment rows open in place; their "View" link goes to the page.
+      view.querySelector('.gcx-topics').addEventListener('click', (e) => {
+        if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        const row = e.target.closest('.gcx-row[data-aid]');
+        if (!row || row.classList.contains('locked')) return;
+        e.preventDefault();
+        togglePreview(row);
+      });
       // Topic, subgroup and folder headers all toggle the same way.
       view.querySelector('.gcx-topics').addEventListener('click', (e) => {
         const h = e.target.closest('.gcx-topic-h, .gcx-sub-h');
@@ -3344,6 +3437,8 @@
       setHidden(section, items.every((g) => g.parentElement.hasAttribute('data-gcx-hide')));
     }
     if (panel) capBcTodo(panel);
+    if (bcGhost && bcLive(sr)) releaseBcGhost();
+    saveBcTodo(sr);
   }
   // Show the first few items; the rest sit behind "Show more".
   function capBcTodo(panel) {
@@ -3491,7 +3586,7 @@
   const refreshInlineColors = () => document.querySelectorAll('.gcx-stream, .gcx-asg-body').forEach(fixInlineColors);
 
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = { api, esc, el, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
+  window.gcx = { api, esc, el, svg, fileTile, swr, store, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
 
   // ---------------------------------------------------------------- loading bar
   // A thin bar across the top of the page (not the rail): dark grey track, filled with the
@@ -3780,6 +3875,10 @@
     if (VIEW === 'home' || VIEW === 'classwork') {
       const view = mountView();
       if (view) (VIEW === 'home' ? renderHome : renderClasswork)(view, cPromise);
+    } else if (VIEW === 'people') {
+      // Drawn by people.js, which runs next.
+      const view = mountView();
+      if (view) window.gcx.people = { view, course: cPromise };
     }
     if (VIEW !== 'classwork') prefetchClasswork(COURSE_ID);
   } else if (VIEW === 'todo') {
@@ -3809,6 +3908,80 @@
     run();
     new MutationObserver(run).observe(document.getElementById('content') || document.body, { childList: true, subtree: true });
   }
+
+  // BetterCampus's to-do list fetches fresh on every page, so it used to pop in a second late.
+  // Last visit's copy (its rows and its stylesheet, in a shadow root of our own) stands in where
+  // the list goes, and fades out once the live list has drawn underneath.
+  let bcGhost = null;
+  let bcSavedHtml = '';
+  let bcSaveTimer = 0;
+  function bcLive(sr) {
+    const list = sr && sr.getElementById('bettercanvas-todo-list');
+    return !!(list && (list.querySelector('.group') || /all (done|caught up)|no (upcoming|assignments|items)|nothing (due|to do)/i.test(list.textContent)));
+  }
+  function saveBcTodo(sr) {
+    clearTimeout(bcSaveTimer);
+    bcSaveTimer = setTimeout(() => {
+      const list = sr.getElementById('bettercanvas-todo-list');
+      if (!list || !list.querySelector('.group')) return;
+      const copy = list.cloneNode(true);
+      copy.querySelectorAll('[data-gcx-new]').forEach((n) => n.removeAttribute('data-gcx-new'));
+      const markup = copy.outerHTML;
+      if (markup.length > 400000 || markup === bcSavedHtml) return;
+      bcSavedHtml = markup;
+      const sheets = [...(sr.adoptedStyleSheets || [])].map((s) => {
+        try {
+          return [...s.cssRules].map((r) => r.cssText).join('\n');
+        } catch {
+          return '';
+        }
+      });
+      const css = [...sr.querySelectorAll('style')].map((s) => s.textContent).concat(sheets).join('\n');
+      cache.set('bctodo', { html: markup, css });
+    }, 1500);
+  }
+  function releaseBcGhost() {
+    const g = bcGhost;
+    if (!g) return;
+    bcGhost = null;
+    // Lift the copy out of the flow where it sits, so the live list takes its place underneath
+    // while the copy fades.
+    const { offsetTop: top, offsetLeft: left, offsetWidth: width } = g;
+    g.style.cssText = `position:absolute;top:${top}px;left:${left}px;width:${width}px`;
+    html.classList.remove('gcx-bc-wait');
+    g.classList.add('gcx-out');
+    setTimeout(() => g.remove(), 260);
+  }
+  async function mountBcGhost() {
+    const saved = await cache.get('bctodo');
+    if (!saved || !saved.html) return;
+    bcSavedHtml = saved.html;
+    const tryMount = () => {
+      const host = document.querySelector('bettercampus-todo-list');
+      if (!host) return false;
+      if (bcLive(host.shadowRoot) || document.querySelector('.gcx-bc-ghost')) return true;
+      const ghost = document.createElement('div');
+      ghost.className = 'gcx-bc-ghost';
+      ghost.inert = true;
+      ghost.setAttribute('aria-hidden', 'true');
+      const gsr = ghost.attachShadow({ mode: 'open' });
+      const st = document.createElement('style');
+      st.textContent = saved.css || '';
+      gsr.append(st);
+      gsr.append(document.createRange().createContextualFragment(saved.html));
+      gsr.querySelectorAll('script').forEach((n) => n.remove());
+      host.before(ghost);
+      html.classList.add('gcx-bc-wait');
+      bcGhost = ghost;
+      setTimeout(releaseBcGhost, 8000); // never hide the real list for long
+      return true;
+    };
+    if (tryMount()) return;
+    const mo = new MutationObserver(() => tryMount() && mo.disconnect());
+    mo.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => mo.disconnect(), 5000);
+  }
+  mountBcGhost();
 
   // The BetterCampus sidebar can show up on any page; watch for it until it does.
   if (!tweakBcTodo()) {
