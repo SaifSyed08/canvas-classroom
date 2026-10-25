@@ -189,14 +189,17 @@
   };
   // For background refreshes: a failed request should fail the refresh (keeping the saved copy),
   // not quietly save an empty list over it. "Not allowed" / "not found" are real answers, though.
-  let softFails = 0; // fallbacks used for real errors; a fetch that needed one isn't marked fresh
-  const softFail = (strict, fallback) => (e) => {
-    const real = !(e && (e.status === 401 || e.status === 404));
+  // On a page, a failed request falls back to an empty part so the rest still draws; `tally`
+  // counts those, and swr then keeps the saved copy instead of saving the gap over it.
+  const softFail = (strict, fallback, tally) => (e) => {
     // Background refreshes keep only 404 as an answer: 401 is also what a signed-out session gets.
     if (strict && !(e && e.status === 404)) throw e;
-    if (real) softFails++;
+    if (tally && !(e && (e.status === 401 || e.status === 404))) tally.fails++;
     return fallback;
   };
+  // Signed file and image links get new tokens on every fetch. Compare without them, so data
+  // that only differs there isn't re-saved every time.
+  const sansTokens = (s) => s.replace(/([?&](?:verifier|sf_verifier|Expires|Signature|Key-Pair-Id|X-Amz-[A-Za-z]+|token)=)[^&"\\]*/g, '$1');
   // Keys a background fetch has claimed and not finished. If the page goes away first, the claims
   // are dropped so the next page fetches them.
   const claimed = new Set();
@@ -229,18 +232,27 @@
       onData(revive(cached), true);
     }
     let fresh;
-    const fails = softFails;
+    const tally = { fails: 0 };
     try {
-      fresh = JSON.parse(JSON.stringify(await fetcher()));
+      fresh = JSON.parse(JSON.stringify(await fetcher(tally)));
     } catch (e) {
       if (shown == null) throw e;
       console.warn('[canvas-classroom] refresh failed, showing saved copy', key, e);
       return null;
     }
-    if (softFails === fails) markFetched(key);
+    // Part of it failed: keep the saved copy. With none saved, show what came back but don't keep it.
+    if (tally.fails) {
+      if (shown != null) {
+        console.warn('[canvas-classroom] refresh partly failed, showing saved copy', key);
+        return null;
+      }
+      onData(revive(fresh), false);
+      return fresh;
+    }
+    markFetched(key);
     const now = JSON.stringify(fresh);
     // Write only when something changed (or the copy is a day old, so the sweep keeps it).
-    if (now !== shown || !ent || Date.now() - ent.t > 864e5) cache.set(key, fresh);
+    if (shown == null || sansTokens(now) !== sansTokens(shown) || Date.now() - ent.t > 864e5) cache.set(key, fresh);
     if (now !== shown) onData(revive(fresh), false);
     return fresh;
   }
@@ -394,6 +406,16 @@
     const list = await coursesReady;
     const hit = list.find((c) => c.id === id);
     if (hit) return hit;
+    // Use the saved copy right away and refresh it for next time.
+    const key = `course:${PAGE_USER || 'anon'}:${id}`;
+    const saved = store.get(key, null);
+    const fresh = fetchCourseById(id).then((c) => {
+      if (c.name) store.set(key, c);
+      return c;
+    });
+    return saved || fresh;
+  }
+  async function fetchCourseById(id) {
     try {
       const [f, colors] = await Promise.all([
         api(`/courses/${id}?include[]=teachers&include[]=total_scores&include[]=term&include[]=course_image`),
@@ -1018,12 +1040,12 @@
   // Classroom-style "posted a new assignment / new material" items from the last three weeks.
   // Assignments count from when they opened (unlock date) if that's later than when they were made.
   const POST_DAYS = 21;
-  const fetchPosts = async (id, strict = false) => {
+  const fetchPosts = async (id, strict = false, tally) => {
     const since = Date.now() - POST_DAYS * DAY;
     const now = Date.now();
     const [assigns, files] = await Promise.all([
-      api(`/courses/${id}/assignments?per_page=100`, true).catch(softFail(strict, [])),
-      courseHasFiles(id) ? api(`/courses/${id}/files?sort=created_at&order=desc&per_page=40`).catch(softFail(strict, [])) : Promise.resolve([]),
+      api(`/courses/${id}/assignments?per_page=100`, true).catch(softFail(strict, [], tally)),
+      courseHasFiles(id) ? api(`/courses/${id}/files?sort=created_at&order=desc&per_page=40`).catch(softFail(strict, [], tally)) : Promise.resolve([]),
     ]);
     const posts = [];
     for (const a of assigns) {
@@ -1051,7 +1073,7 @@
   async function renderHome(view, cPromise) {
     const id = COURSE_ID;
     view.innerHTML = `
-      <div class="gcx-banner"><div class="gcx-banner-tx"><h1>&nbsp;</h1><div>&nbsp;</div></div></div>
+      <div class="gcx-banner"><div class="gcx-banner-img"></div><div class="gcx-banner-tx"><h1>&nbsp;</h1><div>&nbsp;</div></div></div>
       <div class="gcx-home-cols">
         <div class="gcx-home-side">
           <aside class="gcx-card gcx-upc"><div class="gcx-upc-h">Upcoming</div><div class="gcx-upc-list">${skeleton(3)}</div>
@@ -1071,7 +1093,7 @@
       const imgPath = (c.image || '').split('?')[0];
       if (c.image && banner.dataset.img !== imgPath) {
         banner.dataset.img = imgPath;
-        banner.style.backgroundImage = `url("${c.image.replace(/"/g, '%22')}")`;
+        banner.querySelector('.gcx-banner-img').style.backgroundImage = `url("${c.image.replace(/"/g, '%22')}")`;
       }
       const tx = banner.querySelector('.gcx-banner-tx');
       const sig = [prettyName(c), c.code, c.term, teacherLine(c), c.score, c.letter].join('|');
@@ -1224,7 +1246,7 @@
     })
       .catch((e) => showError(stream, 'announcements', `/courses/${id}/announcements`, e))
       .finally(barDone);
-    swr('home:posts:' + id, () => fetchPosts(id), (posts) => {
+    swr('home:posts:' + id, (t) => fetchPosts(id, false, t), (posts) => {
       postsNow = posts;
       drawStream();
     }).catch(() => {});
@@ -1550,10 +1572,10 @@
   }
 
   // Canvas data trimmed to what Classwork draws, so it caches small.
-  async function fetchClasswork(id, strict = false) {
+  async function fetchClasswork(id, strict = false, tally) {
     const [mods, groups] = await Promise.all([
-      api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(softFail(strict, null)),
-      api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(softFail(strict, null)),
+      api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(softFail(strict, null, tally)),
+      api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(softFail(strict, null, tally)),
     ]);
     if (!mods && !groups) throw new Error('Canvas returned nothing');
     // Big modules come back without inline items.
@@ -1561,7 +1583,7 @@
       (mods || [])
         .filter((m) => !m.items && m.items_url)
         .map(async (m) => {
-          m.items = await api(`${m.items_url}${m.items_url.includes('?') ? '&' : '?'}include[]=content_details&per_page=100`, true).catch(softFail(strict, []));
+          m.items = await api(`${m.items_url}${m.items_url.includes('?') ? '&' : '?'}include[]=content_details&per_page=100`, true).catch(softFail(strict, [], tally));
         }),
     );
     const sub = (s) =>
@@ -1656,7 +1678,7 @@
           }
           release(key, true);
           const ent = await cache.entry(key); // after the fetch: the page may have saved a copy meanwhile
-          if (!ent || JSON.stringify(ent.d) !== JSON.stringify(d) || Date.now() - ent.t > 864e5) cache.set(key, d);
+          if (!ent || sansTokens(JSON.stringify(ent.d)) !== sansTokens(JSON.stringify(d)) || Date.now() - ent.t > 864e5) cache.set(key, d);
         }).map((p) => p.catch(() => {})),
       );
     }
@@ -1673,10 +1695,15 @@
         {
           source: 'document',
           where: {
-            and: [
-              { href_matches: '/courses/*' },
-              { selector_matches: '#gcx-rail a.gcx-ri-course, #gcx-cbar a.gcx-tab, .ic-DashboardCard__link, .ic-DashboardCard a.gcx-card-ov' },
-              { not: { href_matches: '/courses/*/files/*' } },
+            or: [
+              {
+                and: [
+                  { href_matches: '/courses/*' },
+                  { selector_matches: '#gcx-rail a.gcx-ri-course, #gcx-cbar a.gcx-tab, .ic-DashboardCard__link, .ic-DashboardCard a.gcx-card-ov' },
+                  { not: { href_matches: '/courses/*/files/*' } },
+                ],
+              },
+              { selector_matches: '#gcx-rail a.gcx-ri[href="/"], #gcx-rail a.gcx-ri[href="/?gcx=todo"]' },
             ],
           },
           eagerness: 'conservative',
@@ -1945,7 +1972,7 @@
     if (c) view.style.setProperty('--c', c.color);
     try {
       barStart();
-      await swr('cw:' + id, () => fetchClasswork(id), (d, fromCache) => {
+      await swr('cw:' + id, (t) => fetchClasswork(id, false, t), (d, fromCache) => {
         draw(d, fromCache);
         barDone();
       });
@@ -1982,7 +2009,7 @@
     select.value = courseFilter;
     if (select.value !== courseFilter) courseFilter = '';
 
-    const fetchItems = async () => {
+    const fetchItems = async (tally) => {
       const list = await coursesReady;
       const [dated, undated] = await Promise.all([
         planner(-120, 120),
@@ -1995,7 +2022,7 @@
                   .filter((a) => (a.submission_types || []).some((t) => /^online_|^discussion_topic$/.test(t)))
                   .map((a) => normAssignment(a, c)),
               )
-              .catch(() => []),
+              .catch(softFail(false, [], tally)),
           ),
         ).then((x) => x.flat()),
       ]);
@@ -2170,7 +2197,6 @@
     const skeletonCard = `<div class="ic-DashboardCard gcx-skelcard"><div class="ic-DashboardCard__header"></div><div class="gcx-card-body">${skeleton(3)}</div></div>`;
     const markup = snap || `<div class="ic-DashboardCard__box__container">${skeletonCard.repeat(n)}</div>`;
     ghosts = el(`<div class="gcx-ghosts ic-DashboardCard__box" aria-hidden="true">${markup}</div>`);
-    ghosts.inert = true;
     container.before(ghosts);
     setTimeout(releaseGhosts, 10000); // never block the real cards for long
   }
@@ -2272,7 +2298,7 @@
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
-    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55,
+    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -2283,18 +2309,15 @@
     ['Strong', 2],
     ['Max', 3],
   ];
-  const CANVAS_OVERLAY = (() => {
-    for (const sc of document.scripts) {
-      const m = !sc.src && sc.textContent.match(/"hide_dashcard_color_overlays":(true|false)/);
-      if (m) return m[1] === 'false';
-    }
-    return false;
-  })();
   const applyShadePref = () => {
-    html.dataset.gcxShade = String(prefs().shade);
-    // Canvas's own color overlay, when he has it on, already does this.
-    html.classList.toggle('gcx-tint', prefs().tint !== false && !CANVAS_OVERLAY);
-    html.style.setProperty('--gcx-tint', `${prefs().tintAmt}%`);
+    const p = prefs();
+    html.dataset.gcxShade = String(p.shade);
+    html.classList.toggle('gcx-tint', p.tint !== false);
+    html.style.setProperty('--gcx-tint', `${p.tintAmt}%`);
+    // Black and white and/or dimmed class images (cards and the class banner).
+    const f = [p.gray ? 'grayscale(1)' : '', p.dim ? `brightness(${(100 - p.dim) / 100})` : ''].filter(Boolean).join(' ');
+    if (f) html.style.setProperty('--gcx-img-filter', f);
+    else html.style.removeProperty('--gcx-img-filter');
   };
 
   // School colors: the rail takes the school's Canvas nav color (and logo), like stock Canvas,
@@ -2318,10 +2341,12 @@
     html.classList.toggle('gcx-school', on);
     rail.querySelector('.gcx-rail-logo')?.remove();
     document.querySelector('.gcx-school-mark')?.remove();
+    html.classList.remove('gcx-themed', 'gcx-uniform');
     if (!on) {
       html.style.removeProperty('--gcx-school');
       html.style.removeProperty('--gcx-school-fg');
       html.style.removeProperty('--gcx-link');
+      html.style.removeProperty('--gcx-accent');
       return;
     }
     const cs = getComputedStyle(html);
@@ -2330,11 +2355,16 @@
     const fg = (!preset && cs.getPropertyValue('--ic-brand-global-nav-menu-item__text-color').trim()) || (luminance(nav) > 0.55 ? '#1f1f1f' : '#ffffff');
     html.style.setProperty('--gcx-school', nav);
     html.style.setProperty('--gcx-school-fg', fg);
-    // Accent follows the school color only when it has real contrast with the page (light or dark).
+    // The theme color is the accent everywhere (links, tabs, chips, surfaces). Where it's too close
+    // to the page to read (a dark color on a dark page), it's lifted toward white, or black on light.
     const bg = rgbLuminance(getComputedStyle(document.body).backgroundColor);
     const L = luminance(nav);
-    if ((Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3) html.style.setProperty('--gcx-link', nav);
-    else html.style.removeProperty('--gcx-link');
+    const readable = (Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3;
+    const accent = readable ? nav : `color-mix(in oklch, ${nav} 55%, ${bg < 0.4 ? 'white' : 'black'})`;
+    html.style.setProperty('--gcx-link', accent);
+    html.style.setProperty('--gcx-accent', accent);
+    html.classList.add('gcx-themed');
+    html.classList.toggle('gcx-uniform', prefs().uniform !== false);
     if (preset) return; // logos only come with the school theme
     const logo = (cs.getPropertyValue('--ic-brand-header-image').match(/url\(["']?([^"')]+)/) || [])[1];
     if (logo) {
@@ -2612,10 +2642,16 @@
               `<button type="button" role="radio" data-theme="${k}" aria-checked="${themeOf(p) === k}" title="${label}"><span class="gcx-sw gcx-sw-${k || 'default'}" style="${color ? `--sw:${color}` : ''}"></span><small>${label}</small></button>`,
           ).join('')}</div>
           </div>
+        ${toggle('uniform', 'Classes take the theme color', 'With a theme on, every class card, banner and chip uses the theme color instead of its own').replace('<label class="gcx-set-row"', '<label class="gcx-set-row" data-needs="theme"')}
         ${toggle('tint', 'Color over class images', "Each class image takes a wash of that class's color, like Canvas's own color overlay")}
         <div class="gcx-set-sub" data-needs="tint">
           <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p.tintAmt}%</span></div>
           <input type="range" class="gcx-set-range" data-range="tintAmt" min="10" max="90" step="5" value="${p.tintAmt}" aria-label="Color strength">
+        </div>
+        ${toggle('gray', 'Black and white class images', 'Takes the color out of class pictures; the color wash above still applies')}
+        <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Dim class images <span class="gcx-set-val">${p.dim}%</span></div>
+          <input type="range" class="gcx-set-range" data-range="dim" min="0" max="60" step="5" value="${p.dim}" aria-label="Dim class images">
         </div>
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Darken class images (so white titles stand out)</div>
@@ -2643,11 +2679,12 @@
       applyWelcomePrefs();
       applyFontPref();
       applyShadePref();
-      if ('school' in patch) applySchoolPref();
+      if ('school' in patch || 'uniform' in patch) applySchoolPref();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
-    const sync = () => box.querySelectorAll('[data-needs]').forEach((n) => n.classList.toggle('off', !prefs()[n.dataset.needs]));
+    const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : prefs()[k]);
+    const sync = () => box.querySelectorAll('[data-needs]').forEach((n) => n.classList.toggle('off', !needs(n.dataset.needs)));
     sync();
     box.addEventListener('change', (e) => {
       const k = e.target.dataset && e.target.dataset.k;
@@ -2671,6 +2708,7 @@
         save({ theme: th.dataset.theme, school: false });
         applySchoolPref();
         box.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-checked', String(b === th)));
+        sync();
       } else if (sh) {
         save({ shade: Number(sh.dataset.shade) });
         box.querySelectorAll('[data-shade]').forEach((b) => b.setAttribute('aria-checked', String(b === sh)));
@@ -2822,7 +2860,7 @@
     .gcx-switch:checked { background: var(--gcx-link, #4f46e5); }
     .gcx-switch:checked::after { transform: translateX(16px); }
     .gcx-set-sub { padding: 4px 16px 14px; transition: opacity .15s ease; }
-    .gcx-set-sub.off { opacity: .4; pointer-events: none; }
+    .gcx-set-sub.off, .gcx-set-row.off { opacity: .4; pointer-events: none; }
     .gcx-set-lbl { font-size: 12px; font-weight: 600; color: var(--gcx-muted, #71717a); margin: 8px 0 6px; }
     .gcx-set-tone { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-tone button { flex: 1; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--gcx-muted, #71717a); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -3426,6 +3464,7 @@
       if (isTheme) {
         refreshInlineColors();
         syncFirstPaint();
+        applySchoolPref();
       }
       return;
     }
@@ -3442,6 +3481,7 @@
       themeBusy = false;
       refreshInlineColors();
       syncFirstPaint();
+      applySchoolPref();
     };
     try {
       document
