@@ -361,7 +361,7 @@ html.gcx-dash .bettercampus-card-grade { z-index: 3; }
    !important}`, so the gradient needs a more specific !important rule than that to show. */
 html.gcx .ic-DashboardCard__header a.gcx-card-ov,
 html.gcx[data-gcx-shade="1"] .ic-DashboardCard__header a.gcx-card-ov {
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important;
 }
 .gcx-card-title {
   font-size: 20px; font-weight: 700; line-height: 1.2;
@@ -602,6 +602,29 @@ html[data-gcx-nav="in"]::view-transition-new(gcx-cbar):only-child { animation: g
 @keyframes gcx-vt-in-left { from { opacity: 0; transform: translateX(-60px); } }
 @keyframes gcx-vt-fade-out { to { opacity: 0; } }
 @keyframes gcx-vt-fade-in { from { opacity: 0; } }
+/* Opening something from a list (an assignment from Classwork, Upcoming or a card): the page
+   rises in. Same timing on both halves so their fades add up and nothing shows through. */
+html[data-gcx-nav="open"]::view-transition-old(root) { animation: gcx-vt-fade-out 0.34s cubic-bezier(.2,.7,.2,1) both; }
+html[data-gcx-nav="open"]::view-transition-new(root) { animation: gcx-vt-rise 0.34s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes gcx-vt-rise { from { opacity: 0; transform: translateY(14px); } }
+/* Going back (Back button or Esc): the page swipes off to the right over the one it came from. */
+html[data-gcx-nav="back"]::view-transition-old(root) { animation: gcx-vt-swipe-away 0.32s cubic-bezier(.4,0,.2,1) both; z-index: 1; mix-blend-mode: normal; }
+html[data-gcx-nav="back"]::view-transition-new(root) { animation: gcx-vt-under 0.32s cubic-bezier(.2,.7,.2,1) both; mix-blend-mode: normal; }
+@keyframes gcx-vt-swipe-away { to { opacity: 0; transform: translateX(36%); } }
+@keyframes gcx-vt-under { from { transform: scale(0.985); } }
+/* What he clicked grows into its place on the next page: a class card into the class banner, a
+   row into the assignment header (set from classroom.js / early.js). Without a match on the new
+   page it swells and fades instead. */
+html[data-gcx-hero="card"] .gcx-banner { view-transition-name: gcx-hero; animation: none !important; }
+html[data-gcx-hero="card"] .gcx-banner-tx h1 { view-transition-name: gcx-htitle; }
+html[data-gcx-hero="row"] .gcx-asg-head { view-transition-name: gcx-hero; animation: none !important; }
+html[data-gcx-hero="row"] .gcx-asg-title { view-transition-name: gcx-htitle; }
+::view-transition-group(gcx-hero), ::view-transition-group(gcx-htitle) { animation-duration: 0.44s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
+::view-transition-old(gcx-hero), ::view-transition-new(gcx-hero) { height: 100%; object-fit: cover; overflow: clip; }
+::view-transition-old(gcx-hero), ::view-transition-old(gcx-htitle) { animation: gcx-vt-fade-out 0.3s ease both; }
+::view-transition-new(gcx-hero), ::view-transition-new(gcx-htitle) { animation: gcx-vt-fade-in 0.34s ease both; }
+::view-transition-old(gcx-hero):only-child { animation: gcx-vt-grow 0.4s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes gcx-vt-grow { to { opacity: 0; transform: scale(1.4); } }
 
 /* dark/light switch: a slow crossfade of everything */
 html.gcx-theme-vt::view-transition-group(*) { animation-duration: 0.5s; }
@@ -635,9 +658,9 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 .gcx-lc-tx small { color: var(--gcx-muted); font-size: 12px; }
 
 /* ---------- darker class images behind white titles (Settings > Look) */
-html.gcx[data-gcx-shade="0"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important; }
-html.gcx[data-gcx-shade="2"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important; }
-html.gcx[data-gcx-shade="3"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important; }
+html.gcx[data-gcx-shade="0"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important; }
+html.gcx[data-gcx-shade="2"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important; }
+html.gcx[data-gcx-shade="3"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important; }
 html[data-gcx-shade="0"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%); }
 html[data-gcx-shade="2"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3)); }
 html[data-gcx-shade="3"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5)); }
@@ -735,6 +758,30 @@ html.gcx-tint .gcx-banner::after {
 /* Black and white / dimmed class images (Settings > Look). The banner's picture is its own layer
    so the filter leaves the title alone. */
 .gcx-banner { isolation: isolate; }
+/* Pick or upload a class image: always offered on a class without one, on hover otherwise. */
+.gcx-banner-edit {
+  position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 8px; border: 0; border-radius: 17px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600;
+  background: rgba(0, 0, 0, 0.35); color: #fff; backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.gcx-banner-edit span { display: none; }
+.gcx-banner:hover .gcx-banner-edit, .gcx-banner-edit:focus-visible, .gcx-banner.gcx-noimg .gcx-banner-edit { opacity: 1; }
+.gcx-banner.gcx-noimg .gcx-banner-edit { padding: 0 14px 0 10px; }
+.gcx-banner.gcx-noimg .gcx-banner-edit span { display: inline; }
+.gcx-banner-edit:hover { background: rgba(0, 0, 0, 0.55); }
+.gcx-covers { width: 320px; padding: 12px; box-sizing: border-box; }
+.gcx-covers-h { font-weight: 600; margin: 0 2px 10px; }
+.gcx-covers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.gcx-covers-grid button { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; background: none; color: var(--gcx-muted); cursor: pointer; font: inherit; }
+.gcx-covers-grid span { display: block; height: 40px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); transition: transform 0.12s ease; }
+.gcx-covers-grid button:hover span { transform: scale(1.05); }
+.gcx-covers-grid button.on span { box-shadow: 0 0 0 2px var(--gcx-card), 0 0 0 4px var(--gcx-link); }
+.gcx-covers-grid small { font-size: 11px; text-align: center; }
+.gcx-covers-acts { display: flex; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--gcx-border); }
+.gcx-covers-acts button { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--gcx-border); border-radius: 16px; background: none; color: var(--gcx-text); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.gcx-covers-acts button:hover { background: var(--gcx-bg2); }
+.gcx-covers-acts button[data-act="upload"] { color: var(--gcx-link); }
 .gcx-banner-img { position: absolute; inset: 0; z-index: -1; background: center / cover no-repeat; filter: var(--gcx-img-filter, none); }
 html.gcx-dash .ic-DashboardCard__header_image { filter: var(--gcx-img-filter, none); }
 
@@ -747,3 +794,5 @@ html.gcx.gcx-themed {
 html.gcx.gcx-themed.gcx-flat2 { --gcx-bg2: color-mix(in srgb, var(--bcbackground-1, #f1f3f4) 80%, var(--gcx-accent)); }
 html.gcx.gcx-themed #application.ic-app { background-color: color-mix(in srgb, var(--bcbackground-0, #fff) 94%, var(--gcx-accent)) !important; }
 html.gcx-uniform [style*="--c:"] { --c: var(--gcx-accent) !important; }
+html.gcx-uniform #gcx-rail .gcx-ri-course { --av: var(--gcx-accent) !important; }
+html.gcx-uniform .ic-DashboardCard__header_hero { background-color: var(--gcx-accent) !important; }
