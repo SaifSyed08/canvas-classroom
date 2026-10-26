@@ -1,9 +1,10 @@
 // Course People page (/courses/:id/users), laid out like Google Classroom's People tab:
 // Teachers (teachers, TAs, designers), the groups he's in (and any others he can see), then
-// Classmates with a count. Clicking anyone opens a card with their role, pronouns, email when
-// Canvas shares it, a Message link, and the other classes he shares with them (filled in as his
-// other courses' rosters come back). classroom.js mounts the empty view and hands over the
-// course; `?gcx-original=1` shows Canvas's own page.
+// Classmates with a count. Clicking anyone opens a compact card: name with Message/profile icons,
+// "Student · Group", their Canvas bio, email when Canvas shares it, and the classes he shares with
+// them (read from the Enrollments list on their Canvas profile page; his other courses' rosters
+// are the fallback). classroom.js mounts the empty view and hands over the course;
+// `?gcx-original=1` shows Canvas's own page.
 (() => {
   'use strict';
   const gcx = window.gcx;
@@ -172,6 +173,61 @@
     if (!otherCourses) otherCourses = (await coursesReady).filter((c) => c.id !== id);
     for (const c of otherCourses) wantRoster(c.id);
     return otherCourses;
+  }
+  let myCourses = null; // his dashboard courses, for colors and short names
+  coursesReady.then((l) => (myCourses = l), () => {});
+
+  // ---------------------------------------------------------------- their Canvas profile page
+  // /courses/:id/users/:uid is HTML with the bio (#biography) and an Enrollments list of their
+  // courses and groups that he can see, i.e. the classes they share. (The profile API answers 403
+  // for other students.) Fetched once per card opening per session, saved per user id.
+  const profiles = new Map(); // uid -> { bio, courses: [{id, name}] | null, groups: [{id, name}] } | null
+  const profLoading = new Map(); // uid -> promise
+  function parseProfile(markup) {
+    const d = new DOMParser().parseFromString(markup, 'text/html');
+    const bioEl = d.getElementById('biography');
+    let bio = '';
+    if (bioEl) {
+      // Only <br>s are line breaks; the newlines in the page source are just markup.
+      bioEl.querySelectorAll('br').forEach((b) => b.replaceWith('\u0001'));
+      bio = bioEl.textContent.replace(/\s+/g, ' ').replace(/ ?\u0001 ?/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    }
+    // The header text is translated; the item class isn't.
+    const items = [...d.querySelectorAll('li.profileEnrollment__Items')];
+    const head = [...d.querySelectorAll('.profileHeader')].find((h) => /^\s*Enrollments\s*$/i.test(h.textContent));
+    if (!items.length && !head) return { bio, courses: null, groups: [] };
+    const links = items.length ? items.map((li) => li.querySelector('a[href]')).filter(Boolean) : [...head.parentElement.querySelectorAll('li a[href]')];
+    const courses = [];
+    const groups = [];
+    for (const a of links) {
+      const m = (a.getAttribute('href') || '').match(/\/(courses|groups)\/(\d+)\/?(?:[?#].*)?$/);
+      if (!m) continue;
+      const list = m[1] === 'courses' ? courses : groups;
+      const cid = Number(m[2]);
+      if (!list.some((x) => x.id === cid)) list.push({ id: cid, name: a.textContent.trim() });
+    }
+    return { bio, courses, groups };
+  }
+  function loadProfile(uid) {
+    if (profLoading.has(uid)) return profLoading.get(uid);
+    const job = swr(
+      `pprof:${uid}`,
+      async () => {
+        const r = await fetch(`/courses/${id}/users/${uid}`, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+        if (!r.ok) throw Object.assign(new Error(`${r.status} profile`), { status: r.status });
+        return parseProfile(await r.text());
+      },
+      (d) => {
+        profiles.set(uid, d);
+        emit();
+      },
+    ).catch(() => {
+      // Not allowed, gone, or offline with nothing saved: no bio, and the rosters answer "shared".
+      if (!profiles.has(uid)) profiles.set(uid, null);
+      emit();
+    });
+    profLoading.set(uid, job);
+    return job;
   }
 
   // ---------------------------------------------------------------- markup
@@ -403,15 +459,14 @@
     const isMe = uid === ME;
     const pop = el(`<div class="gcx-pop-panel gcx-pp-card" role="dialog" aria-label="${esc(p0.name)}">
       <div class="gcx-pp-card-top"></div>
-      <button type="button" class="gcx-pp-x" aria-label="Close">${svg('close', 20)}</button>
+      <button type="button" class="gcx-pp-x" aria-label="Close">${svg('close', 18)}</button>
       <div class="gcx-pp-card-body">
         <div class="gcx-pp-card-who"></div>
-        <div class="gcx-pp-acts"></div>
-        <div class="gcx-pp-ingroups"></div>
+        <div class="gcx-pp-bio-wrap" hidden><div class="gcx-pp-bio"></div><button type="button" class="gcx-pp-bio-more" hidden>more</button></div>
+        <div class="gcx-pp-mail"></div>
         <div class="gcx-pp-shared"${isMe ? ' hidden' : ''}>
-          <div class="gcx-pp-shared-h">Other classes you share</div>
+          <div class="gcx-pp-shared-h">Shared classes<span class="gcx-pp-shared-note"></span></div>
           <div class="gcx-pp-chips"></div>
-          <div class="gcx-pp-shared-note"></div>
         </div>
       </div>
     </div>`);
@@ -419,90 +474,119 @@
     document.body.append(pop);
     // Redraws come with every roster that lands; only touch what changed, so focus and pictures stay put.
     const put = (node, markup) => {
-      if (node.gcxM === markup) return;
+      if (node.gcxM === markup) return false;
       node.gcxM = markup;
       node.innerHTML = markup;
+      return true;
     };
     const scope = anchor.closest('.gcx-pp-group');
     const anchorSel = scope ? `.gcx-pp-group[data-gid="${scope.dataset.gid}"] .gcx-pp-row[data-uid="${uid}"]` : `.gcx-pp-list > .gcx-pp-row[data-uid="${uid}"]`;
 
-    const drawWho = () => {
-      const p = person();
-      const role = roleText(p);
-      pop.setAttribute('aria-label', p.name);
-      put(pop.querySelector('.gcx-pp-card-who'), `
-        ${avHtml(p, 'xl')}
-        <div class="gcx-pp-card-name">${esc(p.name)}${isMe ? ' <span class="gcx-pp-tag me">You</span>' : ''}</div>
-        ${p.full && p.full !== p.name ? `<div class="gcx-pp-card-sub">${esc(p.full)}</div>` : ''}
-        <div class="gcx-pp-card-sub">${esc([role, p.pro].filter(Boolean).join(' · '))}</div>`);
-      const acts = [];
-      if (p.email)
-        acts.push(
-          `<div class="gcx-pp-email"><a class="gcx-pp-act" href="mailto:${esc(p.email)}">${svg('mail', 18)}<span>${esc(p.email)}</span></a><button type="button" class="gcx-pp-copy" aria-label="Copy email address" title="Copy">${copySvg}</button></div>`,
-        );
-      if (!isMe)
-        acts.push(
-          `<a class="gcx-pp-act" href="/conversations?user_id=${uid}&user_name=${encodeURIComponent(p.name)}&context_id=course_${id}">${svg('inbox', 18)}<span>Message in Canvas</span></a>`,
-        );
-      acts.push(
-        isMe
-          ? `<a class="gcx-pp-act" href="/profile/settings">${svg('gear', 18)}<span>Your profile settings</span></a>`
-          : `<a class="gcx-pp-act" href="/courses/${id}/users/${uid}">${svg('open', 18)}<span>Canvas profile</span></a>`,
-      );
-      put(pop.querySelector('.gcx-pp-acts'), acts.join(''));
+    // Their groups in this course: from the group member lists, plus any group their profile page
+    // names that's one of this course's groups.
+    const groupsOf = () => {
+      const prof = profiles.get(uid);
+      const named = new Set(((prof && prof.groups) || []).map((g) => g.id));
+      return ((groupsData && groupsData.groups) || []).filter((g) => named.has(g.id) || (g.members && g.members.some((m) => m.id === uid)));
     };
 
-    // Groups in this course they share with him (or, for him, the groups he's in).
-    const drawGroupsLine = () => {
-      const box = pop.querySelector('.gcx-pp-ingroups');
-      const gs = ((groupsData && groupsData.groups) || []).filter((g) => g.members && g.members.some((m) => m.id === uid) && (isMe || g.mine));
+    const drawWho = () => {
+      const p = person();
+      pop.setAttribute('aria-label', p.name);
+      const gs = groupsOf();
+      const groupBits = gs.map((g) => (g.mine ? `<a href="/groups/${g.id}">${esc(g.name)}</a>` : esc(g.name)));
+      const line = [roleText(p) ? esc(roleText(p)) : '', ...groupBits].filter(Boolean).join(' · ');
+      const icons = isMe
+        ? `<a class="gcx-pp-ic" href="/profile/settings" aria-label="Your profile settings" title="Your profile settings">${svg('gear', 16)}</a>`
+        : `<a class="gcx-pp-ic" href="/conversations?user_id=${uid}&user_name=${encodeURIComponent(p.name)}&context_id=course_${id}" aria-label="Message ${esc(p.name)} in Canvas" title="Message in Canvas">${svg('inbox', 16)}</a>` +
+          `<a class="gcx-pp-ic" href="/courses/${id}/users/${uid}" aria-label="Canvas profile" title="Canvas profile">${svg('open', 15)}</a>`;
+      put(pop.querySelector('.gcx-pp-card-who'), `
+        ${avHtml(p, 'xl')}
+        <div class="gcx-pp-card-id">
+          <div class="gcx-pp-card-name"><span class="gcx-pp-card-n"${p.full && p.full !== p.name ? ` title="${esc(p.full)}"` : ''}>${esc(p.name)}</span>${
+            p.pro ? `<span class="gcx-pp-pro">${esc(p.pro)}</span>` : ''
+          }${isMe ? '<span class="gcx-pp-tag me">You</span>' : ''}<span class="gcx-pp-ics">${icons}</span></div>
+          ${line ? `<div class="gcx-pp-card-sub">${line}</div>` : ''}
+        </div>`);
       put(
-        box,
-        gs.length
-          ? `<div class="gcx-pp-shared-h">${isMe ? 'Your groups here' : 'In your group'}</div><div class="gcx-pp-chips">${gs
-              .map((g) => `<a class="gcx-pp-chip" href="/groups/${g.id}">${svg('people', 16)}<span>${esc(g.name)}</span></a>`)
-              .join('')}</div>`
+        pop.querySelector('.gcx-pp-mail'),
+        p.email
+          ? `<a class="gcx-pp-act" href="mailto:${esc(p.email)}">${svg('mail', 16)}<span>${esc(p.email)}</span></a><button type="button" class="gcx-pp-copy" aria-label="Copy email address" title="Copy">${copySvg}</button>`
           : '',
       );
     };
 
+    // Bio, 3 lines with "more" when it runs longer. Never waits on anything else.
+    const drawBio = () => {
+      const prof = profiles.get(uid);
+      const bio = (prof && prof.bio) || '';
+      const wrap = pop.querySelector('.gcx-pp-bio-wrap');
+      wrap.hidden = !bio;
+      const box = wrap.querySelector('.gcx-pp-bio');
+      if (!put(box, esc(bio))) return;
+      wrap.classList.remove('open');
+      const more = wrap.querySelector('.gcx-pp-bio-more');
+      more.textContent = 'more';
+      more.hidden = !bio || box.scrollHeight <= box.clientHeight + 1;
+    };
+
+    let rosterFallback = false;
+    const chipHtml = (c) =>
+      `<a class="gcx-pp-chip course${c.color ? '' : ' plain'}${still() ? '' : ' gcx-new'}" data-k="${c.id}|${esc(c.color || '')}" href="/courses/${c.id}"${
+        c.color ? ` style="--c:${esc(c.color)}"` : ''
+      } title="${esc(c.name || '')}"><i></i><span>${esc(prettyName(c) || c.name || 'Course')}</span></a>`;
     const drawShared = () => {
       if (isMe) return;
       const box = pop.querySelector('.gcx-pp-shared');
       const wrap = box.querySelector('.gcx-pp-chips');
-      if (!otherCourses) {
-        if (!wrap.children.length) wrap.innerHTML = '<span class="gcx-pp-chip skel"></span><span class="gcx-pp-chip skel"></span>';
-        return;
-      }
-      const hits = otherCourses.filter((c) => rosters.has(c.id) && rosters.get(c.id).has(uid));
-      const pending = otherCourses.filter((c) => !rosters.has(c.id) && /queued|loading/.test(rosterState.get(c.id) || 'queued')).length;
-      const failed = otherCourses.filter((c) => rosterState.get(c.id) === 'err').length;
-      // Chips only get added (each new one pops in) or dropped, never redrawn.
-      wrap.querySelectorAll('.skel').forEach((n) => n.remove());
-      const want = new Set(hits.map((c) => String(c.id)));
-      wrap.querySelectorAll('[data-cid]').forEach((n) => !want.has(n.dataset.cid) && n.remove());
-      for (const c of hits) {
-        if (wrap.querySelector(`[data-cid="${c.id}"]`)) continue;
-        wrap.append(
-          el(
-            `<a class="gcx-pp-chip course gcx-new" data-cid="${c.id}" href="/courses/${c.id}" style="--cc:${esc(c.color)}" title="${esc(c.name)}"><i></i><span>${esc(prettyName(c))}</span></a>`,
-          ),
-        );
-      }
-      if (pending) wrap.append(el('<span class="gcx-pp-chip skel" aria-hidden="true"></span>'));
-      const done = otherCourses.length - pending;
-      const note = !otherCourses.length
-        ? 'No other classes on your dashboard.'
-        : pending
-          ? `Checking your classes… ${done} of ${otherCourses.length}`
-          : !hits.length
-            ? failed === otherCourses.length
-              ? "Couldn't check your other classes."
-              : 'None of your other classes.'
-            : '';
       const noteEl = box.querySelector('.gcx-pp-shared-note');
-      noteEl.textContent = note + (failed && !pending && failed < otherCourses.length ? ` (${failed} ${failed === 1 ? 'class' : 'classes'} couldn't be checked)` : '');
-      noteEl.hidden = !noteEl.textContent;
+      const prof = profiles.get(uid);
+      let hits = [];
+      let note = '';
+      if (prof && prof.courses) {
+        // Their profile's Enrollments list: dashboard classes first (in his order, with his colors), then the rest.
+        const mine = myCourses || [];
+        const theirs = prof.courses.filter((c) => c.id !== id);
+        hits = [
+          ...mine.filter((m) => theirs.some((c) => c.id === m.id)),
+          ...theirs.filter((c) => !mine.some((m) => m.id === c.id)),
+        ];
+        if (!hits.length) note = 'None';
+      } else if (!profiles.has(uid)) {
+        note = 'Checking…';
+      } else {
+        // No readable profile page: intersect his other rosters.
+        if (!rosterFallback) {
+          rosterFallback = true;
+          startMutual().then(() => panel && panel.el === pop && refresh(), () => {});
+        }
+        if (!otherCourses) note = 'Checking…';
+        else {
+          hits = otherCourses.filter((c) => rosters.has(c.id) && rosters.get(c.id).has(uid));
+          const pending = otherCourses.filter((c) => !rosters.has(c.id) && /queued|loading/.test(rosterState.get(c.id) || 'queued')).length;
+          const failed = otherCourses.filter((c) => rosterState.get(c.id) === 'err').length;
+          note = !otherCourses.length
+            ? 'None on your dashboard'
+            : pending
+              ? `Checking… ${otherCourses.length - pending}/${otherCourses.length}`
+              : !hits.length
+                ? failed === otherCourses.length
+                  ? "Couldn't check"
+                  : 'None'
+                : failed
+                  ? `${failed} couldn't be checked`
+                  : '';
+        }
+      }
+      // Chips only get added (each new one pops in) or dropped, never redrawn.
+      // Keyed by id and color, so a chip drawn before his course colors arrived gets redrawn once.
+      const key = (c) => `${c.id}|${c.color || ''}`;
+      const want = hits.map(key);
+      wrap.querySelectorAll('[data-k]').forEach((n) => !want.includes(n.dataset.k) && n.remove());
+      for (const c of hits) if (!wrap.querySelector(`[data-k="${key(c)}"]`)) wrap.append(el(chipHtml(c)));
+      if ([...wrap.children].map((n) => n.dataset.k).join() !== want.join()) for (const k of want) wrap.append(wrap.querySelector(`[data-k="${k}"]`));
+      noteEl.textContent = note;
+      noteEl.classList.toggle('busy', note.startsWith('Checking'));
     };
 
     // Next to the avatar of whatever was clicked; above it when there's no room below. Phones get a bottom sheet.
@@ -549,7 +633,7 @@
         if (again) panel.anchor = again;
       }
       drawWho();
-      drawGroupsLine();
+      drawBio();
       drawShared();
       place();
     };
@@ -560,8 +644,15 @@
       if (e.key === 'Escape') closePanel(true);
     };
     panel = { el: pop, uid, anchor, refresh, outside, onKey, onMove };
+    pop.addEventListener('animationend', (e) => e.target.classList.remove('gcx-new'));
     pop.addEventListener('click', (e) => {
       if (e.target.closest('.gcx-pp-x')) return closePanel(true);
+      const more = e.target.closest('.gcx-pp-bio-more');
+      if (more) {
+        const open = more.parentElement.classList.toggle('open');
+        more.textContent = open ? 'less' : 'more';
+        return place();
+      }
       if (e.target.closest('.gcx-pp-copy')) {
         const mail = person().email;
         navigator.clipboard.writeText(mail).then(
@@ -577,10 +668,7 @@
     addEventListener('resize', onMove);
     refresh();
     pop.querySelector('.gcx-pp-x').focus({ preventScroll: true });
-    if (!isMe)
-      startMutual().then(() => {
-        if (panel && panel.el === pop) refresh();
-      });
+    loadProfile(uid);
   }
   function findMember(uid) {
     for (const g of (groupsData && groupsData.groups) || []) {
@@ -603,16 +691,4 @@
     if (roster) drawGroups();
     if (panel) panel.refresh();
   }).catch((e) => console.warn('[canvas-classroom] groups', e));
-
-  // Hovering a row for a moment starts fetching his other rosters, so the card is often full by the click.
-  let warmed = false;
-  view.addEventListener(
-    'pointerover',
-    (e) => {
-      if (warmed || !e.target.closest || !e.target.closest('.gcx-pp-row')) return;
-      warmed = true;
-      setTimeout(() => startMutual().catch(() => {}), 400);
-    },
-    { passive: true },
-  );
 })();

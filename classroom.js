@@ -624,10 +624,35 @@
   };
   renderRail(COURSES);
   coursesReady.then((c) => c !== undefined && queueRail());
+  // Last visit's copy of a view (Home, Classwork, People, To-do), for early.js to show during the
+  // next page transition to the same URL. A few per tab, size-capped.
+  function saveSnap() {
+    const v = document.getElementById('gcx-view');
+    if (!v || v.classList.contains('gcx-behind') || !v.childElementCount || v.querySelector('.gcx-skel')) return;
+    const copy = v.cloneNode(true);
+    copy.querySelectorAll('.gcx-ripple, .gcx-pv, .gcx-pop-panel, script, iframe').forEach((n) => n.remove());
+    copy.querySelectorAll('.gcx-pv-on').forEach((n) => n.classList.remove('gcx-pv-on'));
+    copy.querySelectorAll('.gcx-reveal').forEach((n) => n.classList.add('gcx-shown'));
+    const markup = copy.innerHTML;
+    if (markup.length > 400000) return;
+    const key = 'gcx:snap:' + location.pathname + location.search;
+    try {
+      const keys = (JSON.parse(sessionStorage.getItem('gcx:snaps') || '[]') || []).filter((k) => k !== key);
+      keys.push(key);
+      while (keys.length > 6) sessionStorage.removeItem(keys.shift());
+      sessionStorage.setItem(key, JSON.stringify({ cls: v.className.replace(/\bgcx-\w*(stagger|in|filtering)\b/g, '').trim(), style: v.getAttribute('style') || '', html: markup }));
+      sessionStorage.setItem('gcx:snaps', JSON.stringify(keys));
+    } catch {
+      try {
+        sessionStorage.removeItem(key);
+      } catch {}
+    }
+  }
   // What the next page's stand-ins are made from (see early.js standIns).
   addEventListener('pagehide', () => {
     try {
       sessionStorage.setItem('gcx:rail', JSON.stringify({ html: rail.innerHTML }));
+      saveSnap();
       const cb = document.getElementById('gcx-cbar');
       if (cb && COURSE_ID) {
         const copy = cb.cloneNode(true);
@@ -1369,7 +1394,28 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
       return early;
     }
     const view = el('<div id="gcx-view"></div>');
-    content.prepend(view);
+    const snap = document.getElementById('gcx-snap');
+    if (!snap) {
+      content.prepend(view);
+      return view;
+    }
+    // early.js put last visit's copy of this page up for the page transition. The live view draws
+    // hidden right behind it (laid out, so measuring works) and takes over once the transition has
+    // finished and the view has its content, so nothing blinks or replays.
+    view.classList.add('gcx-behind');
+    snap.after(view);
+    const swap = () => {
+      if (!snap.isConnected) return;
+      const y = window.scrollY;
+      snap.remove();
+      view.classList.remove('gcx-behind');
+      window.scrollTo(0, y);
+    };
+    Promise.resolve(window.gcxTransition).then(() => {
+      const t0 = Date.now();
+      const tick = () => (view.childElementCount && !view.querySelector('.gcx-skel')) || Date.now() - t0 > 1500 ? swap() : requestAnimationFrame(tick);
+      tick();
+    });
     return view;
   }
   const showError = (box, what, originalHref, err) => {
@@ -2858,7 +2904,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
     }
     const L = luminance(nav);
     const readable = (Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3;
-    const accent = readable ? nav : `color-mix(in oklch, ${nav} 55%, ${bg < 0.4 ? 'white' : 'black'})`;
+    const accent = readable ? nav : `color-mix(in oklab, ${nav} 55%, ${bg < 0.4 ? 'white' : 'black'})`;
     html.style.setProperty('--gcx-link', accent);
     html.style.setProperty('--gcx-accent', accent);
     html.classList.add('gcx-themed');
@@ -3610,6 +3656,8 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
         #gcx-bc-more:active{transform:scale(.97)}
         [data-gcx-new]{animation:gcx-bc-in .32s cubic-bezier(.2,.7,.2,1) both}
         @keyframes gcx-bc-in{from{opacity:0;transform:translateY(-4px)}}
+        :host-context(html.gcx-uniform) .group{--bc-course-ring:var(--gcx-accent) !important;--bc-course-text:var(--gcx-accent) !important}
+        :host-context(html.gcx-uniform) .group > [aria-label][class*="pointer-events-none"]{background-color:var(--gcx-accent) !important}
         ${BC_CLASSROOM_CSS}`;
       sr.append(st);
       let lastSig = '';
@@ -3831,7 +3879,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
   const refreshInlineColors = () => document.querySelectorAll('.gcx-stream, .gcx-asg-body').forEach(fixInlineColors);
 
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = { api, esc, el, svg, fileTile, swr, store, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
+  window.gcx = { api, esc, el, svg, fileTile, swr, store, user: PAGE_USER, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
 
   // ---------------------------------------------------------------- loading bar
   // A thin bar across the top of the page (not the rail): dark grey track, filled with the
@@ -3924,10 +3972,12 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
         hero = 'row';
         heroTitle = ((row.querySelector('.gcx-row-title, [class*="-title"]') || row).textContent || '').trim().slice(0, 200);
         markHero(row);
-        if (dir !== 'in') dir = 'open';
-      } else if (card && card.querySelector('.ic-DashboardCard__header')) {
+        // The row grows into the page's header; nothing else should move with it.
+        dir = 'open';
+      } else if (card) {
+        // The whole card grows into the class page.
         hero = 'card';
-        markHero(card.querySelector('.ic-DashboardCard__header'));
+        markHero(card);
       }
     }
     try {
@@ -3944,11 +3994,22 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
   // Going back (the Back button or Esc): the page swipes away to show the one under it.
   addEventListener('pageswap', (e) => {
     const act = e.activation;
-    if (!act || act.navigationType !== 'traverse' || !window.navigation || !navigation.currentEntry) return;
-    try {
-      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir: act.entry.index < navigation.currentEntry.index ? 'back' : 'fade', t: Date.now() }));
-    } catch {}
+    let dir = '';
+    if (act && act.navigationType === 'traverse' && window.navigation && navigation.currentEntry) {
+      dir = act.entry.index < navigation.currentEntry.index ? 'back' : 'fade';
+      try {
+        sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, t: Date.now() }));
+      } catch {}
+    } else {
+      try {
+        dir = (JSON.parse(sessionStorage.getItem('gcx:nav') || 'null') || {}).dir || '';
+      } catch {}
+    }
+    // The old page's content is named here (its names are read from this page) so a tab switch or
+    // going back moves it as one piece; see classroom.css.
+    if (e.viewTransition && dir) html.dataset.gcxLeaving = dir;
   });
+  addEventListener('pagereveal', () => delete html.dataset.gcxLeaving);
   // Esc goes back a page, unless it's closing something first (the file viewer, Ask, a picker,
   // a menu). Whether anything was open is read before those handlers close it.
   const escOpen = () =>
@@ -4041,14 +4102,18 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
     checkFlatSurface();
   };
   // BetterCampus off (or gone): stop painting pages with its last theme.
+  // Quiz and assignment pages are an exception: BetterCampus's quiz safe mode skips its theme there.
   addEventListener('load', () =>
     setTimeout(() => {
       if (document.getElementById('bettercanvas-theme-preset')) return;
+      // Safe mode (or dark mode without the preset): the saved colors are the only theme this page
+      // gets, so keep them rather than flipping it to Canvas's light look.
+      if (document.getElementById('darkcss') || /\/courses\/\d+\/(quizzes|assignments)\/\d+/.test(location.pathname)) return;
       document.getElementById('gcx-theme-early')?.remove();
+      checkFlatSurface();
       try {
         localStorage.removeItem('gcx:themevars');
       } catch {}
-      checkFlatSurface();
     }, 5000),
   );
   const snapTheme = () => {

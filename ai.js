@@ -783,7 +783,10 @@
     try {
       sessionStorage.setItem(HKEY, JSON.stringify(hist));
     } catch {}
-    if (hist.msgs.length) saveLast();
+    // Only a settled chat goes to the shared copy: a question still being answered in this tab
+    // would show up unanswered (and out of thread) if another tab brought it back.
+    const last = hist.msgs[hist.msgs.length - 1];
+    if (last && last.role !== 'user') saveLast();
   };
   let hist = loadHist();
 
@@ -791,7 +794,8 @@
   // Ctrl+Shift+Space can bring it back on another page or in a new tab. Bounded: the newest
   // messages only, each clipped, the whole copy under ~150 KB. The thread id rides along, so a
   // follow-up still continues the full conversation on OpenAI's side.
-  const LKEY = 'askLast';
+  // Per school and per person: another account (or school) never sees this one's chat.
+  const LKEY = `askLast:${location.host}:${gcx.user || 'anon'}`;
   const LAST_MSGS = 40;
   const LAST_BYTES = 150000;
   function saveLast() {

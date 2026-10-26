@@ -176,12 +176,12 @@ html.gcx-course #main { margin-left: 0 !important; }
 .gcx-more-empty { padding: 16px; color: var(--gcx-muted); }
 
 /* ---------- replacement views (Home, Classwork, To-do) */
-html.gcx-takeover #content > :not(#gcx-view) { display: none !important; }
+html.gcx-takeover #content > :not(#gcx-view, #gcx-snap) { display: none !important; }
 html.gcx-takeover #right-side-wrapper { display: none !important; }
 html.gcx-takeover #content { padding: 24px 32px 64px !important; }
-#gcx-view { max-width: 1000px; margin: 0 auto; color: var(--gcx-text); font-size: 14px; }
-#gcx-view a { text-decoration: none; }
-#gcx-view h1, #gcx-view h2, #gcx-view h3 { margin: 0; font-weight: inherit; color: inherit; }
+:is(#gcx-view, #gcx-snap) { max-width: 1000px; margin: 0 auto; color: var(--gcx-text); font-size: 14px; }
+:is(#gcx-view, #gcx-snap) a { text-decoration: none; }
+:is(#gcx-view, #gcx-snap) :is(h1, h2, h3) { margin: 0; font-weight: inherit; color: inherit; }
 .gcx-card { background: var(--gcx-card); border: 1px solid var(--gcx-border); border-radius: 10px; }
 .gcx-empty { padding: 28px 24px; text-align: center; color: var(--gcx-muted); }
 .gcx-err { padding: 16px 20px; border-radius: 10px; background: color-mix(in srgb, var(--gcx-red) 10%, var(--gcx-card)); color: var(--gcx-text); }
@@ -310,7 +310,7 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
   margin-left: auto; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 18px;
   border: 1px solid var(--gcx-border); background: var(--gcx-card); color: var(--gcx-muted); width: 240px; box-sizing: border-box;
 }
-#gcx-view .gcx-filter input[type="text"] { flex: 1; min-width: 0; border: 0 !important; outline: 0 !important; box-shadow: none !important; background: none !important; font: inherit; color: var(--gcx-text); margin: 0 !important; padding: 0 !important; height: auto !important; border-radius: 0 !important; appearance: none; }
+:is(#gcx-view, #gcx-snap) .gcx-filter input[type="text"] { flex: 1; min-width: 0; border: 0 !important; outline: 0 !important; box-shadow: none !important; background: none !important; font: inherit; color: var(--gcx-text); margin: 0 !important; padding: 0 !important; height: auto !important; border-radius: 0 !important; appearance: none; }
 .gcx-cw { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
 .gcx-toc { position: sticky; top: 88px; display: flex; flex-direction: column; max-height: calc(100vh - 110px); overflow-y: auto; }
 .gcx-toc a { padding: 8px 12px; border-radius: 0 18px 18px 0; color: var(--gcx-text) !important; font-size: 14px; line-height: 1.3; }
@@ -319,6 +319,8 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-topics { display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 .gcx-topic { scroll-margin-top: 84px; }
 /* Over a picture background (BetterCampus image themes) the list needs a surface to be readable. */
+/* the theme's picture fills the window and stays put (drawn at its own size it repeated, with a seam, on long pages) */
+html.gcx-imgbg :is(body, #application.ic-app) { background-size: cover !important; background-position: center !important; background-attachment: fixed !important; background-repeat: no-repeat !important; }
 html.gcx-imgbg .gcx-topic, html.gcx-imgbg .gcx-pp-sec { background: var(--gcx-card); border-radius: 14px; padding: 16px 12px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 html.gcx-imgbg .gcx-toc { background: var(--gcx-card); border-radius: 14px; padding: 8px 8px 8px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 .gcx-topic-h {
@@ -443,7 +445,7 @@ html.gcx-cards #dashboard_header_container { display: none !important; }
   line-height: 1.1 !important; letter-spacing: -0.015em; color: var(--gcx-text) !important;
   animation: gcx-hello-in 0.7s cubic-bezier(.2,.8,.2,1.15) both;
 }
-@keyframes gcx-hello-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } }
+@keyframes gcx-hello-in { from { opacity: 0; transform: translateX(-28px); } }
 html[data-gcx-font="poppins"] .gcx-hello { font-family: 'GCX Poppins', sans-serif !important; font-weight: 800 !important; font-size: 40px !important; letter-spacing: -0.02em; }
 html[data-gcx-font="playfair"] .gcx-hello { font-family: 'GCX Playfair', Georgia, serif !important; font-weight: 800 !important; letter-spacing: -0.01em; }
 html[data-gcx-font="caveat"] .gcx-hello { font-family: 'GCX Caveat', cursive !important; font-size: 54px !important; letter-spacing: 0; }
@@ -468,7 +470,7 @@ html[data-gcx-font="canvas"] .gcx-hello { font-family: inherit !important; font-
 .gcx-stagger :is(.gcx-grp, .gcx-topic, .gcx-ann, .gcx-post) { animation: gcx-rise 0.4s calc(var(--i, 0) * 40ms) cubic-bezier(.2,.7,.2,1) both; }
 .gcx-stagger .gcx-row { animation: gcx-rise 0.35s calc(var(--i, 0) * 22ms + 60ms) cubic-bezier(.2,.7,.2,1) both; }
 /* After a page change the page's pieces ease in one at a time instead of the page moving as one. */
-html.gcx-enter :is(.gcx-welcome, .gcx-banner, .gcx-cw-head, .gcx-todo-head) { animation: gcx-rise 0.5s cubic-bezier(.16,.84,.3,1) both; }
+html.gcx-enter :is(.gcx-banner, .gcx-cw-head, .gcx-todo-head) { animation: gcx-rise 0.5s cubic-bezier(.16,.84,.3,1) both; }
 html.gcx-enter :is(.gcx-home-side, .gcx-toc, .gcx-seg) { animation: gcx-rise 0.5s 70ms cubic-bezier(.16,.84,.3,1) both; }
 html.gcx-enter :is(.gcx-stream, .gcx-topics, .gcx-todo-body) { animation: gcx-rise 0.5s 140ms cubic-bezier(.16,.84,.3,1) both; }
 html.gcx-enter.gcx-dash .ic-DashboardCard { animation: gcx-rise 0.5s 80ms cubic-bezier(.16,.84,.3,1) both; }
@@ -613,10 +615,26 @@ html.gcx-dash #right-side .button-sidebar-wide:hover, html.gcx-dash #right-side 
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; animation-timing-function: cubic-bezier(.2,.7,.2,1); }
 ::view-transition-old(gcx-rail), ::view-transition-old(gcx-cbar) { animation: none; opacity: 0; }
 ::view-transition-new(gcx-rail), ::view-transition-new(gcx-cbar), ::view-transition-group(gcx-rail), ::view-transition-group(gcx-cbar) { animation: none; }
-html[data-gcx-nav="left"]::view-transition-old(root) { animation-name: gcx-vt-out-left; }
-html[data-gcx-nav="left"]::view-transition-new(root) { animation-name: gcx-vt-in-right; }
-html[data-gcx-nav="right"]::view-transition-old(root) { animation-name: gcx-vt-out-right; }
-html[data-gcx-nav="right"]::view-transition-new(root) { animation-name: gcx-vt-in-left; }
+/* Tab switches and going back move the page's content as one piece (gcx-page), under a course bar
+   and rail that stay put. The old page names its content when it leaves (data-gcx-leaving, set
+   at pageswap); the new page names last visit's copy of itself (#gcx-snap) or a stand-in. */
+html:is([data-gcx-leaving="left"], [data-gcx-leaving="right"], [data-gcx-leaving="back"]) :is(#gcx-view, #gcx-asg) { view-transition-name: gcx-page; }
+html:is([data-gcx-nav="left"], [data-gcx-nav="right"], [data-gcx-nav="back"]) :is(#gcx-snap, #gcx-view[data-early], #gcx-asg[data-early]) { view-transition-name: gcx-page; }
+::view-transition-group(gcx-page) { animation-duration: 0.42s; animation-timing-function: cubic-bezier(.32,.72,0,1); }
+::view-transition-image-pair(gcx-page) { isolation: auto; }
+::view-transition-old(gcx-page), ::view-transition-new(gcx-page) { width: 100%; height: auto; object-fit: none; object-position: top center; mix-blend-mode: normal; }
+/* one continuous slide: the current tab moves out as the next one moves in beside it */
+html[data-gcx-nav="left"]::view-transition-old(gcx-page) { animation: gcx-vt-to-left 0.42s cubic-bezier(.32,.72,0,1) both; }
+html[data-gcx-nav="left"]::view-transition-new(gcx-page) { animation: gcx-vt-from-right 0.42s cubic-bezier(.32,.72,0,1) both; }
+html[data-gcx-nav="right"]::view-transition-old(gcx-page) { animation: gcx-vt-to-right 0.42s cubic-bezier(.32,.72,0,1) both; }
+html[data-gcx-nav="right"]::view-transition-new(gcx-page) { animation: gcx-vt-from-left 0.42s cubic-bezier(.32,.72,0,1) both; }
+@keyframes gcx-vt-to-left { to { transform: translateX(-100vw); } }
+@keyframes gcx-vt-from-right { from { transform: translateX(100vw); } }
+@keyframes gcx-vt-to-right { to { transform: translateX(100vw); } }
+@keyframes gcx-vt-from-left { from { transform: translateX(-100vw); } }
+/* with the content moving on its own, the rest of the page (background) just holds */
+html:is([data-gcx-nav="left"], [data-gcx-nav="right"])::view-transition-old(root),
+html:is([data-gcx-nav="left"], [data-gcx-nav="right"])::view-transition-new(root) { animation: none; }
 /* Opening a class: the old page dissolves, the new one rises gently into place. */
 /* (the browser's own crossfade: both halves stay complementary, so white never shows through) */
 html:is([data-gcx-nav="in"], [data-gcx-nav="out"], [data-gcx-nav="fade"])::view-transition-old(root),
@@ -629,7 +647,7 @@ html:is([data-gcx-nav="in"], [data-gcx-nav="out"], [data-gcx-nav="fade"])::view-
 ::view-transition-new(gcx-ctitle) { animation: none; }
 html[data-gcx-nav="in"]::view-transition-old(gcx-ctitle) { animation: gcx-vt-title-out 0.22s ease both; opacity: 1; }
 html[data-gcx-nav="in"]::view-transition-new(gcx-ctitle) { animation: gcx-vt-title-in 0.4s 0.08s cubic-bezier(.16,.84,.3,1) both; }
-html[data-gcx-nav="in"]::view-transition-new(gcx-cbar):only-child { animation: gcx-vt-fade-in 0.28s ease both; }
+html:is([data-gcx-nav="in"], [data-gcx-nav="open"])::view-transition-new(gcx-cbar):only-child { animation: gcx-vt-fade-in 0.28s ease both; }
 @keyframes gcx-vt-title-out { to { opacity: 0; transform: translateY(-8px); } }
 @keyframes gcx-vt-title-in { from { opacity: 0; transform: translateY(8px); } }
 @keyframes gcx-vt-out-left { to { opacity: 0; transform: translateX(-60px); } }
@@ -644,21 +662,25 @@ html[data-gcx-nav="open"]::view-transition-old(root) { animation: gcx-vt-fade-ou
 html[data-gcx-nav="open"]::view-transition-new(root) { animation: gcx-vt-rise 0.34s cubic-bezier(.2,.7,.2,1) both; mix-blend-mode: plus-lighter; }
 @keyframes gcx-vt-rise { from { opacity: 0; transform: translateY(14px); } }
 /* Going back (Back button or Esc): the page swipes off to the right over the one it came from. */
-html[data-gcx-nav="back"]::view-transition-old(root) { animation: gcx-vt-swipe-away 0.32s cubic-bezier(.4,0,.2,1) both; z-index: 1; mix-blend-mode: normal; }
-html[data-gcx-nav="back"]::view-transition-new(root) { animation: gcx-vt-under 0.32s cubic-bezier(.2,.7,.2,1) both; mix-blend-mode: normal; }
-@keyframes gcx-vt-swipe-away { to { opacity: 0; transform: translateX(36%); } }
-@keyframes gcx-vt-under { from { transform: scale(0.985); } }
+html[data-gcx-nav="back"]::view-transition-old(gcx-page) { animation: gcx-vt-swipe-away 0.36s cubic-bezier(.4,0,.2,1) both; z-index: 1; }
+html[data-gcx-nav="back"]::view-transition-new(gcx-page) { animation: gcx-vt-under 0.36s cubic-bezier(.2,.7,.2,1) both; }
+html[data-gcx-nav="back"]::view-transition-old(root), html[data-gcx-nav="back"]::view-transition-new(root) { animation: none; }
+@keyframes gcx-vt-swipe-away { to { opacity: 0; transform: translateX(40%); } }
+@keyframes gcx-vt-under { from { opacity: 0.6; transform: translateX(-8%); } }
 /* What he clicked grows into its place on the next page: a class card into the class banner, a
    row into the assignment header (set from classroom.js / early.js). Without a match on the new
    page it swells and fades instead. */
-html[data-gcx-hero="card"] .gcx-banner { view-transition-name: gcx-hero; animation: none !important; }
+/* a class card grows into the whole class page (last visit's copy of it), or into the banner when
+   there's no copy yet; never both, since a name can only be used once */
+html[data-gcx-hero="card"] #gcx-snap { view-transition-name: gcx-hero; }
+html[data-gcx-hero="card"]:not(:has(#gcx-snap)) #gcx-view .gcx-banner { view-transition-name: gcx-hero; animation: none !important; }
 html[data-gcx-hero="row"] .gcx-asg-head { view-transition-name: gcx-hero; animation: none !important; }
 ::view-transition-group(gcx-hero) { animation-duration: 0.44s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
 ::view-transition-old(gcx-hero), ::view-transition-new(gcx-hero) { height: 100%; object-fit: cover; overflow: clip; }
 ::view-transition-old(gcx-hero) { animation: gcx-vt-fade-out 0.34s ease both; mix-blend-mode: plus-lighter; }
 ::view-transition-new(gcx-hero) { animation: gcx-vt-fade-in 0.34s ease both; mix-blend-mode: plus-lighter; }
-::view-transition-old(gcx-hero):only-child { animation: gcx-vt-grow 0.4s cubic-bezier(.2,.8,.2,1) both; }
-@keyframes gcx-vt-grow { to { opacity: 0; transform: scale(1.4); } }
+/* nothing to grow into on the new page: it just fades with the rest (no swell-and-fade) */
+::view-transition-old(gcx-hero):only-child { animation: gcx-vt-fade-out 0.22s ease both; }
 
 /* dark/light switch: a slow crossfade of everything */
 html.gcx-theme-vt::view-transition-group(*) { animation-duration: 0.5s; }
@@ -801,6 +823,9 @@ html.gcx-tint .gcx-banner::after {
 /* Black and white / dimmed class images (Settings > Look). The banner's picture is its own layer
    so the filter leaves the title alone. */
 .gcx-banner { isolation: isolate; }
+/* last visit's copy of a page during the page transition (early.js), and the live view drawing behind it */
+#gcx-snap *, #gcx-snap *::before, #gcx-snap *::after { animation: none !important; transition: none !important; }
+#gcx-view.gcx-behind { visibility: hidden; height: 0; overflow: hidden; margin-top: 0; margin-bottom: 0; }
 /* Pick or upload a class image: always offered on a class without one, on hover otherwise. */
 .gcx-banner-edit {
   position: absolute; top: 12px; right: 12px; z-index: 2; display: flex; align-items: center; gap: 6px;
