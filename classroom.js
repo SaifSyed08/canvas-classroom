@@ -12,6 +12,7 @@
   // Login pages and borderless LTI tools have no global nav; leave them alone.
   if (!document.getElementById('header') || !document.getElementById('wrapper')) {
     html.classList.remove('gcx', 'gcx-pinned', 'gcx-course', 'gcx-dash', 'gcx-takeover', 'gcx-dash-wait');
+    document.querySelectorAll('#gcx-theme-early, [data-early]').forEach((n) => n.remove());
     return;
   }
 
@@ -632,6 +633,7 @@
         const copy = cb.cloneNode(true);
         copy.querySelector('.gcx-more')?.remove();
         copy.querySelectorAll('.gcx-ripple').forEach((n) => n.remove());
+        copy.querySelectorAll('.gcx-in').forEach((n) => n.classList.remove('gcx-in'));
         sessionStorage.setItem('gcx:cbar', JSON.stringify({ course: COURSE_ID, c: cb.style.getPropertyValue('--c'), html: copy.innerHTML }));
       }
     } catch {}
@@ -1389,7 +1391,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
     box.innerHTML = markup;
     // Still rising in with the rest of the page (gcx-enter)? Then that's its entrance; a second
     // fade on top made it flicker.
-    if (first && !box.getAnimations().some((x) => x.playState === 'running')) reveal(box);
+    if (first && !document.getAnimations().some((x) => x.playState === 'running' && x.effect && x.effect.target && x.effect.target.contains && x.effect.target.contains(box))) reveal(box);
     else box.classList.remove('gcx-stagger');
   };
 
@@ -2276,12 +2278,12 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
       drawn = true;
       wire();
       const reopen = openAid && view.querySelector(`.gcx-row[data-aid="${CSS.escape(openAid)}"]`);
-      if (reopen) togglePreview(reopen, true);
       if (q) {
         const input = view.querySelector('.gcx-filter input');
         input.value = q;
         input.dispatchEvent(new Event('input'));
       }
+      if (reopen && reopen.style.display !== 'none') togglePreview(reopen, true);
       if (typing) {
         const input = view.querySelector('.gcx-filter input');
         input.focus({ preventScroll: true });
@@ -3126,7 +3128,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
           ).join('')}</div>
         </div>
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
-        ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden')}
+        ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden. Ctrl + Shift + Space brings back your last chat')}
         ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
       </div>
       <div class="gcx-set-h">Look</div>
@@ -3954,7 +3956,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
       ...document.querySelectorAll(
         '.gcx-pop-panel, .gcx-fv-scrim, .gcx-ask:not([data-state="idle"]), dialog[open], [aria-modal="true"], [role="dialog"], [role="menu"], [role="listbox"], [popover]:popover-open, .ui-dialog, .ui-widget-overlay',
       ),
-    ].some((n) => (n.checkVisibility ? n.checkVisibility() : n.getClientRects().length > 0));
+    ].some((n) => (n.checkVisibility ? n.checkVisibility({ opacityProperty: true, visibilityProperty: true }) : n.getClientRects().length > 0));
   let escBusy = false;
   addEventListener('keydown', (e) => e.key === 'Escape' && (escBusy = escOpen()), true);
   addEventListener('keydown', (e) => {
@@ -4023,6 +4025,9 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
   const THEME_VARS = ['--bcbackground-0', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks', '--bcbackground-image'];
   const saveThemeVars = () => {
     if (!document.getElementById('bettercanvas-theme-preset')) return; // BetterCampus hasn't drawn its theme yet
+    // BetterCampus's own theme is up now; the stand-in from early.js has done its job (and must be
+    // gone before reading, or its old values would be read back and saved again).
+    document.getElementById('gcx-theme-early')?.remove();
     const cs = getComputedStyle(html);
     const v = {};
     for (const k of THEME_VARS) {
@@ -4031,10 +4036,21 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
     }
     try {
       if (v['--bcbackground-0']) localStorage.setItem('gcx:themevars', JSON.stringify(v));
+      else localStorage.removeItem('gcx:themevars');
     } catch {}
-    // BetterCampus's own theme is up now; the stand-in from early.js has done its job.
-    document.getElementById('gcx-theme-early')?.remove();
+    checkFlatSurface();
   };
+  // BetterCampus off (or gone): stop painting pages with its last theme.
+  addEventListener('load', () =>
+    setTimeout(() => {
+      if (document.getElementById('bettercanvas-theme-preset')) return;
+      document.getElementById('gcx-theme-early')?.remove();
+      try {
+        localStorage.removeItem('gcx:themevars');
+      } catch {}
+      checkFlatSurface();
+    }, 5000),
+  );
   const snapTheme = () => {
     checkFlatSurface();
     saveThemeVars();
@@ -4146,7 +4162,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
       if (view) window.gcx.people = { view, course: cPromise };
       // If people.js never draws (not loaded, or it failed), show Canvas's own page.
       setTimeout(() => {
-        if (view.isConnected && !view.childElementCount) {
+        if (view && view.isConnected && !view.childElementCount) {
           view.remove();
           html.classList.remove('gcx-takeover');
         }

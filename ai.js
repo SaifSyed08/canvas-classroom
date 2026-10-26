@@ -1,7 +1,8 @@
 // "Ask anything": a frosted "AI" button on the dashboard (and a Ctrl+Space chat on any page) that
-// opens into a small chat about his classes.
+// opens into a small chat about his classes. Ctrl+Shift+Space reopens the last chat, already open.
 // The model runs in background.js (it holds the OpenAI key); this file draws the pill,
-// keeps the history (sessionStorage, per tab) and runs the read-only Canvas tools.
+// keeps the history (sessionStorage per tab, plus a copy of the latest chat in chrome.storage)
+// and runs the read-only Canvas tools.
 (() => {
   'use strict';
   if (window.top !== window) return;
@@ -778,11 +779,37 @@
     }
   };
   const saveHist = () => {
+    if (hist.msgs.length) hist.at = Date.now();
     try {
       sessionStorage.setItem(HKEY, JSON.stringify(hist));
     } catch {}
+    if (hist.msgs.length) saveLast();
   };
   let hist = loadHist();
+
+  // The latest chat from any tab, kept in the extension's own storage (not the page's) so
+  // Ctrl+Shift+Space can bring it back on another page or in a new tab. Bounded: the newest
+  // messages only, each clipped, the whole copy under ~150 KB. The thread id rides along, so a
+  // follow-up still continues the full conversation on OpenAI's side.
+  const LKEY = 'askLast';
+  const LAST_MSGS = 40;
+  const LAST_BYTES = 150000;
+  function saveLast() {
+    let msgs = hist.msgs.slice(-LAST_MSGS).map((m) => (m.text && m.text.length > 12000 ? { ...m, text: m.text.slice(0, 12000) + '\n…(cut off)' } : m));
+    let rec = { msgs, prev: hist.prev || null, at: hist.at || Date.now() };
+    while (JSON.stringify(rec).length > LAST_BYTES && msgs.length > 2) rec = { ...rec, msgs: (msgs = msgs.slice(2)) };
+    try {
+      chrome.storage.local.set({ [LKEY]: rec }).catch(() => {});
+    } catch {}
+  }
+  async function readLast() {
+    try {
+      const rec = (await chrome.storage.local.get(LKEY))[LKEY];
+      return rec && Array.isArray(rec.msgs) && rec.msgs.length ? rec : null;
+    } catch {
+      return null;
+    }
+  }
 
   // ---------------------------------------------------------------- UI
   const ICON = {
@@ -799,6 +826,31 @@
   const SPOT_ROW = 56; // the Ctrl+Space pill is taller
   // One answer at a time across the dashboard pill and the Ctrl+Space panel (they share history).
   let asking = null;
+
+  // A size he dragged the open chat to, per surface ('dash' or 'spot'); double-click the grip to forget it.
+  const SIZE_KEY = (kind) => 'gcx:askSize:' + kind;
+  const loadSize = (kind) => {
+    try {
+      const s = JSON.parse(localStorage.getItem(SIZE_KEY(kind)) || 'null');
+      return s && s.w > 0 && s.h > 0 ? { w: +s.w, h: +s.h } : null;
+    } catch {
+      return null;
+    }
+  };
+  const storeSize = (kind, s) => {
+    try {
+      if (s) localStorage.setItem(SIZE_KEY(kind), JSON.stringify({ w: Math.round(s.w), h: Math.round(s.h) }));
+      else localStorage.removeItem(SIZE_KEY(kind));
+    } catch {}
+  };
+  const MIN_W = { dash: 300, spot: 360 };
+  const spotDefaultW = () => Math.min(600, innerWidth - 32);
+  // A quarter-ring hugging the corner, just outside it: bottom-left on the dashboard (the box
+  // grows left and down from the button), bottom-right on the floating panel (it grows right and down).
+  const GRIP_ARC = {
+    dash: 'M4.51 -3.45A25 25 0 0 0 19.45 11.49',
+    spot: 'M11.37 -4.77A27 27 0 0 1 -4.77 11.37',
+  };
 
   // Plain text of the start of an answer, for the little preview next to the closed circle.
   const previewText = (t) =>
@@ -820,7 +872,8 @@
     const ac = new AbortController();
     const on = (target, type, fn, opts = {}) => target.addEventListener(type, fn, { ...opts, signal: ac.signal });
 
-    const root = gcx.el(`<div class="gcx-ask${spot ? ' spot compact' : ''}" data-state="idle"${spot ? ' role="dialog" aria-label="Ask anything"' : ''}>
+    const kind = spot ? 'spot' : 'dash';
+    const root = gcx.el(`<div class="gcx-ask${spot ? (opts.expanded ? ' spot' : ' spot compact') : ''}" data-state="idle"${spot ? ' role="dialog" aria-label="Ask anything"' : ''}>
       <div class="gcx-ask-box">
         ${spot ? '<span class="gcx-ask-grip" title="Drag to move" aria-hidden="true"></span>' : ''}
         <div class="gcx-ask-top"><button class="gcx-ask-new" type="button" title="Start a new chat" tabindex="-1">${icon(ICON.plus, 16)}New chat</button></div>
@@ -833,6 +886,7 @@
         <span class="gcx-ask-icon"><span class="gcx-ask-ai">AI</span></span>
       </div>
       ${spot ? `<button class="gcx-ask-x" type="button" title="Close" aria-label="Close">${icon(ICON.close, 14)}</button>` : ''}
+      <span class="gcx-ask-rsz" title="Drag to resize (double-click to reset)" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="${GRIP_ARC[kind]}"/></svg></span>
       <div class="gcx-ask-peek" aria-hidden="true"><span class="gcx-ask-pdot"></span><span class="gcx-ask-ptext"></span></div>
       <div class="gcx-ask-sr" role="status"></div>
     </div>`);
@@ -846,6 +900,7 @@
     const log = root.querySelector('.gcx-ask-log');
     const peek = root.querySelector('.gcx-ask-peek');
     const peekText = root.querySelector('.gcx-ask-ptext');
+    const grip = root.querySelector('.gcx-ask-rsz');
     // Screen readers get short status lines and the finished answer here, not every streamed word.
     const srBox = root.querySelector('.gcx-ask-sr');
     const announce = (t) => {
@@ -867,6 +922,31 @@
     // Size: the box grows left (width) and down (height) from the closed circle. Height is
     // measured from the content so it can animate; the log scrolls past a cap.
     const maxH = () => (spot ? Math.min(Math.round(innerHeight * 0.72), 620) : Math.min(Math.round(innerHeight * 0.62), 560));
+    // A size he chose by dragging the grip wins over the auto-fit below, kept inside the window.
+    let size = loadSize(kind);
+    let resizing = false;
+    let endResize = null; // finishes a resize in progress (the chat closing mid-drag)
+    const minH = rowH + 120;
+    const sizeLimits = () => {
+      if (spot) {
+        // The holder moves itself back on screen when it outgrows the window (openSpot's clamp),
+        // so only the window size bounds it here.
+        return { maxW: Math.max(MIN_W.spot, innerWidth - 16), maxH: Math.max(minH, innerHeight - 16) };
+      }
+      // The box is pinned at the button's top-right and grows left and down.
+      const r = root.getBoundingClientRect();
+      return { maxW: Math.max(MIN_W.dash, Math.min(r.right - 8, innerWidth - 16)), maxH: Math.max(minH, innerHeight - Math.max(8, r.top) - 8) };
+    };
+    const clampSize = (s, lim = sizeLimits()) => ({
+      w: Math.round(Math.min(Math.max(s.w, MIN_W[kind]), lim.maxW)),
+      h: Math.round(Math.min(Math.max(s.h, minH), lim.maxH)),
+    });
+    // The dashboard grip sits outside the box (which clips), at its bottom-left corner.
+    const placeGrip = () => {
+      if (spot) return;
+      root.style.setProperty('--ask-w', box.style.width || '48px');
+      root.style.setProperty('--ask-h', box.style.height || '48px');
+    };
     function fit() {
       if (spot) {
         // The floating panel's width comes from its holder; only the height moves.
@@ -883,7 +963,17 @@
         box.style.height = ROW + 'px';
         return;
       }
-      if (!spot) box.style.width = OPEN_W;
+      if (size) {
+        const s = clampSize(size);
+        if (spot) slot.style.width = s.w + 'px';
+        else box.style.width = s.w + 'px';
+        box.style.height = s.h + 'px';
+        placeGrip();
+        return;
+      }
+      if (spot) {
+        if (slot.style.width !== spotDefaultW() + 'px') slot.style.width = spotDefaultW() + 'px';
+      } else box.style.width = OPEN_W;
       // Measure the messages themselves; the log's scrollHeight never drops below its current box.
       const kids = log.children;
       const cs = getComputedStyle(log);
@@ -892,9 +982,71 @@
         : 0;
       const want = top.offsetHeight + content + rowH + 2;
       box.style.height = Math.min(maxH(), Math.max(rowH + 120, want)) + 'px';
+      placeGrip();
     }
-    const ro = new ResizeObserver(() => state === 'open' && fit());
+    const ro = new ResizeObserver(() => state === 'open' && !resizing && fit());
     ro.observe(log);
+    on(window, 'resize', () => state === 'open' && size && !resizing && fit());
+
+    // Resize by the corner grip (open chat only). Window listeners, not pointer capture, as with
+    // the panel drag below: capture on a moving element dropped events mid-drag.
+    on(grip, 'mousedown', (e) => e.preventDefault()); // keep focus in the input
+    on(grip, 'pointerdown', (e) => {
+      if (e.button !== 0 || state !== 'open' || root.classList.contains('compact')) return;
+      e.preventDefault();
+      e.stopPropagation(); // not a drag of the floating panel
+      const sx = e.clientX;
+      const sy = e.clientY;
+      const sw = spot ? slot.offsetWidth : box.offsetWidth;
+      const sh = box.offsetHeight;
+      const lim = spot
+        ? (() => {
+            const r = slot.getBoundingClientRect();
+            return { maxW: Math.max(MIN_W.spot, innerWidth - r.left - 8), maxH: Math.max(minH, innerHeight - r.top - 8) };
+          })()
+        : sizeLimits();
+      let moved = false;
+      resizing = true;
+      clearTimeout(leaveTimer);
+      leaveTimer = 0;
+      root.classList.add('resizing');
+      if (spot) slot.classList.add('resizing');
+      const cursorCls = spot ? 'gcx-ask-rsz-nwse' : 'gcx-ask-rsz-nesw';
+      document.documentElement.classList.add(cursorCls);
+      const move = (ev) => {
+        if (ev.pointerId !== e.pointerId) return;
+        const dx = ev.clientX - sx;
+        const dy = ev.clientY - sy;
+        if (!moved && Math.abs(dx) + Math.abs(dy) < 3) return;
+        moved = true;
+        // Dashboard: the left edge follows the pointer. Floating panel: the right edge does.
+        size = clampSize({ w: spot ? sw + dx : sw - dx, h: sh + dy }, lim);
+        fit();
+      };
+      const up = (ev) => {
+        if (ev && ev.pointerId !== e.pointerId) return;
+        endResize = null;
+        resizing = false;
+        root.classList.remove('resizing');
+        if (spot) slot.classList.remove('resizing');
+        document.documentElement.classList.remove(cursorCls);
+        removeEventListener('pointermove', move, true);
+        removeEventListener('pointerup', up, true);
+        removeEventListener('pointercancel', up, true);
+        if (moved) storeSize(kind, size);
+      };
+      endResize = up;
+      addEventListener('pointermove', move, true);
+      addEventListener('pointerup', up, true);
+      addEventListener('pointercancel', up, true);
+    });
+    on(grip, 'dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      size = null;
+      storeSize(kind, null);
+      fit();
+    });
 
     const setState = (s) => {
       if (s === state) return;
@@ -948,7 +1100,7 @@
     on(root, 'focusout', () =>
       setTimeout(() => {
         if (spot) return;
-        if (state !== 'idle' && !root.contains(document.activeElement) && !root.matches(':hover') && !keepOpen()) setState('idle');
+        if (state !== 'idle' && !resizing && !root.contains(document.activeElement) && !root.matches(':hover') && !keepOpen()) setState('idle');
       }),
     );
     on(root, 'focusin', (e) => {
@@ -974,7 +1126,7 @@
       document,
       'pointermove',
       (e) => {
-        if (spot || state === 'idle') return;
+        if (spot || state === 'idle' || resizing) return;
         if (inside(e.clientX, e.clientY)) {
           clearTimeout(leaveTimer);
           leaveTimer = 0;
@@ -986,7 +1138,7 @@
       { passive: true },
     );
     on(document.documentElement, 'pointerleave', () => {
-      if (!spot && state !== 'idle' && !keepOpen()) scheduleClose(400);
+      if (!spot && state !== 'idle' && !resizing && !keepOpen()) scheduleClose(400);
     });
     on(document, 'keydown', (e) => {
       if (e.key !== 'Escape') return;
@@ -1094,7 +1246,30 @@
     };
     chrome.storage.onChanged.addListener(onKeyChange);
 
+    // Ctrl+Shift+Space may swap in the last chat from another tab (refresh), or grow the
+    // Ctrl+Space pill straight into the chat without a question (expand).
+    root.gcxRefresh = () => {
+      if (busy) return;
+      renderLog();
+      if (state === 'open') {
+        fit();
+        log.scrollTop = log.scrollHeight;
+      }
+    };
+    root.gcxExpand = () => {
+      if (!spot || !root.classList.contains('compact')) return;
+      root.classList.remove('compact');
+      if (opts.onAsk) opts.onAsk();
+      renderLog();
+      fit();
+      requestAnimationFrame(() => {
+        fit();
+        log.scrollTop = log.scrollHeight;
+        input.focus({ preventScroll: true });
+      });
+    };
     root.gcxDestroy = (keepAnswer = false) => {
+      if (endResize) endResize();
       if (busy) stop();
       if (run && !keepAnswer) run.discard = true;
       ac.abort();
@@ -1333,6 +1508,7 @@
   // The page blurs a little and a wide "Ask anything" pill appears in the middle, ready to type.
   // It can be dragged anywhere; the first question clears the blur and the pill grows into the
   // chat where it sits. Only the red X (or Esc, or Ctrl+Space again) closes it.
+  // Ctrl+Shift+Space skips the pill: the last chat opens right away, with no blur behind it.
   const prefsNow = () => gcx.prefs();
   const spotOn = () => {
     const p = prefsNow();
@@ -1340,7 +1516,7 @@
     return p.hotkey !== false;
   };
   let spotUi = null;
-  function openSpot() {
+  function openSpot(expanded = false) {
     if (spotUi || !spotOn()) return;
     const back = document.activeElement;
     const bg = gcx.el('<div class="gcx-spot-bg" aria-hidden="true"></div>');
@@ -1349,7 +1525,9 @@
       bg.classList.add('over-fv');
       holder.classList.add('over-fv');
     }
-    document.body.append(bg, holder);
+    // Reopened as a chat, the page stays sharp and usable, as it does once a question is asked.
+    if (expanded) document.body.append(holder);
+    else document.body.append(bg, holder);
     // Before he's asked anything, moving the pointer well away from the pill (or clicking far
     // from it) closes it. Measured from where the pointer started, so it doesn't close at once
     // when the pointer happens to be across the screen.
@@ -1381,7 +1559,9 @@
       holder.classList.add('nudge');
       holder.querySelector('input')?.focus({ preventScroll: true });
     });
-    const W = Math.min(600, innerWidth - 32);
+    // The pill always starts at the default width; a chat he resized opens at his size.
+    const saved = expanded && loadSize('spot');
+    const W = saved ? Math.max(MIN_W.spot, Math.min(saved.w, innerWidth - 16)) : spotDefaultW();
     holder.style.width = W + 'px';
     // Back where he last left it (kept inside the window), or centered the first time.
     let pos = null;
@@ -1397,7 +1577,7 @@
       bg.classList.add('gone');
       setTimeout(() => bg.remove(), 400);
     };
-    ui.root = mountAsk(holder, { spot: true, onClose: closeSpot, onAsk: clearBg });
+    ui.root = mountAsk(holder, { spot: true, expanded, onClose: closeSpot, onAsk: clearBg });
     requestAnimationFrame(() => ui.root && ui.root.querySelector('.gcx-ask-input').focus({ preventScroll: true }));
 
     // Keep it on screen: when it grows past the bottom edge, it slides up.
@@ -1426,7 +1606,7 @@
 
     // Drag by anything that isn't a control or the conversation text.
     holder.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.target.closest('input, button, a, .gcx-ask-log')) return;
+      if (e.button !== 0 || e.target.closest('input, button, a, .gcx-ask-log, .gcx-ask-rsz')) return;
       e.preventDefault();
       const r = holder.getBoundingClientRect();
       const dx = e.clientX - r.left;
@@ -1479,18 +1659,53 @@
   window.addEventListener(
     'keydown',
     (e) => {
-      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || (e.code !== 'Space' && e.key !== ' ')) return;
+      if (!e.ctrlKey || e.metaKey || e.altKey || (e.code !== 'Space' && e.key !== ' ')) return;
       // Some keyboards switch input method with Ctrl+Space; leave that alone.
       if (e.isComposing || e.key === 'Process') return;
       if (!spotUi && !spotOn()) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.repeat) return;
-      if (spotUi) closeSpot();
-      else openSpot();
+      if (!e.shiftKey) {
+        if (spotUi) closeSpot();
+        else openSpot();
+        return;
+      }
+      // Ctrl+Shift+Space: closes the open chat; otherwise opens (or grows the pill into) the last one.
+      if (spotUi && !(spotUi.root && spotUi.root.classList.contains('compact'))) closeSpot();
+      else openLast();
     },
     true,
   );
+
+  // The most recent chat: this tab's, unless another tab (or an earlier page) has a newer one, or
+  // this tab's was cleared with "New chat". Never swapped while an answer is running.
+  let reopening = false;
+  async function openLast() {
+    if (reopening) return;
+    reopening = true;
+    const ui0 = spotUi;
+    try {
+      const rec = asking ? null : await readLast();
+      if (spotUi !== ui0) return; // Ctrl+Space or Esc got there first
+      if (rec && !asking && (!hist.msgs.length || (rec.at || 0) > (hist.at || 0))) {
+        hist = { msgs: rec.msgs, prev: rec.prev || null, at: rec.at || 0 };
+        try {
+          sessionStorage.setItem(HKEY, JSON.stringify(hist));
+        } catch {}
+        if (mounted && mounted.isConnected && mounted.gcxRefresh) mounted.gcxRefresh();
+        if (ui0 && ui0.root && ui0.root.gcxRefresh) ui0.root.gcxRefresh();
+      }
+      if (!hist.msgs.length) {
+        // Nothing to reopen: the same as Ctrl+Space.
+        if (ui0) closeSpot();
+        else openSpot();
+      } else if (ui0 && ui0.root) ui0.root.gcxExpand();
+      else openSpot(true);
+    } finally {
+      reopening = false;
+    }
+  }
   window.addEventListener('gcx:prefs', () => {
     if (spotUi && !spotOn()) closeSpot();
   });

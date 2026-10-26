@@ -81,7 +81,8 @@ Esc or browser Back closes it. Ctrl/Cmd-click still opens the normal page.
 The **AI** button next to the greeting rolls open into a pill on hover; click and type, and it grows into a
 chat. Or press **Ctrl + Space** on any regular Canvas page: the page blurs and a wide "Ask anything" pill
 opens in the middle (or wherever you last left it). Drag it anywhere; once you ask, the blur clears and it
-becomes the chat right where you left it. Esc or Ctrl + Space closes it, so does moving the pointer well away
+becomes the chat right where you left it. **Ctrl + Shift + Space** brings back your last conversation, full size
+and without the blur, even on another page; drag its corner to resize it. Esc or Ctrl + Space closes it, so does moving the pointer well away
 from it before you've asked anything, and so does the red X once it's a chat.
 
 It answers from your Canvas (courses, assignments, grades, feedback, modules, files including PDFs, slides
