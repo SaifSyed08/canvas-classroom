@@ -35,15 +35,24 @@
 
   // Page transitions: the page we came from leaves a direction ('left'/'right' between
   // course tabs, 'in' when opening a class) and the view transition CSS reads it.
-  try {
-    const nav = JSON.parse(sessionStorage.getItem('gcx:nav') || 'null');
-    sessionStorage.removeItem('gcx:nav');
-    if (nav && Date.now() - nav.t < 15000) {
-      html.dataset.gcxNav = nav.dir;
-      // Which course tab he came from, so the underline can slide over from it.
-      if (course && String(nav.course) === course[1] && nav.from >= 0) html.dataset.gcxFrom = nav.from;
+  // 'back' comes from the page he left with Back or Esc. `hero` is what he clicked (a class card or
+  // a row), which grows into this page's banner or header.
+  const takeNav = () => {
+    try {
+      const nav = JSON.parse(sessionStorage.getItem('gcx:nav') || 'null');
+      sessionStorage.removeItem('gcx:nav');
+      return nav && Date.now() - nav.t < 15000 ? nav : null;
+    } catch {
+      return null;
     }
-  } catch {}
+  };
+  const nav = takeNav();
+  if (nav) {
+    html.dataset.gcxNav = nav.dir;
+    if (nav.hero) html.dataset.gcxHero = nav.hero;
+    // Which course tab he came from, so the underline can slide over from it.
+    if (course && String(nav.course) === course[1] && nav.from >= 0) html.dataset.gcxFrom = nav.from;
+  }
   // Opt both pages in to cross-document view transitions. Lives in the page (not the
   // extension stylesheet) so Chrome counts it as the page's own.
   let still = false;
@@ -59,8 +68,18 @@
   vt.textContent = '@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }';
   if (!still) html.append(vt);
   addEventListener('pagereveal', (e) => {
-    if (e.viewTransition) e.viewTransition.finished.finally(() => delete html.dataset.gcxNav);
-    else delete html.dataset.gcxNav;
+    // A page coming back from the back/forward cache doesn't run this script again; the page he
+    // left saved which way to go.
+    if (!html.dataset.gcxNav) {
+      const n = takeNav();
+      if (n) html.dataset.gcxNav = n.dir;
+    }
+    const clear = () => {
+      delete html.dataset.gcxNav;
+      delete html.dataset.gcxHero;
+    };
+    if (e.viewTransition) e.viewTransition.finished.finally(clear);
+    else clear();
   });
   if (view) {
     html.classList.add('gcx-takeover');

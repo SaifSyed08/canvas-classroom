@@ -119,14 +119,27 @@
     requestAnimationFrame(() => ov && ov.classList.add('in'));
     ov.querySelector('.gcx-fv-close').focus({ preventScroll: true });
 
+    // A file linked from content may only be readable with the link's verifier.
+    const ver = opts.verifier ? `&verifier=${encodeURIComponent(opts.verifier)}` : '';
+    // When the link's name already says the file is shown from a signed URL (PDF, text, image,
+    // media), ask for that URL alongside the metadata instead of after it.
+    const guess = opts.name ? kindOf({ display_name: opts.name }) : '';
+    me.ver = ver;
+    if (['pdf', 'text', 'image', 'video', 'audio'].includes(guess)) me.pub = publicUrl(fid, ver);
     let meta;
     try {
-      meta = await api(`/files/${fid}?include[]=preview_url`).catch((e) => (cid ? api(`/courses/${cid}/files/${fid}?include[]=preview_url`) : Promise.reject(e)));
+      meta = await api(`/files/${fid}?include[]=preview_url${ver}`).catch((e) => (cid ? api(`/courses/${cid}/files/${fid}?include[]=preview_url${ver}`) : Promise.reject(e)));
     } catch (e) {
       meta = null;
     }
     if (state !== me) return true;
-    if (!meta || meta.locked_for_user || meta.hidden_for_user) {
+    // "Only available with link" files (common for assignment handouts) come back with
+    // hidden_for_user and sometimes no url, but the link itself still serves them.
+    if (meta && meta.hidden_for_user && !meta.locked_for_user && !meta.url) {
+      const own = opts.courseId ? `/courses/${opts.courseId}` : '';
+      meta = { ...meta, url: `${location.origin}${own}/files/${fid}/download?download_frd=1${ver}` };
+    }
+    if (!meta || meta.locked_for_user) {
       // Locked or not visible through the API: let Canvas show its own page (it explains why).
       const href = me.fallback || (cid ? `/courses/${cid}/files/${fid}` : `/files/${fid}`);
       closeNow(true);
@@ -155,9 +168,9 @@
     return true;
   }
 
-  async function publicUrl(fid) {
+  async function publicUrl(fid, ver = '') {
     try {
-      const r = await api(`/files/${fid}/public_url`);
+      const r = await api(`/files/${fid}/public_url${ver ? `?${ver.slice(1)}` : ''}`);
       return r && r.public_url ? r.public_url : '';
     } catch {
       return '';
@@ -171,8 +184,10 @@
       if (state !== me) return;
       ov.classList.add('ready');
     };
+    // Reuse the signed URL requested alongside the metadata, if there was one.
+    const pub = () => me.pub || (me.pub = publicUrl(me.fid, me.ver));
     if (kind === 'pdf' || kind === 'text') {
-      const src = await publicUrl(me.fid);
+      const src = await pub();
       if (state !== me) return;
       const q = new URLSearchParams({ src, alt: meta.url || '', mode: kind, o: location.origin, name: meta.display_name || '' });
       const frame = document.createElement('iframe');
@@ -197,7 +212,7 @@
       me.frame = frame;
       stage.append(frame);
     } else if (kind === 'image') {
-      const src = (await publicUrl(me.fid)) || meta.url;
+      const src = (await pub()) || meta.url;
       if (state !== me) return;
       const wrap = document.createElement('div');
       wrap.className = 'gcx-fv-imgwrap';
@@ -222,7 +237,7 @@
       stage.classList.add('scroll');
       enableImagePan(stage, me);
     } else if (kind === 'video' || kind === 'audio') {
-      const src = (await publicUrl(me.fid)) || meta.url;
+      const src = (await pub()) || meta.url;
       if (state !== me) return;
       const media = document.createElement(kind);
       media.className = `gcx-fv-${kind}`;
@@ -539,46 +554,94 @@
   });
 
   // ---------------------------------------------------------------- click interception
-  // /courses/1/files/2, /files/2, /users/1/files/2, /groups/1/files/2, optional /preview or (wrap=1) /download
-  const FILE_PATH = /^\/(?:(courses|users|groups)\/(\d+)\/)?files\/(\d+)(\/(preview|download))?\/?$/;
-  function fileFromLink(a) {
-    if (a.dataset.gcxNoPreview || a.hasAttribute('download')) return null;
-    if (a.dataset.gcxFile) {
-      return { fid: a.dataset.gcxFile, cid: a.dataset.gcxCourse || '' };
-    }
+  // /courses/1/files/2, /files/2, /users/1/files/2, /groups/1/files/2, with an optional
+  // /preview, /download (with or without wrap=1, often with a ?verifier=), /file_preview or /inline_view.
+  const FILE_PATH = /^\/(?:(courses|users|groups)\/(\d+)\/)?files\/(\d+)(?:\/(?:preview|download|file_preview|inline_view))?\/?$/;
+  // The Files app's own links: /courses/1/files?preview=2, /courses/1/files/folder/Week%201?preview=2
+  const FILES_APP = /^\/(?:(courses|users|groups)\/(\d+)\/)?files(?:\/.*)?$/;
+  // Which file a same-origin href points at. `download` marks an explicit download (download_frd=1).
+  function fileHref(href) {
     let u;
     try {
-      u = new URL(a.getAttribute('href') || '', location.href);
+      u = new URL(href || '', location.href);
     } catch {
       return null;
     }
     if (u.origin !== location.origin) return null;
+    const p = u.searchParams;
     const m = u.pathname.match(FILE_PATH);
-    if (m) {
-      if (u.searchParams.has('download_frd')) return null;
-      if (m[5] === 'download' && u.searchParams.get('wrap') !== '1') return null;
-      return { fid: m[3], cid: m[1] === 'courses' ? m[2] : '' };
+    if (m) return { fid: m[3], cid: m[1] === 'courses' ? m[2] : '', verifier: p.get('verifier') || '', download: p.has('download_frd') && p.get('download_frd') !== '0' };
+    const f = u.pathname.match(FILES_APP);
+    const pv = p.get('preview') || '';
+    if (f && /^\d+$/.test(pv)) return { fid: pv, cid: f[1] === 'courses' ? f[2] : '', verifier: '', download: false };
+    return null;
+  }
+  // Rich-content file links carry their API endpoint (whatever their href looks like).
+  function fileFromEndpoint(a) {
+    if (a.getAttribute('data-api-returntype') !== 'File') return null;
+    const e = (a.getAttribute('data-api-endpoint') || '').match(/\/api\/v1\/(?:courses\/(\d+)\/)?files\/(\d+)/);
+    return e ? { fid: e[2], cid: e[1] || '', verifier: '', download: false } : null;
+  }
+  // Shared with assignment.js, which tags the files linked from an assignment's instructions.
+  gcx.fileLink = (a) => {
+    const h = fileHref(a.getAttribute('href'));
+    return h || fileFromEndpoint(a);
+  };
+  // A file name inside Canvas's assignment view (submitted files, comment attachments) links
+  // with download_frd=1 even though it reads as "open this"; icon-only or "Download …" controls
+  // stay real downloads.
+  const A2 = '[data-testid="assignments-2-student-view"], #gcx-asg';
+  const saysDownload = (a) => {
+    const text = (a.textContent || '').trim();
+    return !text || /\bdownload\b/i.test(`${a.getAttribute('aria-label') || ''} ${a.getAttribute('title') || ''} ${text}`);
+  };
+  function fileFromLink(a) {
+    if (a.dataset.gcxNoPreview || a.hasAttribute('download') || a.classList.contains('file_download_btn')) return null;
+    const h = fileHref(a.getAttribute('href'));
+    if (a.dataset.gcxFile) {
+      const verifier = a.dataset.gcxVerifier || (h && h.fid === a.dataset.gcxFile ? h.verifier : '');
+      return { fid: a.dataset.gcxFile, cid: a.dataset.gcxCourse || '', verifier };
     }
-    // Rich-content file links carry their API endpoint.
-    const ep = a.getAttribute('data-api-endpoint') || '';
-    if (a.getAttribute('data-api-returntype') === 'File') {
-      const e = ep.match(/\/api\/v1\/(?:courses\/(\d+)\/)?files\/(\d+)/);
-      if (e) return { fid: e[2], cid: e[1] || '' };
+    if (h) return h.download && (saysDownload(a) || !a.closest(A2)) ? null : h;
+    const ep = fileFromEndpoint(a);
+    if (ep) {
+      // An odd href (another host, an old path) on a link Canvas marked as a file.
+      ep.verifier = (h && h.verifier) || '';
+      return ep;
     }
     return null;
   }
-  document.addEventListener(
+  // The innermost link under the pointer, including links inside open shadow roots
+  // (e.target is retargeted to the host there, so closest() alone would miss them).
+  const LINK = 'a[href], [data-gcx-file]';
+  function linkFor(e) {
+    const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+    for (const n of path) {
+      if (n === document || n === window) break;
+      if (n.nodeType === 1 && n.matches(LINK)) return n;
+    }
+    return e.target && e.target.closest ? e.target.closest(LINK) : null;
+  }
+  // Window capture runs before every document-level and React root listener, so Canvas's own
+  // file preview handlers and React's onClick never see the click.
+  window.addEventListener(
     'click',
     (e) => {
       if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-      const a = e.target && e.target.closest && e.target.closest('a[href], [data-gcx-file]');
+      const a = linkFor(e);
       if (!a || a.closest('#gcx-fv')) return;
       const hit = fileFromLink(a);
       if (!hit) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       const name = (a.dataset.gcxName || a.querySelector('.gcx-row-title')?.textContent || a.textContent || '').replace(/\s+/g, ' ').trim();
-      openFile(hit.fid, { courseId: hit.cid, name, fallback: a.href || '' });
+      // Where to send him if the API won't describe the file (Canvas's page explains why).
+      let fallback = '';
+      try {
+        const u = a.hasAttribute('href') ? new URL(a.getAttribute('href'), location.href) : null;
+        if (u && u.origin === location.origin) fallback = u.href;
+      } catch {}
+      openFile(hit.fid, { courseId: hit.cid, name, verifier: hit.verifier, fallback });
     },
     true,
   );

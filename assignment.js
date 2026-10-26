@@ -45,8 +45,18 @@
         else if (/^(href|src|action|formaction)$/i.test(a.name) && /^\s*javascript:/i.test(a.value)) n.removeAttribute(a.name);
       }
     });
+    // Files linked from the instructions open in the in-page viewer (fileview.js) whatever shape
+    // their link has: ?wrap=1, /download?verifier=…, download_frd=1, the Files app's ?preview=,
+    // or an RCE link known only by its data-api-endpoint. Tagging them here means the viewer
+    // doesn't have to guess from the href.
     doc.querySelectorAll('a[href]').forEach((a) => {
-      if (!/\/files\/\d+/.test(a.getAttribute('href'))) a.setAttribute('target', '_blank');
+      const f = !a.hasAttribute('download') && gcx.fileLink ? gcx.fileLink(a) : null;
+      if (f) {
+        a.dataset.gcxFile = f.fid;
+        // A user's or group's file has no course; the viewer then looks it up without one.
+        if (f.cid) a.dataset.gcxCourse = f.cid;
+        if (f.verifier) a.dataset.gcxVerifier = f.verifier;
+      } else if (!/\/files\/\d+/.test(a.getAttribute('href'))) a.setAttribute('target', '_blank');
     });
     return doc.body;
   }
@@ -55,13 +65,15 @@
   function attachmentsFrom(body) {
     const seen = new Set();
     const out = [];
-    for (const a of body.querySelectorAll('a[href]')) {
-      const href = a.getAttribute('href');
-      const fm = href.match(/\/files\/(\d+)/);
-      if (!fm || seen.has(fm[1])) continue;
-      seen.add(fm[1]);
+    for (const a of body.querySelectorAll('a[data-gcx-file]')) {
+      const id = a.dataset.gcxFile;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const course = a.dataset.gcxCourse || '';
+      const verifier = a.dataset.gcxVerifier || '';
       const name = (a.getAttribute('title') || a.textContent || '').replace(/\s+/g, ' ').trim() || 'File';
-      out.push({ id: fm[1], name, href: `/courses/${cid}/files/${fm[1]}` });
+      const href = `${course ? `/courses/${course}` : ''}/files/${id}${verifier ? `?verifier=${encodeURIComponent(verifier)}` : ''}`;
+      out.push({ id, course, verifier, name, href });
     }
     return out;
   }
@@ -199,7 +211,9 @@
       if (files.length)
         view.querySelector('.gcx-asg-files').innerHTML = files
           .map(
-            (f) => `<a class="gcx-asg-chip" href="${esc(f.href)}" data-gcx-file="${esc(f.id)}" data-gcx-course="${esc(cid)}" title="${esc(f.name)}">
+            (f) => `<a class="gcx-asg-chip" href="${esc(f.href)}" data-gcx-file="${esc(f.id)}" data-gcx-course="${esc(f.course)}"${
+              f.verifier ? ` data-gcx-verifier="${esc(f.verifier)}"` : ''
+            } data-gcx-name="${esc(f.name)}" title="${esc(f.name)}">
               <span class="gcx-asg-chip-ic">${svg('file', 22)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.name)}</b><small>File</small></span></a>`,
           )
           .join('');
@@ -216,7 +230,7 @@
     if (s.submitted_at) {
       parts.push(`<div class="gcx-asg-when">Turned in ${esc(fmtDue(new Date(s.submitted_at)))}${s.attempt > 1 ? ` · attempt ${esc(s.attempt)}` : ''}</div>`);
       for (const f of s.attachments || [])
-        parts.push(`<a class="gcx-asg-chip small" href="${esc(f.url || f.preview_url || '#')}" data-gcx-file="${esc(f.id)}" title="${esc(f.display_name)}">
+        parts.push(`<a class="gcx-asg-chip small" href="${esc(f.url || f.preview_url || '#')}" data-gcx-file="${esc(f.id)}" data-gcx-name="${esc(f.display_name)}" title="${esc(f.display_name)}">
           <span class="gcx-asg-chip-ic">${svg('file', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.display_name)}</b></span></a>`);
       if (s.url) parts.push(`<a class="gcx-asg-chip small" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"><span class="gcx-asg-chip-ic">${svg('link', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(s.url)}</b></span></a>`);
       if (s.body && !(s.attachments || []).length)

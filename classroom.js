@@ -22,6 +22,8 @@
 
   // ---------------------------------------------------------------- helpers
   const ICONS = {
+    image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+    upload: 'M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z',
     menu: 'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
     home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
     todo: 'M19 3h-4.18C14.4 1.84 13.3 1 12 1s-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm-2 14l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z',
@@ -646,6 +648,149 @@
     }
   });
 
+  // ----- class images he picks himself (a built-in cover or his own upload). Canvas only lets
+  // teachers change a class's image, so these live in extension storage and are drawn over
+  // Canvas's own on the class banner and the dashboard card.
+  const COVERS = [
+    ['aurora', 'Aurora', 'radial-gradient(at 20% 30%, #7f5af0 0, transparent 55%), radial-gradient(at 85% 15%, #2cb67d 0, transparent 50%), radial-gradient(at 60% 95%, #00b4d8 0, transparent 55%), linear-gradient(#16161a, #16161a)'],
+    ['sunset', 'Sunset', 'linear-gradient(160deg, #ff9a8b 0%, #ff6a88 45%, #6a3093 100%)'],
+    ['ocean', 'Ocean', 'radial-gradient(at 70% 120%, #48cae4 0, transparent 60%), linear-gradient(180deg, #03045e, #0077b6)'],
+    ['forest', 'Forest', 'radial-gradient(at 30% 110%, #95d5b2 0, transparent 55%), linear-gradient(200deg, #081c15, #2d6a4f)'],
+    ['peach', 'Peach', 'linear-gradient(120deg, #f6d365 0%, #fda085 100%)'],
+    ['blueprint', 'Blueprint', 'linear-gradient(rgba(255,255,255,.12) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(135deg, #1e3a8a, #0ea5e9)'],
+    ['dots', 'Dots', 'radial-gradient(rgba(255,255,255,.28) 2px, transparent 2.5px) 0 0 / 22px 22px, linear-gradient(135deg, #9333ea, #ec4899)'],
+    ['dusk', 'Dusk', 'linear-gradient(180deg, #0f2027, #203a43 50%, #2c5364)'],
+  ];
+  const COVERS_KEY = 'gcx-covers';
+  const coverKey = (id) => `${PAGE_USER || 'anon'}:${id}`;
+  let covers = {};
+  // Only covers we know how to draw: a preset id or an uploaded JPEG/PNG/WebP.
+  const coverLayers = (v) => {
+    if (!v) return '';
+    if (v.preset) return (COVERS.find((x) => x[0] === v.preset) || [])[2] || '';
+    if (typeof v.data === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v.data)) return `url("${v.data}") center / cover no-repeat`;
+    return '';
+  };
+  const coverStyle = document.createElement('style');
+  coverStyle.id = 'gcx-covers';
+  (document.head || html).append(coverStyle);
+  function markCoverless() {
+    for (const b of document.querySelectorAll('.gcx-banner')) b.classList.toggle('gcx-noimg', !b.dataset.canvasImg && !coverLayers(covers[coverKey(COURSE_ID)]));
+  }
+  function paintCovers() {
+    const mine = `${PAGE_USER || 'anon'}:`;
+    coverStyle.textContent = Object.entries(covers)
+      .filter(([k]) => k.startsWith(mine) && /^\d+$/.test(k.slice(mine.length)))
+      .map(([k, v]) => {
+        const id = k.slice(mine.length);
+        const layers = coverLayers(v);
+        return layers ? `a.gcx-card-ov[href="/courses/${id}"] { --gcx-cimg: ${layers}; }\nhtml[data-gcx-course="${id}"] .gcx-banner-img { background: ${layers} !important; }` : '';
+      })
+      .join('\n');
+    markCoverless();
+  }
+  const saveCover = (id, v) => {
+    const next = { ...covers };
+    if (v) next[coverKey(id)] = v;
+    else delete next[coverKey(id)];
+    covers = next;
+    paintCovers();
+    chrome.storage.local.set({ [COVERS_KEY]: next }).catch(() => toast("Couldn't save that image"));
+  };
+  try {
+    chrome.storage.local.get(COVERS_KEY).then((r) => {
+      covers = r[COVERS_KEY] || {};
+      paintCovers();
+    }, () => {});
+    chrome.storage.onChanged.addListener((ch, area) => {
+      if (area !== 'local' || !ch[COVERS_KEY]) return;
+      covers = ch[COVERS_KEY].newValue || {};
+      paintCovers();
+    });
+  } catch {}
+  // His own picture, center-cropped to the banner's shape and squeezed to a JPEG.
+  async function shrinkImage(file) {
+    const bmp = await createImageBitmap(file);
+    const W = 1600;
+    const H = 600;
+    const scale = Math.max(W / bmp.width, H / bmp.height);
+    const w = Math.min(W, Math.round(bmp.width * scale));
+    const h = Math.min(H, Math.round(bmp.height * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    cv.getContext('2d').drawImage(bmp, (w - bmp.width * scale) / 2, (h - bmp.height * scale) / 2, bmp.width * scale, bmp.height * scale);
+    bmp.close();
+    return cv.toDataURL('image/jpeg', 0.85);
+  }
+  let closeCovers = null;
+  function openCoverPicker(btn, id) {
+    if (closeCovers) return closeCovers();
+    const cur = covers[coverKey(id)] || {};
+    const banner = btn.closest('.gcx-banner');
+    const pop = el(`<div class="gcx-covers gcx-pop-panel" role="dialog" aria-label="Class image">
+      <div class="gcx-covers-h">Class image</div>
+      <div class="gcx-covers-grid">${COVERS.map(
+        ([k, label]) => `<button type="button" data-cover="${k}" title="${label}" aria-label="${label}" class="${cur.preset === k ? 'on' : ''}"><span></span><small>${label}</small></button>`,
+      ).join('')}</div>
+      <div class="gcx-covers-acts">
+        <button type="button" data-act="upload">${svg('upload', 18)}Upload your own</button>
+        ${cur.preset || cur.data ? `<button type="button" data-act="reset">${banner && banner.dataset.canvasImg ? "Use Canvas's image" : 'Remove'}</button>` : ''}
+      </div>
+      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+    </div>`);
+    pop.querySelectorAll('[data-cover] span').forEach((n, i) => (n.style.background = COVERS[i][2]));
+    document.body.append(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+    pop.style.top = Math.min(r.bottom + 8, window.innerHeight - pop.offsetHeight - 12) + 'px';
+    pop.style.transformOrigin = 'top right';
+    const input = pop.querySelector('input[type=file]');
+    pop.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.cover) {
+        saveCover(id, { preset: b.dataset.cover });
+        pop.querySelectorAll('[data-cover]').forEach((x) => x.classList.toggle('on', x === b));
+      } else if (b.dataset.act === 'upload') input.click();
+      else if (b.dataset.act === 'reset') {
+        saveCover(id, null);
+        close();
+      }
+    });
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        saveCover(id, { data: await shrinkImage(file) });
+        close();
+      } catch {
+        toast("Couldn't read that image");
+      }
+    });
+    const close = () => {
+      if (closeCovers === close) closeCovers = null;
+      pop.classList.add('gcx-out');
+      setTimeout(() => pop.remove(), 160);
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    closeCovers = close;
+    const outside = (e) => {
+      if (!pop.contains(e.target) && !btn.contains(e.target)) close();
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+    };
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+    pop.querySelector('[data-cover]').focus({ preventScroll: true });
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('.gcx-banner-edit');
+    if (b && COURSE_ID) openCoverPicker(b, COURSE_ID);
+  });
+
   // Icon + color for a course's rail avatar, picked from a little panel next to the cursor.
   const LOOK_ICONS = ['', 'science', 'biotech', 'psych', 'calc', 'chart', 'code', 'book', 'pen', 'globe', 'palette', 'music', 'sport', 'leaf', 'bolt', 'star', 'heart', 'school', 'people', 'quiz'];
   const LOOK_COLORS = ['', '#d93025', '#e8710a', '#f9ab00', '#188038', '#12a4af', '#1a73e8', '#9334e6', '#c2185b', '#5f6368'];
@@ -1073,7 +1218,7 @@
   async function renderHome(view, cPromise) {
     const id = COURSE_ID;
     view.innerHTML = `
-      <div class="gcx-banner"><div class="gcx-banner-img"></div><div class="gcx-banner-tx"><h1>&nbsp;</h1><div>&nbsp;</div></div></div>
+      <div class="gcx-banner"><div class="gcx-banner-img"></div><button type="button" class="gcx-banner-edit" aria-label="Change class image" title="Change class image">${svg('image', 18)}<span>Add image</span></button><div class="gcx-banner-tx"><h1>&nbsp;</h1><div>&nbsp;</div></div></div>
       <div class="gcx-home-cols">
         <div class="gcx-home-side">
           <aside class="gcx-card gcx-upc"><div class="gcx-upc-h">Upcoming</div><div class="gcx-upc-list">${skeleton(3)}</div>
@@ -1095,6 +1240,8 @@
         banner.dataset.img = imgPath;
         banner.querySelector('.gcx-banner-img').style.backgroundImage = `url("${c.image.replace(/"/g, '%22')}")`;
       }
+      banner.dataset.canvasImg = c.image ? '1' : '';
+      markCoverless();
       const tx = banner.querySelector('.gcx-banner-tx');
       const sig = [prettyName(c), c.code, c.term, teacherLine(c), c.score, c.letter].join('|');
       if (tx.dataset.sig === sig) return;
@@ -1623,10 +1770,10 @@
       })),
     };
   }
-  async function fetchFiles(id) {
+  async function fetchFiles(id, tally) {
     const [files, folders] = await Promise.all([
       api(`/courses/${id}/files?per_page=100&sort=updated_at&order=desc`, true),
-      api(`/courses/${id}/folders?per_page=100`, true).catch(() => []),
+      api(`/courses/${id}/folders?per_page=100`, true).catch(softFail(false, [], tally)),
     ]);
     return {
       folders: folders.map((f) => ({ id: f.id, path: f.full_name })),
@@ -1885,7 +2032,7 @@
       loadFiles.started = true;
       swr(
         'cwf:' + id,
-        () => fetchFiles(id),
+        (t) => fetchFiles(id, t),
         (d) => {
           filesData = d;
           const slot = view.querySelector('.gcx-files-slot');
@@ -2197,6 +2344,8 @@
     const skeletonCard = `<div class="ic-DashboardCard gcx-skelcard"><div class="ic-DashboardCard__header"></div><div class="gcx-card-body">${skeleton(3)}</div></div>`;
     const markup = snap || `<div class="ic-DashboardCard__box__container">${skeletonCard.repeat(n)}</div>`;
     ghosts = el(`<div class="gcx-ghosts ic-DashboardCard__box" aria-hidden="true">${markup}</div>`);
+    // Clickable (they're plain class links) but out of the Tab order, since they're hidden from screen readers.
+    ghosts.querySelectorAll('a, button, [tabindex]').forEach((n) => n.setAttribute('tabindex', '-1'));
     container.before(ghosts);
     setTimeout(releaseGhosts, 10000); // never block the real cards for long
   }
@@ -2309,10 +2458,19 @@
     ['Strong', 2],
     ['Max', 3],
   ];
+  // Canvas draws its own color overlay on class images unless it's turned off in Canvas's
+  // preferences (his is off); with it on, ours would double it.
+  const CANVAS_OVERLAY = (() => {
+    for (const sc of document.scripts) {
+      const m = !sc.src && sc.textContent.match(/"hide_dashcard_color_overlays":(true|false)/);
+      if (m) return m[1] === 'false';
+    }
+    return false;
+  })();
   const applyShadePref = () => {
     const p = prefs();
     html.dataset.gcxShade = String(p.shade);
-    html.classList.toggle('gcx-tint', p.tint !== false);
+    html.classList.toggle('gcx-tint', p.tint !== false && !CANVAS_OVERLAY);
     html.style.setProperty('--gcx-tint', `${p.tintAmt}%`);
     // Black and white and/or dimmed class images (cards and the class banner).
     const f = [p.gray ? 'grayscale(1)' : '', p.dim ? `brightness(${(100 - p.dim) / 100})` : ''].filter(Boolean).join(' ');
@@ -2357,7 +2515,9 @@
     html.style.setProperty('--gcx-school-fg', fg);
     // The theme color is the accent everywhere (links, tabs, chips, surfaces). Where it's too close
     // to the page to read (a dark color on a dark page), it's lifted toward white, or black on light.
-    const bg = rgbLuminance(getComputedStyle(document.body).backgroundColor);
+    // A see-through body (image themes) says nothing; go by the theme's background color then.
+    const bodyBg = getComputedStyle(document.body).backgroundColor;
+    const bg = /^transparent$|,\s*0\)$/.test(bodyBg) ? luminance(getComputedStyle(html).getPropertyValue('--bcbackground-0').trim() || '#ffffff') : rgbLuminance(bodyBg);
     const L = luminance(nav);
     const readable = (Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3;
     const accent = readable ? nav : `color-mix(in oklch, ${nav} 55%, ${bg < 0.4 ? 'white' : 'black'})`;
@@ -3384,6 +3544,28 @@
     if (/^\/(modules|assignments|quizzes|files|grades|pages|wiki|discussion_topics)/.test(rest)) return { course: +m[1], i: 1 };
     return { course: +m[1], i: -1 };
   };
+  // A course's own tab pages (Home, Classwork, People), as opposed to something opened from them.
+  const isTabPage = (url) => /^\/courses\/\d+(\/(modules|users))?\/?$/.test(url.pathname);
+  // What he clicked carries over into the next page: a class card grows into the class banner, a
+  // row (an assignment in Classwork, Upcoming or a card's due list) into the assignment's header.
+  let heroEls = [];
+  const clearHero = () => {
+    heroEls.forEach((n) => (n.style.viewTransitionName = ''));
+    heroEls = [];
+  };
+  const markHero = (box, title) => {
+    clearHero();
+    box.style.viewTransitionName = 'gcx-hero';
+    heroEls.push(box);
+    if (title) {
+      title.style.viewTransitionName = 'gcx-htitle';
+      heroEls.push(title);
+    }
+    // Left in place only for the navigation; if it never happens (or he comes back to this page
+    // from the back/forward cache), the names come off again.
+    setTimeout(clearHero, 3000);
+  };
+  addEventListener('pagereveal', clearHero);
   document.addEventListener('click', (e) => {
     if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const a = e.target.closest && e.target.closest('a[href]');
@@ -3394,10 +3576,24 @@
     const from = tabIndexOf(new URL(location.href));
     let dir = 'fade';
     if (to && (!from || from.course !== to.course)) dir = 'in';
+    else if (to && !isTabPage(url)) dir = 'open';
     else if (to && from && to.i >= 0 && from.i >= 0 && to.i !== from.i) dir = to.i > from.i ? 'left' : 'right';
     else if (from && !to) dir = 'out';
+    let hero = '';
+    if (!a.closest('#gcx-rail, #gcx-cbar')) {
+      const row = a.closest('.gcx-row, .gcx-due-item, article');
+      const card = !row && a.closest('.ic-DashboardCard');
+      if (row && to && !isTabPage(url)) {
+        hero = 'row';
+        markHero(row, row.querySelector('.gcx-row-title, [class*="-title"]'));
+        dir = 'open';
+      } else if (card && card.querySelector('.ic-DashboardCard__header')) {
+        hero = 'card';
+        markHero(card.querySelector('.ic-DashboardCard__header'), card.querySelector('.gcx-card-title'));
+      }
+    }
     try {
-      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, t: Date.now(), from: from ? from.i : -1, course: from ? from.course : null }));
+      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, hero, t: Date.now(), from: from ? from.i : -1, course: from ? from.course : null }));
     } catch {}
     // Opening a course from outside it: use that course's color for the bar.
     const target = to && (COURSES || []).find((c) => c.id === to.course);
@@ -3406,6 +3602,46 @@
   });
   // The attribute only matters while the page transition runs.
   setTimeout(() => delete html.dataset.gcxNav, 2000);
+
+  // Going back (the Back button or Esc): the page swipes away to show the one under it.
+  addEventListener('pageswap', (e) => {
+    const act = e.activation;
+    if (!act || act.navigationType !== 'traverse' || !window.navigation || !navigation.currentEntry) return;
+    try {
+      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir: act.entry.index < navigation.currentEntry.index ? 'back' : 'fade', t: Date.now() }));
+    } catch {}
+  });
+  // Esc goes back a page, unless it's closing something first (the file viewer, Ask, a picker,
+  // a menu). Whether anything was open is read before those handlers close it.
+  const escOpen = () =>
+    [
+      ...document.querySelectorAll(
+        '.gcx-pop-panel, .gcx-fv-scrim, .gcx-ask:not([data-state="idle"]), dialog[open], [aria-modal="true"], [role="menu"], [role="listbox"], .ui-dialog, .ui-widget-overlay',
+      ),
+    ].some((n) => (n.checkVisibility ? n.checkVisibility() : n.getClientRects().length > 0));
+  let escBusy = false;
+  addEventListener('keydown', (e) => e.key === 'Escape' && (escBusy = escOpen()), true);
+  addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || escBusy || e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const t = document.activeElement;
+    // Typing, inside a frame, or in another extension's panel (a custom element's shadow root).
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|IFRAME|EMBED|OBJECT)$/.test(t.tagName) || t.tagName.includes('-'))) return;
+    // From a class's own Home, Classwork or People page, Esc goes up to the dashboard.
+    if (isTabPage(location)) {
+      e.preventDefault();
+      try {
+        sessionStorage.setItem('gcx:nav', JSON.stringify({ dir: 'back', t: Date.now() }));
+      } catch {}
+      barStart();
+      location.href = '/';
+      return;
+    }
+    if (!window.navigation || !navigation.canGoBack) return;
+    const prev = navigation.entries()[navigation.currentEntry.index - 1];
+    if (!prev || !prev.url || new URL(prev.url).origin !== location.origin) return;
+    e.preventDefault();
+    navigation.back();
+  });
 
   // Dark/light switches: BetterCampus swaps its theme <style> text. Put the old text back for
   // one frame and let a view transition crossfade to the new one.
