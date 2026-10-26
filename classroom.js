@@ -1387,7 +1387,9 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
     const first = !box.dataset.filled;
     box.dataset.filled = '1';
     box.innerHTML = markup;
-    if (first) reveal(box);
+    // Still rising in with the rest of the page (gcx-enter)? Then that's its entrance; a second
+    // fade on top made it flicker.
+    if (first && !box.getAnimations().some((x) => x.playState === 'running')) reveal(box);
     else box.classList.remove('gcx-stagger');
   };
 
@@ -1583,10 +1585,6 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
           })
           .join(''),
       );
-      if (stream.dataset.filled === '1' && !stream.dataset.staggered) {
-        stream.dataset.staggered = '1';
-        stream.classList.add('gcx-stagger');
-      }
       if (anns.length >= 15) stream.append(el(`<a class="gcx-chip" style="align-self:center" href="/courses/${id}/announcements">Older announcements</a>`));
       stream.querySelectorAll('[data-av]').forEach((n) => (n.style.backgroundImage = `url(${JSON.stringify(n.dataset.av)})`));
       fixInlineColors(stream);
@@ -1633,6 +1631,14 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
       }
     };
     barStart();
+    // Both saved halves (announcements and "posted new work") go up in one draw, so the stream
+    // animates in once instead of once per half (and again when the fresh copy lands).
+    const [annSaved, postsSaved] = await Promise.all([cache.get('home:ann:' + id), cache.get('home:posts:' + id)]);
+    if (postsSaved) postsNow = postsSaved;
+    if (annSaved) {
+      annsNow = annSaved;
+      drawStream();
+    }
     swr('home:ann:' + id, () => fetchAnns(id), (anns) => {
       annsNow = anns;
       drawStream();

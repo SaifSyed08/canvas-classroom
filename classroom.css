@@ -786,8 +786,9 @@ html.gcx::-webkit-scrollbar-button, html.gcx *::-webkit-scrollbar-button { displ
    On cards it's the bottom layer of the overlay link's own background (the darkening rules above
    add it), so the darkening always sits on top of it. */
 /* Canvas's own color overlay (when it's on in Canvas's preferences) gives way to ours on cards with
-   a picture: it can't be dialed, and black-and-white would grey it along with the picture. */
-html.gcx-tint .ic-DashboardCard__header_image[style*="url("] .ic-DashboardCard__header_hero { opacity: 0 !important; }
+   a picture: it can't be dialed, and black-and-white would grey it along with the picture. Only its
+   color goes: BetterCampus draws custom card pictures inside that same element. */
+html.gcx-tint .ic-DashboardCard__header_image[style*="url("] .ic-DashboardCard__header_hero { background-color: transparent !important; }
 html.gcx-tint .ic-DashboardCard__header a.gcx-card-ov {
   --gcx-wash: linear-gradient(color-mix(in srgb, var(--c, transparent) var(--gcx-tint, 55%), transparent), color-mix(in srgb, var(--c, transparent) var(--gcx-tint, 55%), transparent));
 }
