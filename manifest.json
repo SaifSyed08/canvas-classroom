@@ -38,7 +38,8 @@
         "classroom.css",
         "fileview.css",
         "ai.css",
-        "assignment.css"
+        "assignment.css",
+        "people.css"
       ],
       "js": [
         "early.js"
@@ -56,6 +57,7 @@
       "js": [
         "classroom.js",
         "assignment.js",
+        "people.js",
         "fileview.js",
         "ai.js"
       ],

@@ -50,7 +50,7 @@
     // or an RCE link known only by its data-api-endpoint. Tagging them here means the viewer
     // doesn't have to guess from the href.
     doc.querySelectorAll('a[href]').forEach((a) => {
-      const f = !a.hasAttribute('download') && gcx.fileLink ? gcx.fileLink(a) : null;
+      const f = gcx.fileLink ? gcx.fileLink(a) : null;
       if (f) {
         a.dataset.gcxFile = f.fid;
         // A user's or group's file has no course; the viewer then looks it up without one.
@@ -132,6 +132,17 @@
       <a class="gcx-asg-original" href="?gcx-original=1">View in Canvas</a>
     </aside>
   </section>`);
+  // early.js may have put a stand-in header in for the page transition (the row he clicked grows
+  // into it); keep that element and drop the rest of the stand-in.
+  const earlyAsg = document.getElementById('gcx-asg');
+  if (earlyAsg && earlyAsg !== view) {
+    const head = earlyAsg.querySelector('.gcx-asg-head');
+    if (head) {
+      head.replaceChildren(...view.querySelector('.gcx-asg-head').childNodes);
+      view.querySelector('.gcx-asg-head').replaceWith(head);
+    }
+    earlyAsg.remove();
+  }
   content.prepend(view);
   html.classList.add('gcx-asg');
   // The course bar already knows the course color (from cache); use it until the data arrives.

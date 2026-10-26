@@ -189,6 +189,38 @@ async function stream(port, body, signal, tier) {
 }
 
 // The pill's "Add key" button: the key is entered on options.html, not on the Canvas page.
+// A class cover picture from a prompt (the cover picker's Generate button). Wide, no lettering;
+// the page crops and compresses it.
+const IMAGE_MODELS = ['gpt-image-1', 'dall-e-3'];
+async function genCover(prompt, course) {
+  const key = await getKey();
+  if (!key) throw new Error('No OpenAI key is set');
+  const full = `Wide banner illustration for a college class${course ? ` called "${course}"` : ''}: ${prompt}. Rich, tasteful, no text, no letters, no logos, works behind white title text.`;
+  let last;
+  for (const model of IMAGE_MODELS) {
+    const body = model === 'dall-e-3' ? { model, prompt: full, size: '1792x1024', response_format: 'b64_json' } : { model, prompt: full, size: '1536x1024', quality: 'low', output_format: 'jpeg', output_compression: 80 };
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.data && j.data[0] && j.data[0].b64_json) return `data:image/${model === 'dall-e-3' ? 'png' : 'jpeg'};base64,${j.data[0].b64_json}`;
+    last = new Error((j.error && j.error.message) || `HTTP ${r.status}`);
+    // Only a model this key can't use is worth trying the next one for.
+    if (!(r.status === 404 || r.status === 403 || (j.error && /model/i.test(j.error.message || '')))) break;
+  }
+  throw last;
+}
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== 'genCover' || !sender.tab) return;
+  genCover(String(msg.prompt || '').slice(0, 300), String(msg.course || '').slice(0, 120)).then(
+    (data) => reply({ data }),
+    (e) => reply({ error: e.message }),
+  );
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'openOptions') chrome.runtime.openOptionsPage();
 });

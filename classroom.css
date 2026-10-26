@@ -318,6 +318,9 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-toc a.on { color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)) !important; font-weight: 600; background: color-mix(in srgb, var(--c) 12%, transparent); }
 .gcx-topics { display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 .gcx-topic { scroll-margin-top: 84px; }
+/* Over a picture background (BetterCampus image themes) the list needs a surface to be readable. */
+html.gcx-imgbg .gcx-topic, html.gcx-imgbg .gcx-pp-sec { background: var(--gcx-card); border-radius: 14px; padding: 16px 12px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+html.gcx-imgbg .gcx-toc { background: var(--gcx-card); border-radius: 14px; padding: 8px 8px 8px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 .gcx-topic-h {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 4px 10px; margin: 0 0 4px; cursor: pointer;
   border: 0; border-bottom: 2px solid var(--c); background: none; color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)); font: inherit; text-align: left;
@@ -394,7 +397,7 @@ html.gcx-dash .bettercampus-card-grade { z-index: 3; }
    !important}`, so the gradient needs a more specific !important rule than that to show. */
 html.gcx .ic-DashboardCard__header a.gcx-card-ov,
 html.gcx[data-gcx-shade="1"] .ic-DashboardCard__header a.gcx-card-ov {
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.66) 0%, rgba(0, 0, 0, 0.28) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important;
 }
 .gcx-card-title {
   font-size: 20px; font-weight: 700; line-height: 1.2;
@@ -637,8 +640,8 @@ html[data-gcx-nav="in"]::view-transition-new(gcx-cbar):only-child { animation: g
 @keyframes gcx-vt-fade-in { from { opacity: 0; } }
 /* Opening something from a list (an assignment from Classwork, Upcoming or a card): the page
    rises in. Same timing on both halves so their fades add up and nothing shows through. */
-html[data-gcx-nav="open"]::view-transition-old(root) { animation: gcx-vt-fade-out 0.34s cubic-bezier(.2,.7,.2,1) both; }
-html[data-gcx-nav="open"]::view-transition-new(root) { animation: gcx-vt-rise 0.34s cubic-bezier(.2,.7,.2,1) both; }
+html[data-gcx-nav="open"]::view-transition-old(root) { animation: gcx-vt-fade-out 0.34s cubic-bezier(.2,.7,.2,1) both; mix-blend-mode: plus-lighter; }
+html[data-gcx-nav="open"]::view-transition-new(root) { animation: gcx-vt-rise 0.34s cubic-bezier(.2,.7,.2,1) both; mix-blend-mode: plus-lighter; }
 @keyframes gcx-vt-rise { from { opacity: 0; transform: translateY(14px); } }
 /* Going back (Back button or Esc): the page swipes off to the right over the one it came from. */
 html[data-gcx-nav="back"]::view-transition-old(root) { animation: gcx-vt-swipe-away 0.32s cubic-bezier(.4,0,.2,1) both; z-index: 1; mix-blend-mode: normal; }
@@ -649,13 +652,11 @@ html[data-gcx-nav="back"]::view-transition-new(root) { animation: gcx-vt-under 0
    row into the assignment header (set from classroom.js / early.js). Without a match on the new
    page it swells and fades instead. */
 html[data-gcx-hero="card"] .gcx-banner { view-transition-name: gcx-hero; animation: none !important; }
-html[data-gcx-hero="card"] .gcx-banner-tx h1 { view-transition-name: gcx-htitle; }
 html[data-gcx-hero="row"] .gcx-asg-head { view-transition-name: gcx-hero; animation: none !important; }
-html[data-gcx-hero="row"] .gcx-asg-title { view-transition-name: gcx-htitle; }
-::view-transition-group(gcx-hero), ::view-transition-group(gcx-htitle) { animation-duration: 0.44s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
+::view-transition-group(gcx-hero) { animation-duration: 0.44s; animation-timing-function: cubic-bezier(.2,.8,.2,1); }
 ::view-transition-old(gcx-hero), ::view-transition-new(gcx-hero) { height: 100%; object-fit: cover; overflow: clip; }
-::view-transition-old(gcx-hero), ::view-transition-old(gcx-htitle) { animation: gcx-vt-fade-out 0.3s ease both; }
-::view-transition-new(gcx-hero), ::view-transition-new(gcx-htitle) { animation: gcx-vt-fade-in 0.34s ease both; }
+::view-transition-old(gcx-hero) { animation: gcx-vt-fade-out 0.34s ease both; mix-blend-mode: plus-lighter; }
+::view-transition-new(gcx-hero) { animation: gcx-vt-fade-in 0.34s ease both; mix-blend-mode: plus-lighter; }
 ::view-transition-old(gcx-hero):only-child { animation: gcx-vt-grow 0.4s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes gcx-vt-grow { to { opacity: 0; transform: scale(1.4); } }
 
@@ -691,9 +692,9 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 .gcx-lc-tx small { color: var(--gcx-muted); font-size: 12px; }
 
 /* ---------- darker class images behind white titles (Settings > Look) */
-html.gcx[data-gcx-shade="0"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important; }
-html.gcx[data-gcx-shade="2"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important; }
-html.gcx[data-gcx-shade="3"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)), var(--gcx-cimg, linear-gradient(transparent, transparent)) !important; }
+html.gcx[data-gcx-shade="0"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important; }
+html.gcx[data-gcx-shade="2"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important; }
+html.gcx[data-gcx-shade="3"] .ic-DashboardCard__header a.gcx-card-ov { background: linear-gradient(to top, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5) 100%), var(--gcx-wash, linear-gradient(transparent, transparent)) !important; }
 html[data-gcx-shade="0"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 85%); }
 html[data-gcx-shade="2"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.8), rgba(0, 0, 0, 0.5) 60%, rgba(0, 0, 0, 0.3)); }
 html[data-gcx-shade="3"] .gcx-banner::before { background: linear-gradient(to top, rgba(0, 0, 0, 0.88), rgba(0, 0, 0, 0.66) 60%, rgba(0, 0, 0, 0.5)); }
@@ -784,6 +785,9 @@ html.gcx::-webkit-scrollbar-button, html.gcx *::-webkit-scrollbar-button { displ
 /* ---------- course-color wash over class images (Settings > Look), under the darkening gradient.
    On cards it's the bottom layer of the overlay link's own background (the darkening rules above
    add it), so the darkening always sits on top of it. */
+/* Canvas's own color overlay (when it's on in Canvas's preferences) gives way to ours on cards with
+   a picture: it can't be dialed, and black-and-white would grey it along with the picture. */
+html.gcx-tint .ic-DashboardCard__header_image[style*="url("] .ic-DashboardCard__header_hero { opacity: 0 !important; }
 html.gcx-tint .ic-DashboardCard__header a.gcx-card-ov {
   --gcx-wash: linear-gradient(color-mix(in srgb, var(--c, transparent) var(--gcx-tint, 55%), transparent), color-mix(in srgb, var(--c, transparent) var(--gcx-tint, 55%), transparent));
 }
@@ -808,11 +812,30 @@ html.gcx-tint .gcx-banner::after {
 .gcx-banner.gcx-noimg .gcx-banner-edit { padding: 0 14px 0 10px; }
 .gcx-banner.gcx-noimg .gcx-banner-edit span { display: inline; }
 .gcx-banner-edit:hover { background: rgba(0, 0, 0, 0.55); }
-.gcx-covers { width: 320px; padding: 12px; box-sizing: border-box; }
-.gcx-covers-h { font-weight: 600; margin: 0 2px 10px; }
-.gcx-covers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.gcx-covers-grid button { display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; background: none; color: var(--gcx-muted); cursor: pointer; font: inherit; }
-.gcx-covers-grid span { display: block; height: 40px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); transition: transform 0.12s ease; }
+.gcx-covers { width: 392px; padding: 12px; box-sizing: border-box; }
+.gcx-covers-h { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin: 0 2px 10px; }
+.gcx-covers-motion { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; font-weight: 600; color: var(--gcx-muted); cursor: pointer; }
+.gcx-covers-motion input { margin: 0; accent-color: var(--gcx-link); }
+.gcx-covers-sub { font-size: 12px; font-weight: 600; color: var(--gcx-muted); margin: 12px 2px 6px; }
+.gcx-covers-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.gcx-covers-grid button { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; padding: 0; border: 0; background: none; color: var(--gcx-muted); cursor: pointer; font: inherit; }
+.gcx-covers-grid span { display: block; width: 100%; height: 40px; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); transition: transform 0.12s ease; }
+.gcx-covers-recent { grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.gcx-covers-recent span { height: 30px; }
+.gcx-covers-ai { display: flex; gap: 6px; margin-top: 12px; }
+.gcx-covers-ai[hidden] { display: none; }
+.gcx-covers-ai input { flex: 1; min-width: 0; height: 34px; margin: 0; padding: 0 12px; border: 1px solid var(--gcx-border); border-radius: 17px; background: var(--gcx-bg2); color: var(--gcx-text); font: inherit; font-size: 13px; box-sizing: border-box; }
+.gcx-covers-ai button { height: 34px; padding: 0 14px; border: 0; border-radius: 17px; background: var(--gcx-link); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.gcx-covers-ai button:disabled { opacity: 0.7; cursor: progress; }
+.gcx-covers-ai.busy input { background: linear-gradient(90deg, var(--gcx-bg2), color-mix(in srgb, var(--gcx-link) 14%, var(--gcx-bg2)), var(--gcx-bg2)) 0 0 / 200% 100%; animation: gcx-shimmer 1.2s linear infinite; }
+.gcx-covers-ai-mark { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb, var(--gcx-link) 22%, transparent); color: var(--gcx-link); font-size: 9px; font-weight: 800; }
+/* covers that move (Motion in the picker): grids scroll, aurora/ocean drift */
+.gcx-banner-img::after { pointer-events: none; }
+@keyframes gcx-cv-grid { to { background-position: 28px 28px, 28px 28px, 0 0; } }
+@keyframes gcx-cv-dots { to { background-position: 22px 22px, 0 0; } }
+@keyframes gcx-cv-drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+html.gcx-still .gcx-banner-img::after { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .gcx-banner-img::after { animation: none !important; } }
 .gcx-covers-grid button:hover span { transform: scale(1.05); }
 .gcx-covers-grid button.on span { box-shadow: 0 0 0 2px var(--gcx-card), 0 0 0 4px var(--gcx-link); }
 .gcx-covers-grid small { font-size: 11px; text-align: center; }
