@@ -870,6 +870,8 @@ html.gcx-still .gcx-banner-img::after { animation: none !important; }
 .gcx-covers-acts button:hover { background: var(--gcx-bg2); }
 .gcx-covers-acts button[data-act="upload"] { color: var(--gcx-link); }
 .gcx-banner-img { position: absolute; inset: 0; z-index: -1; background: center / cover no-repeat; filter: var(--gcx-img-filter, none); }
+/* a class's own cover on its dashboard card; under the overlay link (wash and darkening) */
+.gcx-card-cover { display: none; position: absolute; inset: 0; z-index: 1; pointer-events: none; filter: var(--gcx-img-filter, none); }
 html.gcx-dash .ic-DashboardCard__header_image { filter: var(--gcx-img-filter, none); }
 
 /* ---------- color themes (Settings > Look) reach past the rail: surfaces, borders and, by

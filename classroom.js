@@ -861,17 +861,14 @@
         // On the banner the cover is its own layer (::after of the picture layer), so it can move
         // and the black-and-white / dim filter still applies to it.
         const motion = coverMotion(v);
+        // On cards it goes on a layer of our own (.gcx-card-cover): BetterCampus's custom cards hide
+        // Canvas's image layer and draw pictures elsewhere, which left covered cards blank.
         return (
-          `${card} .ic-DashboardCard__header_image { background: ${layers} !important; }\n` +
-          `${card} .ic-DashboardCard__header_hero { opacity: 0 !important; }\n` +
+          `${card} .gcx-card-cover { display: block; background: ${layers}; }\n` +
           `html[data-gcx-course="${id}"] .gcx-banner-img::after { content: ''; position: absolute; inset: 0; background: ${layers};${
             motion === 'drift' ? ' background-size: 220% 220%;' : ''
           } }\n` +
-          (motion ? `html[data-gcx-course="${id}"] .gcx-banner-img::after { animation: gcx-cv-${motion} ${motion === 'drift' ? '16s ease-in-out infinite alternate' : '5s linear infinite'}; }
-` : '') +
-          // The built-in covers have their own colors; the class-color wash would only muddy them.
-          (v.preset ? `html[data-gcx-course="${id}"] .gcx-banner::after { opacity: 0; }
-${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }` : '')
+          (motion ? `html[data-gcx-course="${id}"] .gcx-banner-img::after { animation: gcx-cv-${motion} ${motion === 'drift' ? '16s ease-in-out infinite alternate' : '5s linear infinite'}; }` : '')
         );
       })
       .join('\n');
@@ -2779,6 +2776,7 @@ ${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }
       const header = card.querySelector('.ic-DashboardCard__header');
       if (!id || !header) continue;
       const fallbackTitle = card.querySelector('.ic-DashboardCard__header-title')?.textContent.trim() || '';
+      header.prepend(el('<div class="gcx-card-cover" aria-hidden="true"></div>'));
       header.append(
         el(`<a class="gcx-card-ov" href="/courses/${id}"><div class="gcx-card-title">${esc(prettyName({ name: fallbackTitle }))}</div><div class="gcx-card-teacher"></div></a>`),
       );
