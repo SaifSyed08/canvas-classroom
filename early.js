@@ -7,6 +7,21 @@
   const q = new URLSearchParams(location.search);
 
   html.classList.add('gcx');
+  // The BetterCampus theme's colors from the last page (saved by classroom.js), so this page's
+  // first frame is already dark or themed. BetterCampus's own styles take over when they load.
+  try {
+    const v = JSON.parse(localStorage.getItem('gcx:themevars') || 'null');
+    if (v && v['--bcbackground-0']) {
+      const decl = Object.entries(v)
+        .filter(([k, x]) => /^--bc[a-z0-9-]+$/.test(k) && typeof x === 'string' && !/[{}<;]/.test(x))
+        .map(([k, x]) => `${k}:${x}`)
+        .join(';');
+      const st = document.createElement('style');
+      st.id = 'gcx-theme-early';
+      st.textContent = `:root{${decl}}body{background:var(--bcbackground-image,var(--bcbackground-0)) center/cover fixed;color:var(--bctext-0)}`;
+      html.append(st);
+    }
+  } catch {}
   try {
     if (localStorage.getItem('gcx:pinned') === 'true') html.classList.add('gcx-pinned');
   } catch {}
@@ -68,6 +83,70 @@
   vt.id = 'gcx-vt';
   vt.textContent = '@media (prefers-reduced-motion: no-preference) { @view-transition { navigation: auto; } }';
   if (!still) html.append(vt);
+  // Chrome snapshots this page for the page transition at pagereveal, before classroom.js has
+  // run. Stand-ins for what stays put across pages (the rail, the course bar) and for what the
+  // clicked thing grows into (the class banner, the assignment header) go in now, so the
+  // transition has something to hold still or morph into. classroom.js and assignment.js take over
+  // these same elements rather than replacing them (replacing one mid-transition would end it).
+  const saved = (k) => {
+    try {
+      return JSON.parse(sessionStorage.getItem(k) || 'null');
+    } catch {
+      return null;
+    }
+  };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  function standIns() {
+    if (!document.getElementById('gcx-rail')) {
+      const r = saved('gcx:rail');
+      if (r && r.html) {
+        const n = document.createElement('nav');
+        n.id = 'gcx-rail';
+        n.setAttribute('aria-label', 'Main');
+        n.dataset.early = '';
+        n.innerHTML = r.html;
+        n.querySelectorAll('.on').forEach((x) => x.classList.remove('on'));
+        document.body.append(n);
+      }
+    }
+    const wrapper = document.getElementById('wrapper');
+    if (course && wrapper && !document.getElementById('gcx-cbar')) {
+      const b = saved('gcx:cbar');
+      if (b && String(b.course) === course[1] && b.html) {
+        const n = document.createElement('div');
+        n.id = 'gcx-cbar';
+        n.dataset.early = '';
+        if (b.c) n.style.setProperty('--c', b.c);
+        n.innerHTML = b.html;
+        wrapper.prepend(n);
+      }
+    }
+    const content = document.getElementById('content');
+    if (!content || !course) return;
+    if (html.dataset.gcxHero === 'card' && view === 'home' && !document.getElementById('gcx-view')) {
+      let list = [];
+      try {
+        list = JSON.parse(localStorage.getItem('gcx:courses') || '[]') || [];
+      } catch {}
+      const c = list.find((x) => String(x.id) === course[1]);
+      if (!c) return;
+      const v = document.createElement('div');
+      v.id = 'gcx-view';
+      v.dataset.early = '';
+      if (c.color) v.style.setProperty('--c', c.color);
+      v.innerHTML = `<div class="gcx-banner" data-early><div class="gcx-banner-img"></div><div class="gcx-banner-tx"><h1>${esc(c.name)}</h1><div>${esc([c.code, c.term].filter(Boolean).join(' · '))}</div></div></div>`;
+      if (c.image) v.querySelector('.gcx-banner-img').style.backgroundImage = `url("${String(c.image).replace(/"/g, '%22')}")`;
+      content.prepend(v);
+    } else if (html.dataset.gcxHero === 'row' && /^\/assignments\/\d+\/?$/.test(course[2] || '') && !document.getElementById('gcx-asg')) {
+      const t = nav && nav.title;
+      if (!t) return;
+      const sec = document.createElement('section');
+      sec.id = 'gcx-asg';
+      sec.dataset.early = '';
+      sec.innerHTML = `<div class="gcx-asg-main"><div class="gcx-asg-head"><span class="gcx-asg-ic"></span><div class="gcx-asg-titles"><h1 class="gcx-asg-title">${esc(t)}</h1><div class="gcx-asg-by"></div></div></div></div>`;
+      content.prepend(sec);
+    }
+  }
   addEventListener('pagereveal', (e) => {
     // A page coming back from the back/forward cache doesn't run this script again; the page he
     // left saved which way to go.
@@ -79,6 +158,11 @@
       delete html.dataset.gcxNav;
       delete html.dataset.gcxHero;
     };
+    if (e.viewTransition && document.body) {
+      try {
+        standIns();
+      } catch {}
+    }
     if (e.viewTransition) e.viewTransition.finished.finally(clear);
     else clear();
   });

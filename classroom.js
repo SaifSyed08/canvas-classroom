@@ -554,8 +554,9 @@
   }
 
   // ---------------------------------------------------------------- rail
-  const rail = el('<nav id="gcx-rail" aria-label="Main"></nav>');
-  document.body.append(rail);
+  // early.js may have put last page's rail in already (for the page transition); take it over.
+  const rail = document.getElementById('gcx-rail') || document.body.appendChild(el('<nav id="gcx-rail" aria-label="Main"></nav>'));
+  delete rail.dataset.early;
   let me = store.get('me', null);
 
   function railActive() {
@@ -622,6 +623,19 @@
   };
   renderRail(COURSES);
   coursesReady.then((c) => c !== undefined && queueRail());
+  // What the next page's stand-ins are made from (see early.js standIns).
+  addEventListener('pagehide', () => {
+    try {
+      sessionStorage.setItem('gcx:rail', JSON.stringify({ html: rail.innerHTML }));
+      const cb = document.getElementById('gcx-cbar');
+      if (cb && COURSE_ID) {
+        const copy = cb.cloneNode(true);
+        copy.querySelector('.gcx-more')?.remove();
+        copy.querySelectorAll('.gcx-ripple').forEach((n) => n.remove());
+        sessionStorage.setItem('gcx:cbar', JSON.stringify({ course: COURSE_ID, c: cb.style.getPropertyValue('--c'), html: copy.innerHTML }));
+      }
+    } catch {}
+  });
   // Name/avatar change rarely (refresh daily); the unread count is kept for two minutes.
   if (!me || Date.now() - store.get('meAt', 0) > 864e5)
     api('/users/self')
@@ -667,34 +681,146 @@
     }
   });
 
-  // ----- class images he picks himself (a built-in cover or his own upload). Canvas only lets
-  // teachers change a class's image, so these live in extension storage and are drawn over
-  // Canvas's own on the class banner and the dashboard card.
+  // ----- class images he picks himself (an illustrated or plain cover, his own upload, or one
+  // generated from a prompt). Canvas only lets teachers change a class's image, so these live in
+  // extension storage and are drawn over Canvas's own on the class banner and the dashboard card.
+  const svgLayer = (s) => `url("data:image/svg+xml,${encodeURIComponent(s)}") center / cover no-repeat`;
+  // Small seeded random, so the drawn covers come out the same every time.
+  const seeded = (seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const SVG_HEAD = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 300' preserveAspectRatio='xMidYMid slice'>";
+  function libraryArt() {
+    const rnd = seeded(7);
+    const colors = ['#8c2f39', '#2f5d62', '#c9a227', '#3d405b', '#7a4419', '#5b8e7d', '#a44a3f', '#264653', '#b08968', '#6d597a'];
+    let books = '';
+    for (const base of [92, 192, 292]) {
+      for (let x = 4; x < 800; ) {
+        const w = 12 + Math.round(rnd() * 16);
+        const h = 58 + Math.round(rnd() * 26);
+        const c = colors[Math.floor(rnd() * colors.length)];
+        const lean = rnd() < 0.06 ? ` transform='rotate(-8 ${x} ${base})'` : '';
+        books += `<g${lean}><rect x='${x}' y='${base - h}' width='${w}' height='${h}' rx='2' fill='${c}'/><rect x='${x}' y='${base - h + 10}' width='${w}' height='3' fill='#e9c46a' opacity='.55'/><rect x='${x}' y='${base - 16}' width='${w}' height='2' fill='#e9c46a' opacity='.4'/></g>`;
+        x += w + (rnd() < 0.08 ? 10 : 2);
+      }
+    }
+    return `${SVG_HEAD}<defs><linearGradient id='w' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#3b2314'/><stop offset='1' stop-color='#1e110a'/></linearGradient><radialGradient id='l' cx='.75' cy='.05' r='.9'><stop offset='0' stop-color='#ffcf87' stop-opacity='.38'/><stop offset='1' stop-color='#ffcf87' stop-opacity='0'/></radialGradient></defs><rect width='800' height='300' fill='url(#w)'/>${books}<rect y='92' width='800' height='9' fill='#5a341c'/><rect y='192' width='800' height='9' fill='#5a341c'/><rect y='292' width='800' height='9' fill='#5a341c'/><rect width='800' height='300' fill='url(#l)'/></svg>`;
+  }
+  function mathArt() {
+    const chalk = "fill='#f1f5f0' font-family='Georgia,serif' font-style='italic'";
+    let grid = '';
+    for (let x = 0; x <= 800; x += 40) grid += `<path d='M${x} 0V300' stroke='#ffffff' stroke-opacity='.05'/>`;
+    for (let y = 0; y <= 300; y += 40) grid += `<path d='M0 ${y}H800' stroke='#ffffff' stroke-opacity='.05'/>`;
+    let wave = 'M430 230';
+    for (let x = 430; x <= 780; x += 10) wave += ` L${x} ${(230 - Math.sin((x - 430) / 28) * 26).toFixed(1)}`;
+    return `${SVG_HEAD}<defs><radialGradient id='b' cx='.4' cy='.3' r='1'><stop offset='0' stop-color='#2f5e4e'/><stop offset='1' stop-color='#15302a'/></radialGradient></defs><rect width='800' height='300' fill='url(#b)'/>${grid}
+      <g ${chalk} opacity='.85'><text x='60' y='105' font-size='34'>e<tspan dy='-14' font-size='20'>iπ</tspan><tspan dy='14'> + 1 = 0</tspan></text>
+      <text x='70' y='175' font-size='28'>∑ 1/n<tspan dy='-12' font-size='17'>2</tspan><tspan dy='12'> = π</tspan><tspan dy='-12' font-size='17'>2</tspan><tspan dy='12'>/6</tspan></text>
+      <text x='500' y='100' font-size='30'>∫ e<tspan dy='-13' font-size='18'>−x²</tspan><tspan dy='13'> dx = √π</tspan></text>
+      <text x='120' y='230' font-size='26'>a² + b² = c²</text><text x='330' y='150' font-size='22' opacity='.7'>f′(x) = lim (f(x+h) − f(x)) / h</text></g>
+      <path d='${wave}' fill='none' stroke='#f1f5f0' stroke-width='2.5' opacity='.7'/><path d='M300 270 L380 170 L420 270 Z' fill='none' stroke='#f1f5f0' stroke-width='2' opacity='.55'/><path d='M640 200 Q700 80 760 200' fill='none' stroke='#ffd166' stroke-width='2.5' opacity='.75'/><circle cx='700' cy='140' r='3' fill='#ffd166'/></svg>`;
+  }
+  function seminarArt() {
+    const rnd = seeded(11);
+    const tones = ['#f4a261', '#e76f51', '#2a9d8f', '#e9c46a', '#8ab17d', '#6d597a', '#457b9d', '#d4a373'];
+    let seats = '';
+    for (let i = 0; i < 14; i++) {
+      const t = (i / 14) * Math.PI * 2;
+      const x = 400 + Math.cos(t) * 300;
+      const y = 150 + Math.sin(t) * 105;
+      seats += `<circle cx='${x.toFixed(0)}' cy='${y.toFixed(0)}' r='${17 + Math.round(rnd() * 4)}' fill='${tones[i % tones.length]}'/><circle cx='${(400 + Math.cos(t) * 268).toFixed(0)}' cy='${(150 + Math.sin(t) * 88).toFixed(0)}' r='6' fill='#ffffff' opacity='.8'/>`;
+    }
+    let papers = '';
+    for (let i = 0; i < 9; i++) {
+      const x = 200 + rnd() * 380;
+      const y = 105 + rnd() * 70;
+      papers += `<rect x='${x.toFixed(0)}' y='${y.toFixed(0)}' width='34' height='24' rx='2' fill='#fffdf7' opacity='.9' transform='rotate(${(rnd() * 40 - 20).toFixed(0)} ${x.toFixed(0)} ${y.toFixed(0)})'/>`;
+    }
+    return `${SVG_HEAD}<defs><linearGradient id='f' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#3a2e2a'/><stop offset='1' stop-color='#1f1817'/></linearGradient></defs><rect width='800' height='300' fill='url(#f)'/><ellipse cx='400' cy='150' rx='250' ry='75' fill='#8b5e3c'/><ellipse cx='400' cy='146' rx='244' ry='70' fill='#a47148'/>${papers}${seats}</svg>`;
+  }
+  function geographyArt() {
+    let lines = '';
+    for (let x = 0; x <= 800; x += 100) lines += `<path d='M${x} 0V300' stroke='#e8f1ec' stroke-opacity='.08'/>`;
+    for (let y = 0; y <= 300; y += 75) lines += `<path d='M0 ${y}H800' stroke='#e8f1ec' stroke-opacity='.08'/>`;
+    const hill = (cx, cy, rings, seed) => {
+      let out = '';
+      for (let k = 1; k <= rings; k++) {
+        const r = k * 16;
+        let d = '';
+        for (let a = 0; a <= 64; a++) {
+          const t = (a / 64) * Math.PI * 2;
+          const rr = r * (1 + 0.18 * Math.sin(3 * t + seed) + 0.1 * Math.sin(5 * t + seed * 2));
+          d += `${a ? 'L' : 'M'}${(cx + Math.cos(t) * rr * 1.5).toFixed(1)} ${(cy + Math.sin(t) * rr).toFixed(1)}`;
+        }
+        out += `<path d='${d}Z' fill='none' stroke='#a8dcc9' stroke-width='${k % 4 === 0 ? 1.8 : 1}' stroke-opacity='${k % 4 === 0 ? 0.6 : 0.35}'/>`;
+      }
+      return out;
+    };
+    return `${SVG_HEAD}<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#123c3a'/><stop offset='1' stop-color='#1d5a4f'/></linearGradient></defs><rect width='800' height='300' fill='url(#g)'/>${lines}${hill(210, 140, 9, 1)}${hill(590, 190, 7, 4)}${hill(470, 40, 4, 2)}<circle cx='590' cy='190' r='4' fill='#ffd166'/><path d='M586 186 l8 8 M594 186 l-8 8' stroke='#ffd166' stroke-width='0'/><text x='600' y='182' font-family='system-ui,sans-serif' font-size='12' fill='#ffd166' opacity='.85'>N 30.28°</text></svg>`;
+  }
+  function econArt() {
+    const rnd = seeded(23);
+    let grid = '';
+    for (let y = 40; y < 300; y += 50) grid += `<path d='M0 ${y}H800' stroke='#9fb3ff' stroke-opacity='.1'/>`;
+    let bars = '';
+    let line = '';
+    let area = 'M0 300';
+    let v = 210;
+    const pts = [];
+    for (let i = 0; i <= 40; i++) {
+      v = Math.max(50, Math.min(260, v - 3 + (rnd() - 0.42) * 22));
+      pts.push([i * 20, v]);
+    }
+    pts.forEach(([x, y], i) => {
+      line += `${i ? 'L' : 'M'}${x} ${y.toFixed(1)}`;
+      area += ` L${x} ${y.toFixed(1)}`;
+      if (i % 2 === 0) bars += `<rect x='${x - 6}' y='${(270 - rnd() * 40).toFixed(0)}' width='12' height='40' fill='#9fb3ff' opacity='.18'/>`;
+    });
+    area += ' L800 300 Z';
+    let candles = '';
+    for (let i = 0; i < 16; i++) {
+      const x = 470 + i * 20;
+      const o = 80 + rnd() * 60;
+      const c = o + (rnd() - 0.55) * 40;
+      const up = c < o;
+      candles += `<path d='M${x} ${(Math.min(o, c) - 10).toFixed(0)}V${(Math.max(o, c) + 10).toFixed(0)}' stroke='${up ? '#52d1a2' : '#ff7a85'}'/><rect x='${x - 5}' y='${Math.min(o, c).toFixed(0)}' width='10' height='${Math.max(3, Math.abs(o - c)).toFixed(0)}' fill='${up ? '#52d1a2' : '#ff7a85'}'/>`;
+    }
+    return `${SVG_HEAD}<defs><linearGradient id='n' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#0b1d3a'/><stop offset='1' stop-color='#13284f'/></linearGradient><linearGradient id='a' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#4f7cff' stop-opacity='.45'/><stop offset='1' stop-color='#4f7cff' stop-opacity='0'/></linearGradient></defs><rect width='800' height='300' fill='url(#n)'/>${grid}${bars}<path d='${area}' fill='url(#a)'/><path d='${line}' fill='none' stroke='#8fb0ff' stroke-width='2.5'/><g opacity='.8'>${candles}</g><text x='40' y='84' font-family='system-ui,sans-serif' font-size='14' font-weight='700' fill='#8fb0ff' opacity='.7'>GDP · CPI · r*</text></svg>`;
+  }
+  // [id, label, layers, motion]. Motion (when on) is a keyframe name in classroom.css; drift ones
+  // get room to move.
   const COVERS = [
-    ['aurora', 'Aurora', 'radial-gradient(at 20% 30%, #7f5af0 0, transparent 55%), radial-gradient(at 85% 15%, #2cb67d 0, transparent 50%), radial-gradient(at 60% 95%, #00b4d8 0, transparent 55%), linear-gradient(#16161a, #16161a)'],
+    ['library', 'Library', svgLayer(libraryArt())],
+    ['math', 'Math', svgLayer(mathArt())],
+    ['seminar', 'Seminar', svgLayer(seminarArt())],
+    ['geography', 'Geography', svgLayer(geographyArt())],
+    ['econ', 'Econ', svgLayer(econArt())],
+    ['aurora', 'Aurora', 'radial-gradient(at 20% 30%, #7f5af0 0, transparent 55%), radial-gradient(at 85% 15%, #2cb67d 0, transparent 50%), radial-gradient(at 60% 95%, #00b4d8 0, transparent 55%), linear-gradient(#16161a, #16161a)', 'drift'],
+    ['ocean', 'Ocean', 'radial-gradient(at 70% 120%, #48cae4 0, transparent 60%), linear-gradient(180deg, #03045e, #0077b6)', 'drift'],
+    ['blueprint', 'Blueprint', 'linear-gradient(rgba(255,255,255,.12) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(135deg, #1e3a8a, #0ea5e9)', 'grid'],
+    ['dots', 'Dots', 'radial-gradient(rgba(255,255,255,.28) 2px, transparent 2.5px) 0 0 / 22px 22px, linear-gradient(135deg, #9333ea, #ec4899)', 'dots'],
     ['sunset', 'Sunset', 'linear-gradient(160deg, #ff9a8b 0%, #ff6a88 45%, #6a3093 100%)'],
-    ['ocean', 'Ocean', 'radial-gradient(at 70% 120%, #48cae4 0, transparent 60%), linear-gradient(180deg, #03045e, #0077b6)'],
     ['forest', 'Forest', 'radial-gradient(at 30% 110%, #95d5b2 0, transparent 55%), linear-gradient(200deg, #081c15, #2d6a4f)'],
     ['peach', 'Peach', 'linear-gradient(120deg, #f6d365 0%, #fda085 100%)'],
-    ['blueprint', 'Blueprint', 'linear-gradient(rgba(255,255,255,.12) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(90deg, rgba(255,255,255,.12) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(135deg, #1e3a8a, #0ea5e9)'],
-    ['dots', 'Dots', 'radial-gradient(rgba(255,255,255,.28) 2px, transparent 2.5px) 0 0 / 22px 22px, linear-gradient(135deg, #9333ea, #ec4899)'],
     ['dusk', 'Dusk', 'linear-gradient(180deg, #0f2027, #203a43 50%, #2c5364)'],
   ];
   const COVERS_KEY = 'gcx-covers';
+  const RECENT_KEY = 'gcx-cover-recent';
   const coverKey = (id) => `${PAGE_USER || 'anon'}:${id}`;
   let covers = {};
-  // Only covers we know how to draw: a preset id or an uploaded JPEG/PNG/WebP.
+  let recent = []; // his last few uploaded or generated pictures, to reuse on other classes
+  const isPicture = (d) => typeof d === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(d);
+  // Only covers we know how to draw: a preset id or an uploaded/generated JPEG/PNG/WebP.
   const coverLayers = (v) => {
     if (!v) return '';
     if (v.preset) return (COVERS.find((x) => x[0] === v.preset) || [])[2] || '';
-    if (typeof v.data === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v.data)) return `url("${v.data}") center / cover no-repeat`;
+    if (isPicture(v.data)) return `url("${v.data}") center / cover no-repeat`;
     return '';
   };
+  const coverMotion = (v) => (v && v.preset && prefs().coverMotion !== false && (COVERS.find((x) => x[0] === v.preset) || [])[3]) || '';
   const coverStyle = document.createElement('style');
   coverStyle.id = 'gcx-covers';
   (document.head || html).append(coverStyle);
   function markCoverless() {
-    for (const b of document.querySelectorAll('.gcx-banner')) b.classList.toggle('gcx-noimg', !b.dataset.canvasImg && !coverLayers(covers[coverKey(COURSE_ID)]));
+    for (const b of document.querySelectorAll('.gcx-banner[data-canvas-img]')) b.classList.toggle('gcx-noimg', !b.dataset.canvasImg && !coverLayers(covers[coverKey(COURSE_ID)]));
   }
   function paintCovers() {
     const mine = `${PAGE_USER || 'anon'}:`;
@@ -703,7 +829,23 @@
       .map(([k, v]) => {
         const id = k.slice(mine.length);
         const layers = coverLayers(v);
-        return layers ? `a.gcx-card-ov[href="/courses/${id}"] { --gcx-cimg: ${layers}; }\nhtml[data-gcx-course="${id}"] .gcx-banner-img { background: ${layers} !important; }` : '';
+        if (!layers) return '';
+        const card = `.ic-DashboardCard:has(a.gcx-card-ov[href="/courses/${id}"])`;
+        // On the banner the cover is its own layer (::after of the picture layer), so it can move
+        // and the black-and-white / dim filter still applies to it.
+        const motion = coverMotion(v);
+        return (
+          `${card} .ic-DashboardCard__header_image { background: ${layers} !important; }\n` +
+          `${card} .ic-DashboardCard__header_hero { opacity: 0 !important; }\n` +
+          `html[data-gcx-course="${id}"] .gcx-banner-img::after { content: ''; position: absolute; inset: 0; background: ${layers};${
+            motion === 'drift' ? ' background-size: 220% 220%;' : ''
+          } }\n` +
+          (motion ? `html[data-gcx-course="${id}"] .gcx-banner-img::after { animation: gcx-cv-${motion} ${motion === 'drift' ? '16s ease-in-out infinite alternate' : '5s linear infinite'}; }
+` : '') +
+          // The built-in covers have their own colors; the class-color wash would only muddy them.
+          (v.preset ? `html[data-gcx-course="${id}"] .gcx-banner::after { opacity: 0; }
+${card} a.gcx-card-ov { --gcx-wash: linear-gradient(transparent, transparent); }` : '')
+        );
       })
       .join('\n');
     markCoverless();
@@ -716,18 +858,28 @@
     paintCovers();
     chrome.storage.local.set({ [COVERS_KEY]: next }).catch(() => toast("Couldn't save that image"));
   };
+  const remember = (data) => {
+    recent = [data, ...recent.filter((d) => d !== data)].slice(0, 8);
+    chrome.storage.local.set({ [RECENT_KEY + ':' + (PAGE_USER || 'anon')]: recent }).catch(() => {});
+  };
   try {
-    chrome.storage.local.get(COVERS_KEY).then((r) => {
+    const rk = RECENT_KEY + ':' + (PAGE_USER || 'anon');
+    chrome.storage.local.get([COVERS_KEY, rk]).then((r) => {
       covers = r[COVERS_KEY] || {};
+      recent = (r[rk] || []).filter(isPicture);
       paintCovers();
     }, () => {});
     chrome.storage.onChanged.addListener((ch, area) => {
-      if (area !== 'local' || !ch[COVERS_KEY]) return;
-      covers = ch[COVERS_KEY].newValue || {};
-      paintCovers();
+      if (area !== 'local') return;
+      if (ch[COVERS_KEY]) {
+        covers = ch[COVERS_KEY].newValue || {};
+        paintCovers();
+      }
+      if (ch[rk]) recent = (ch[rk].newValue || []).filter(isPicture);
     });
   } catch {}
-  // His own picture, center-cropped to the banner's shape and squeezed to a JPEG.
+  addEventListener('gcx:prefs', paintCovers);
+  // A picture (file or blob), center-cropped to the banner's shape and squeezed to a JPEG.
   async function shrinkImage(file) {
     const bmp = await createImageBitmap(file);
     const W = 1600;
@@ -747,32 +899,63 @@
     if (closeCovers) return closeCovers();
     const cur = covers[coverKey(id)] || {};
     const banner = btn.closest('.gcx-banner');
+    const course = (COURSES || []).find((c) => c.id === id);
     const pop = el(`<div class="gcx-covers gcx-pop-panel" role="dialog" aria-label="Class image">
-      <div class="gcx-covers-h">Class image</div>
+      <div class="gcx-covers-h"><span>Class image</span>
+        <label class="gcx-covers-motion" title="Grid and Dots scroll, Aurora and Ocean drift"><input type="checkbox" ${prefs().coverMotion !== false ? 'checked' : ''}>Motion</label></div>
       <div class="gcx-covers-grid">${COVERS.map(
-        ([k, label]) => `<button type="button" data-cover="${k}" title="${label}" aria-label="${label}" class="${cur.preset === k ? 'on' : ''}"><span></span><small>${label}</small></button>`,
+        ([k, label, , motion]) =>
+          `<button type="button" data-cover="${k}" title="${label}${motion ? ' (moves)' : ''}" aria-label="${label}" class="${cur.preset === k ? 'on' : ''}"><span></span><small>${label}</small></button>`,
       ).join('')}</div>
+      ${
+        recent.length
+          ? `<div class="gcx-covers-sub">Recent</div><div class="gcx-covers-grid gcx-covers-recent">${recent
+              .map((_, i) => `<button type="button" data-recent="${i}" aria-label="Recent picture ${i + 1}"><span></span></button>`)
+              .join('')}</div>`
+          : ''
+      }
+      <form class="gcx-covers-ai" hidden><input type="text" maxlength="300" placeholder="Describe it, like “watercolor cells under a microscope”" aria-label="Describe the picture"><button type="submit">Make it</button></form>
       <div class="gcx-covers-acts">
-        <button type="button" data-act="upload">${svg('upload', 18)}Upload your own</button>
-        ${cur.preset || cur.data ? `<button type="button" data-act="reset">${banner && banner.dataset.canvasImg ? "Use Canvas's image" : 'Remove'}</button>` : ''}
+        <button type="button" data-act="upload">${svg('upload', 18)}Upload</button>
+        <button type="button" data-act="ai"><span class="gcx-covers-ai-mark">AI</span>Generate</button>
+        ${cur.preset || cur.data ? `<button type="button" data-act="reset">${banner && banner.dataset.canvasImg ? "Canvas's image" : 'Remove'}</button>` : ''}
       </div>
       <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
     </div>`);
     pop.querySelectorAll('[data-cover] span').forEach((n, i) => (n.style.background = COVERS[i][2]));
+    pop.querySelectorAll('[data-recent] span').forEach((n, i) => (n.style.background = `url("${recent[i]}") center / cover`));
     document.body.append(pop);
-    const r = btn.getBoundingClientRect();
-    pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 12)) + 'px';
-    pop.style.top = Math.min(r.bottom + 8, window.innerHeight - pop.offsetHeight - 12) + 'px';
+    const place = () => {
+      const r = btn.getBoundingClientRect();
+      pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 12)) + 'px';
+      pop.style.top = Math.max(12, Math.min(r.bottom + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
+    };
+    place();
     pop.style.transformOrigin = 'top right';
     const input = pop.querySelector('input[type=file]');
+    const form = pop.querySelector('.gcx-covers-ai');
+    const usePicture = (data) => {
+      saveCover(id, { data });
+      remember(data);
+      close();
+    };
+    pop.querySelector('.gcx-covers-motion input').addEventListener('change', (e) => {
+      store.set('prefs', { ...prefs(), coverMotion: e.target.checked });
+      window.dispatchEvent(new CustomEvent('gcx:prefs'));
+    });
     pop.addEventListener('click', (e) => {
       const b = e.target.closest('button');
-      if (!b) return;
+      if (!b || b.type === 'submit') return;
       if (b.dataset.cover) {
         saveCover(id, { preset: b.dataset.cover });
         pop.querySelectorAll('[data-cover]').forEach((x) => x.classList.toggle('on', x === b));
-      } else if (b.dataset.act === 'upload') input.click();
-      else if (b.dataset.act === 'reset') {
+      } else if (b.dataset.recent) usePicture(recent[+b.dataset.recent]);
+      else if (b.dataset.act === 'upload') input.click();
+      else if (b.dataset.act === 'ai') {
+        form.hidden = !form.hidden;
+        place();
+        if (!form.hidden) form.querySelector('input').focus();
+      } else if (b.dataset.act === 'reset') {
         saveCover(id, null);
         close();
       }
@@ -781,10 +964,32 @@
       const file = input.files && input.files[0];
       if (!file) return;
       try {
-        saveCover(id, { data: await shrinkImage(file) });
-        close();
+        usePicture(await shrinkImage(file));
       } catch {
         toast("Couldn't read that image");
+      }
+    });
+    // A picture from his OpenAI key (background.js), cropped like an upload.
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = form.querySelector('input').value.trim();
+      const go = form.querySelector('button');
+      if (!text || go.disabled) return;
+      go.disabled = true;
+      go.textContent = 'Making…';
+      form.classList.add('busy');
+      try {
+        const r = await chrome.runtime.sendMessage({ type: 'genCover', prompt: text, course: course ? prettyName(course) : '' });
+        if (!r || !r.data) throw new Error((r && r.error) || 'No picture came back');
+        const blob = await (await fetch(r.data)).blob();
+        usePicture(await shrinkImage(blob));
+      } catch (err) {
+        toast(`Couldn't make that picture: ${err.message || err}`);
+        if (pop.isConnected) {
+          go.disabled = false;
+          go.textContent = 'Make it';
+          form.classList.remove('busy');
+        }
       }
     });
     const close = () => {
@@ -1014,7 +1219,7 @@
           ? 'classwork'
           : '';
 
-    const bar = el(`<div id="gcx-cbar">
+    let bar = el(`<div id="gcx-cbar">
       <a class="gcx-cbar-title" href="${base}"><span class="gcx-cbar-name"><span class="gcx-skel gcx-skel-name"></span></span><span class="gcx-cbar-sub"><span class="gcx-skel gcx-skel-sub"></span></span></a>
       <nav class="gcx-tabs" aria-label="Course">
         <a class="gcx-tab${active === 'home' ? ' on' : ''}" href="${base}">Home</a>
@@ -1032,7 +1237,16 @@
         </div>
       </div>
     </div>`);
-    document.getElementById('wrapper').prepend(bar);
+    // early.js may have put a stand-in in for the page transition; take that element over (keeping
+    // its title, which the transition is animating) instead of adding a second bar.
+    const early = document.getElementById('gcx-cbar');
+    if (early) {
+      const keepTitle = early.querySelector('.gcx-cbar-title');
+      early.replaceChildren(...bar.childNodes);
+      if (keepTitle) early.querySelector('.gcx-cbar-title').replaceWith(keepTitle);
+      delete early.dataset.early;
+      bar = early;
+    } else document.getElementById('wrapper').prepend(bar);
     // Same course as the last page: paint the title from cache now so it doesn't blink during
     // the page transition, and slide the tab underline over from the tab he came from.
     // Until the name is known the title shows shimmer placeholders; the real text fades in.
@@ -1147,6 +1361,11 @@
   function mountView() {
     const content = document.getElementById('content');
     if (!content) return null;
+    const early = document.getElementById('gcx-view');
+    if (early) {
+      delete early.dataset.early;
+      return early;
+    }
     const view = el('<div id="gcx-view"></div>');
     content.prepend(view);
     return view;
@@ -1236,6 +1455,7 @@
   // ----- Home: banner, Upcoming, announcements stream
   async function renderHome(view, cPromise) {
     const id = COURSE_ID;
+    const earlyBanner = view.querySelector('.gcx-banner[data-early]');
     view.innerHTML = `
       <div class="gcx-banner"><div class="gcx-banner-img"></div><button type="button" class="gcx-banner-edit" aria-label="Change class image" title="Change class image">${svg('image', 18)}<span>Add image</span></button><div class="gcx-banner-tx"><h1>&nbsp;</h1><div>&nbsp;</div></div></div>
       <div class="gcx-home-cols">
@@ -1246,6 +1466,14 @@
         </div>
         <section class="gcx-stream">${`<div class="gcx-card gcx-ann">${skeleton(4)}</div>`.repeat(2)}</section>
       </div>`;
+    // The class card is growing into early.js's stand-in banner right now: keep that element (with
+    // the real banner's insides), or the transition would lose its target.
+    if (earlyBanner) {
+      const fresh = view.querySelector('.gcx-banner');
+      earlyBanner.querySelector('.gcx-banner-img').after(fresh.querySelector('.gcx-banner-edit'));
+      delete earlyBanner.dataset.early;
+      fresh.replaceWith(earlyBanner);
+    }
 
     const classworkTab = document.querySelector('#gcx-cbar .gcx-tabs a:nth-child(2)');
     if (classworkTab) view.querySelector('.gcx-upc-all').href = classworkTab.href;
@@ -1785,6 +2013,10 @@
           due_at: a.due_at,
           points_possible: a.points_possible,
           quiz_id: a.quiz_id,
+          // For the in-place preview on Classwork.
+          description: a.description || '',
+          created_at: a.created_at,
+          unlock_at: a.unlock_at,
           discussion_topic: a.discussion_topic ? { id: a.discussion_topic.id } : null,
           submission: sub(a.submission),
         })),
@@ -1998,6 +2230,7 @@
     let lastData = null;
     const draw = (data, fromCache) => {
       lastData = data;
+      const openAid = drawn ? view.querySelector('.gcx-row.gcx-pv-on')?.dataset.aid : null;
       const { topics, missing, dueThisWeek } = buildTopics(data);
       const scrollY = window.scrollY;
       const oldInput = drawn ? view.querySelector('.gcx-filter input') : null;
@@ -2036,6 +2269,8 @@
       else window.scrollTo(0, scrollY);
       drawn = true;
       wire();
+      const reopen = openAid && view.querySelector(`.gcx-row[data-aid="${CSS.escape(openAid)}"]`);
+      if (reopen) togglePreview(reopen, true);
       if (q) {
         const input = view.querySelector('.gcx-filter input');
         input.value = q;
@@ -2105,7 +2340,7 @@
         <div class="gcx-pv-foot"><a class="gcx-pv-open" href="${esc(href)}">${label}</a></div>
       </div>`;
     }
-    function togglePreview(row) {
+    function togglePreview(row, instant = false) {
       const open = view.querySelector('.gcx-row.gcx-pv-on');
       const close = (r) => {
         r.classList.remove('gcx-pv-on');
@@ -2125,6 +2360,7 @@
       row.after(pv);
       row.classList.add('gcx-pv-on');
       row.setAttribute('aria-expanded', 'true');
+      if (instant) pv.style.transition = 'none';
       void pv.offsetWidth;
       pv.classList.add('open');
     }
@@ -2156,6 +2392,8 @@
       // Filter rows by title; subgroups and topics with nothing left disappear.
       const filter = view.querySelector('.gcx-filter input');
       filter.addEventListener('input', () => {
+        const openRow = view.querySelector('.gcx-row.gcx-pv-on');
+        if (openRow) togglePreview(openRow);
         const q = filter.value.trim().toLowerCase();
         view.classList.toggle('gcx-filtering', !!q);
         view.querySelectorAll('.gcx-topic').forEach((sec, i) => {
@@ -2551,19 +2789,11 @@
     ['Strong', 2],
     ['Max', 3],
   ];
-  // Canvas draws its own color overlay on class images unless it's turned off in Canvas's
-  // preferences (his is off); with it on, ours would double it.
-  const CANVAS_OVERLAY = (() => {
-    for (const sc of document.scripts) {
-      const m = !sc.src && sc.textContent.match(/"hide_dashcard_color_overlays":(true|false)/);
-      if (m) return m[1] === 'false';
-    }
-    return false;
-  })();
   const applyShadePref = () => {
     const p = prefs();
     html.dataset.gcxShade = String(p.shade);
-    html.classList.toggle('gcx-tint', p.tint !== false && !CANVAS_OVERLAY);
+    // With the wash on, it replaces Canvas's own color overlay on pictures (see classroom.css).
+    html.classList.toggle('gcx-tint', p.tint !== false);
     html.style.setProperty('--gcx-tint', `${p.tintAmt}%`);
     // Black and white and/or dimmed class images (cards and the class banner).
     const f = [p.gray ? 'grayscale(1)' : '', p.dim ? `brightness(${(100 - p.dim) / 100})` : ''].filter(Boolean).join(' ');
@@ -2610,7 +2840,14 @@
     // to the page to read (a dark color on a dark page), it's lifted toward white, or black on light.
     // A see-through body (image themes) says nothing; go by the theme's background color then.
     const bodyBg = getComputedStyle(document.body).backgroundColor;
-    const bg = /^transparent$|,\s*0\)$/.test(bodyBg) ? luminance(getComputedStyle(html).getPropertyValue('--bcbackground-0').trim() || '#ffffff') : rgbLuminance(bodyBg);
+    let bg = rgbLuminance(bodyBg);
+    if (/^transparent$|,\s*0\)$/.test(bodyBg)) {
+      const n = document.createElement('i');
+      n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0, #fff)';
+      document.body.append(n);
+      bg = rgbLuminance(getComputedStyle(n).backgroundColor);
+      n.remove();
+    }
     const L = luminance(nav);
     const readable = (Math.max(L, bg) + 0.05) / (Math.min(L, bg) + 0.05) >= 3;
     const accent = readable ? nav : `color-mix(in oklch, ${nav} 55%, ${bg < 0.4 ? 'white' : 'black'})`;
@@ -3648,17 +3885,13 @@
     heroEls.forEach((n) => (n.style.viewTransitionName = ''));
     heroEls = [];
   };
-  const markHero = (box, title) => {
+  const markHero = (box) => {
     clearHero();
     box.style.viewTransitionName = 'gcx-hero';
     heroEls.push(box);
-    if (title) {
-      title.style.viewTransitionName = 'gcx-htitle';
-      heroEls.push(title);
-    }
     // Left in place only for the navigation; if it never happens (or he comes back to this page
     // from the back/forward cache), the names come off again.
-    setTimeout(clearHero, 3000);
+    setTimeout(clearHero, 15000);
   };
   addEventListener('pagereveal', clearHero);
   document.addEventListener('click', (e) => {
@@ -3675,20 +3908,22 @@
     else if (to && from && to.i >= 0 && from.i >= 0 && to.i !== from.i) dir = to.i > from.i ? 'left' : 'right';
     else if (from && !to) dir = 'out';
     let hero = '';
+    let heroTitle = '';
     if (!a.closest('#gcx-rail, #gcx-cbar')) {
       const row = a.closest('.gcx-row, .gcx-due-item, article');
       const card = !row && a.closest('.ic-DashboardCard');
       if (row && to && !isTabPage(url)) {
         hero = 'row';
-        markHero(row, row.querySelector('.gcx-row-title, [class*="-title"]'));
-        dir = 'open';
+        heroTitle = ((row.querySelector('.gcx-row-title, [class*="-title"]') || row).textContent || '').trim().slice(0, 200);
+        markHero(row);
+        if (dir !== 'in') dir = 'open';
       } else if (card && card.querySelector('.ic-DashboardCard__header')) {
         hero = 'card';
-        markHero(card.querySelector('.ic-DashboardCard__header'), card.querySelector('.gcx-card-title'));
+        markHero(card.querySelector('.ic-DashboardCard__header'));
       }
     }
     try {
-      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, hero, t: Date.now(), from: from ? from.i : -1, course: from ? from.course : null }));
+      sessionStorage.setItem('gcx:nav', JSON.stringify({ dir, hero, title: heroTitle, t: Date.now(), from: from ? from.i : -1, course: from ? from.course : null }));
     } catch {}
     // Opening a course from outside it: use that course's color for the bar.
     const target = to && (COURSES || []).find((c) => c.id === to.course);
@@ -3711,7 +3946,7 @@
   const escOpen = () =>
     [
       ...document.querySelectorAll(
-        '.gcx-pop-panel, .gcx-fv-scrim, .gcx-ask:not([data-state="idle"]), dialog[open], [aria-modal="true"], [role="menu"], [role="listbox"], .ui-dialog, .ui-widget-overlay',
+        '.gcx-pop-panel, .gcx-fv-scrim, .gcx-ask:not([data-state="idle"]), dialog[open], [aria-modal="true"], [role="dialog"], [role="menu"], [role="listbox"], [popover]:popover-open, .ui-dialog, .ui-widget-overlay',
       ),
     ].some((n) => (n.checkVisibility ? n.checkVisibility() : n.getClientRects().length > 0));
   let escBusy = false;
@@ -3755,6 +3990,9 @@
     const b = rgbOf(probe('var(--bccards, #fff)'));
     const near = a.length === 3 && b.length === 3 && a.every((v, i) => Math.abs(v - b[i]) < 10);
     html.classList.toggle('gcx-flat2', near);
+    // A picture behind the page: lists that sit straight on the page background get card surfaces.
+    const img = getComputedStyle(html).getPropertyValue('--bcbackground-image').trim();
+    html.classList.toggle('gcx-imgbg', !!img && img !== 'none');
   };
   // BetterCampus paints each page's first 1.5 s from a saved copy of the theme's background, and
   // only re-saves it 1.5 s after a page loads. Right after a dark/light switch, the next page
@@ -3774,8 +4012,26 @@
       localStorage.setItem(KEY, JSON.stringify({ ...saved, dark_mode: dark, ...(saved.theme_enabled ? { bg } : {}) }));
     } catch {}
   };
+  // The theme's colors, saved for early.js to paint the next page's very first frame with (so it
+  // isn't Canvas white until BetterCampus catches up, and page transitions don't fade from white).
+  const THEME_VARS = ['--bcbackground-0', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks', '--bcbackground-image'];
+  const saveThemeVars = () => {
+    if (!document.getElementById('bettercanvas-theme-preset')) return; // BetterCampus hasn't drawn its theme yet
+    const cs = getComputedStyle(html);
+    const v = {};
+    for (const k of THEME_VARS) {
+      const x = cs.getPropertyValue(k).trim();
+      if (x && !/[{}<;]/.test(x)) v[k] = x;
+    }
+    try {
+      if (v['--bcbackground-0']) localStorage.setItem('gcx:themevars', JSON.stringify(v));
+    } catch {}
+    // BetterCampus's own theme is up now; the stand-in from early.js has done its job.
+    document.getElementById('gcx-theme-early')?.remove();
+  };
   const snapTheme = () => {
     checkFlatSurface();
+    saveThemeVars();
     themeSnap.clear();
     for (const n of document.querySelectorAll('head style[id]')) if (THEME_STYLE.test(n.id)) themeSnap.set(n, n.textContent);
   };
@@ -3790,7 +4046,10 @@
     if (themeBusy || !touchesTheme(records)) return;
     const changed = [...document.querySelectorAll('head style[id]')].filter((n) => THEME_STYLE.test(n.id) && themeSnap.get(n) !== n.textContent);
     const isTheme = changed.some((n) => n.id === 'darkcss' || n.id === 'bettercanvas-theme-preset');
-    if (!changed.length || !isTheme || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // BetterCampus drawing its theme for the first time on a new page isn't a switch: no crossfade
+    // (it used to fade the whole page in from white on every load).
+    const first = ![...themeSnap.keys()].some((n) => n.id === 'bettercanvas-theme-preset' && n.isConnected);
+    if (first || !changed.length || !isTheme || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
       snapTheme();
       if (isTheme) {
         refreshInlineColors();
@@ -3879,6 +4138,13 @@
       // Drawn by people.js, which runs next.
       const view = mountView();
       if (view) window.gcx.people = { view, course: cPromise };
+      // If people.js never draws (not loaded, or it failed), show Canvas's own page.
+      setTimeout(() => {
+        if (view.isConnected && !view.childElementCount) {
+          view.remove();
+          html.classList.remove('gcx-takeover');
+        }
+      }, 4000);
     }
     if (VIEW !== 'classwork') prefetchClasswork(COURSE_ID);
   } else if (VIEW === 'todo') {
@@ -3923,7 +4189,15 @@
     clearTimeout(bcSaveTimer);
     bcSaveTimer = setTimeout(() => {
       const list = sr.getElementById('bettercanvas-todo-list');
-      if (!list || !list.querySelector('.group')) return;
+      if (!list) return;
+      if (!list.querySelector('.group')) {
+        // Nothing left to do: don't bring back the old list next time.
+        if (bcLive(sr) && bcSavedHtml) {
+          bcSavedHtml = '';
+          cache.set('bctodo', null);
+        }
+        return;
+      }
       const copy = list.cloneNode(true);
       copy.querySelectorAll('[data-gcx-new]').forEach((n) => n.removeAttribute('data-gcx-new'));
       const markup = copy.outerHTML;
