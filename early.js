@@ -97,6 +97,8 @@
   };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   function standIns() {
+    // Pages classroom.js leaves alone (login, borderless tools) get none.
+    if (!document.getElementById('header') || !document.getElementById('wrapper')) return;
     if (!document.getElementById('gcx-rail')) {
       const r = saved('gcx:rail');
       if (r && r.html) {

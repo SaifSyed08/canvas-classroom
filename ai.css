@@ -173,7 +173,7 @@ html.gcx .gcx-spot-bg.gone { opacity: 0; pointer-events: none; transition: opaci
 @keyframes gcx-spot-fade { from { opacity: 0; } }
 html.gcx .gcx-spot {
   position: fixed; z-index: 2147482500;
-  transition: top 0.35s cubic-bezier(.2,.8,.2,1), left 0.35s cubic-bezier(.2,.8,.2,1);
+  transition: top 0.35s cubic-bezier(.2,.8,.2,1), left 0.35s cubic-bezier(.2,.8,.2,1), width 0.35s cubic-bezier(.2,.8,.2,1);
 }
 html.gcx .gcx-spot.dragging { transition: none; cursor: grabbing; }
 /* fill "backwards" only: a finished-but-filling opacity animation makes this a backdrop root, and the
@@ -234,3 +234,36 @@ html.gcx .gcx-ask-sr { position: absolute; width: 1px; height: 1px; margin: -1px
 html.gcx .gcx-ask.spot.compact .gcx-ask-x { display: none; }
 html.gcx .gcx-spot.nudge .gcx-ask-box { animation: gcx-nudge 0.38s cubic-bezier(.36,.07,.19,.97); }
 @keyframes gcx-nudge { 20% { transform: translateX(-5px); } 45% { transform: translateX(4px); } 70% { transform: translateX(-2px); } }
+
+/* ---------- resize grip on the open chat: a short ring just outside one corner, shown on hover.
+   Dashboard: bottom-left (the box grows left and down from the button), placed from the box size
+   ai.js mirrors into --ask-w/--ask-h. Floating panel: bottom-right. */
+html.gcx .gcx-ask-rsz {
+  position: absolute; z-index: 4; width: 16px; height: 16px; touch-action: none;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.15s ease, visibility 0s 0.15s;
+}
+html.gcx .gcx-ask:not(.spot) .gcx-ask-rsz {
+  right: calc(var(--ask-w, 48px) - 10px); top: calc(var(--ask-h, 48px) - 10px); cursor: nesw-resize;
+  transition: opacity 0.15s ease, visibility 0s 0.15s, right 0.42s cubic-bezier(.2,.8,.2,1), top 0.42s cubic-bezier(.2,.8,.2,1);
+}
+html.gcx .gcx-ask.spot .gcx-ask-rsz { right: -6px; bottom: -6px; cursor: nwse-resize; }
+html.gcx .gcx-ask[data-state='open']:not(.compact) .gcx-ask-rsz { visibility: visible; pointer-events: auto; transition-delay: 0s; }
+html.gcx .gcx-ask[data-state='open']:not(.compact):is(:hover, .resizing) .gcx-ask-rsz { opacity: 1; }
+html.gcx .gcx-ask-rsz svg {
+  position: absolute; left: 0; top: 0; display: block; overflow: visible; pointer-events: none;
+  fill: none; stroke: color-mix(in srgb, var(--gcx-text) 28%, transparent); stroke-width: 3.5; stroke-linecap: round;
+  transition: stroke 0.15s ease;
+}
+html.gcx .gcx-ask-rsz:hover svg, html.gcx .gcx-ask.resizing .gcx-ask-rsz svg { stroke: color-mix(in srgb, var(--gcx-text) 55%, transparent); }
+/* While dragging, the box follows the pointer exactly: no size animation, and the resize cursor everywhere. */
+html.gcx .gcx-ask.resizing[data-state] .gcx-ask-box { transition: background-color 0.2s ease; }
+html.gcx .gcx-ask.resizing .gcx-ask-rsz { transition: none; }
+html.gcx .gcx-spot.resizing { transition: none; }
+html.gcx.gcx-ask-rsz-nesw, html.gcx.gcx-ask-rsz-nesw * { cursor: nesw-resize !important; user-select: none !important; }
+html.gcx.gcx-ask-rsz-nwse, html.gcx.gcx-ask-rsz-nwse * { cursor: nwse-resize !important; user-select: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  html.gcx .gcx-ask .gcx-ask-rsz, html.gcx .gcx-ask .gcx-ask-rsz svg, html.gcx .gcx-spot { transition: none !important; }
+}
+html.gcx.gcx-still .gcx-ask .gcx-ask-rsz, html.gcx.gcx-still .gcx-spot { transition: none !important; }
