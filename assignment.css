@@ -304,3 +304,13 @@ html.gcx-asg-cmts.gcx-asg-own:not(.gcx-asg-reveal) [data-testid="view_feedback_b
 .gcx-rb-lv.on { background: color-mix(in srgb, var(--c, var(--gcx-link)) 22%, var(--gcx-bg2)); box-shadow: inset 0 0 0 1.5px var(--c, var(--gcx-link)); }
 .gcx-rb-note { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--c, var(--gcx-link)); border-radius: 0 8px 8px 0; background: var(--gcx-bg2); font-size: 13px; white-space: pre-wrap; }
 @media (prefers-reduced-motion: reduce) { .gcx-asg-rb-body, .gcx-asg-rb-h .gcx-svg { transition: none; } }
+
+/* the close bar on Canvas's block when it's opened from our card */
+.gcx-asg-canvas-bar { display: none; }
+html.gcx-asg-own.gcx-asg-reveal .gcx-asg-canvas-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 6px; padding: 6px 2px 6px 4px;
+  border-bottom: 1px solid var(--gcx-border); font-size: 13px; font-weight: 600; color: var(--gcx-muted);
+}
+.gcx-asg-canvas-x { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--gcx-muted); cursor: pointer; }
+.gcx-asg-canvas-x:hover { background: var(--gcx-bg2); color: var(--gcx-text); }
+.gcx-asg-canvas-x .gcx-svg { fill: currentColor; }

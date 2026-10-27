@@ -850,6 +850,9 @@
   const coverMotion = (v) => (v && v.preset && prefs().coverMotion !== false && (COVERS.find((x) => x[0] === v.preset) || [])[3]) || '';
   const coverStyle = document.createElement('style');
   coverStyle.id = 'gcx-covers';
+  // Last page's cover rules right away (extension storage answers a beat later), so covers are on
+  // the dashboard's stand-in cards and the banner from the first frame.
+  coverStyle.textContent = store.get('coverCss:' + (PAGE_USER || 'anon'), '');
   (document.head || html).append(coverStyle);
   function markCoverless() {
     for (const b of document.querySelectorAll('.gcx-banner[data-canvas-img]')) b.classList.toggle('gcx-noimg', !b.dataset.canvasImg && !coverLayers(covers[coverKey(COURSE_ID)]));
@@ -878,6 +881,8 @@
         );
       })
       .join('\n');
+    const k = 'coverCss:' + (PAGE_USER || 'anon');
+    if (coverStyle.textContent.length < 400000 && store.get(k, '') !== coverStyle.textContent) store.set(k, coverStyle.textContent);
     markCoverless();
   }
   const saveCover = (id, v) => {
@@ -1440,7 +1445,7 @@
     box.innerHTML = markup;
     // Still rising in with the rest of the page (gcx-enter)? Then that's its entrance; a second
     // fade on top made it flicker.
-    if (first && waited() && !document.getAnimations().some((x) => x.playState === 'running' && x.effect && x.effect.target && x.effect.target.contains && x.effect.target.contains(box))) reveal(box);
+    if (first && waited() && box.checkVisibility() && !document.getAnimations().some((x) => x.playState === 'running' && x.effect && x.effect.target && x.effect.target.contains && x.effect.target.contains(box))) reveal(box);
     else box.classList.remove('gcx-stagger');
   };
 
@@ -2743,10 +2748,34 @@
     const skeletonCard = `<div class="ic-DashboardCard gcx-skelcard"><div class="ic-DashboardCard__header"></div><div class="gcx-card-body">${skeleton(3)}</div></div>`;
     const markup = snap || `<div class="ic-DashboardCard__box__container">${skeletonCard.repeat(n)}</div>`;
     ghosts = el(`<div class="gcx-ghosts ic-DashboardCard__box" aria-hidden="true">${markup}</div>`);
+    const css = snap && !document.querySelector(BC_CARD_STYLE) && store.get(snapKey() + ':css', '');
+    if (css) {
+      const st = document.createElement('style');
+      st.id = 'gcx-ghost-css';
+      st.textContent = css;
+      ghosts.prepend(st);
+    }
     // Clickable (they're plain class links) but out of the Tab order, since they're hidden from screen readers.
     ghosts.querySelectorAll('a, button, [tabindex]').forEach((n) => n.setAttribute('tabindex', '-1'));
     container.before(ghosts);
     setTimeout(releaseGhosts, 10000); // never block the real cards for long
+  }
+  // Card pictures, loaded before the real cards show (so they don't blink to a plain color).
+  const loadedPics = new Set();
+  function cardPicturesReady(cards) {
+    let ready = true;
+    for (const c of cards) {
+      const n = c.querySelector('.ic-DashboardCard__header_image');
+      const url = n && (getComputedStyle(n).backgroundImage.match(/url\("?([^")]+)"?\)/) || [])[1];
+      if (!url || loadedPics.has(url)) continue;
+      ready = false;
+      if (loadedPics.has('…' + url)) continue;
+      loadedPics.add('…' + url);
+      const img = new Image();
+      img.onload = img.onerror = () => loadedPics.add(url);
+      img.src = url;
+    }
+    return ready;
   }
   function releaseGhosts() {
     if (ghosts) {
@@ -2766,7 +2795,15 @@
       return;
     }
     const filled = cards.every((c) => c.querySelector('.gcx-card-body[data-color]'));
-    if (filled && (!dashItems || cards.every((c) => c.querySelector('.gcx-card-due-wrap[data-markup]')))) {
+    // The real cards take over only once they'll look the same: BetterCampus has styled them (its
+    // stylesheet is in and each card has its custom-card class, if the stand-ins had one) and their
+    // pictures have loaded. Never longer than 3 s.
+    const late = performance.now() - T0 > 3000;
+    const wantsBc = ghosts && ghosts.querySelector('[class*="custom-card-"]');
+    const styled = late || !ghosts || ((!ghosts.querySelector('#gcx-ghost-css') || document.querySelector(BC_CARD_STYLE)) && (!wantsBc || cards.every((c) => /\bcustom-card-/.test(c.className))));
+    const pics = late || cardPicturesReady(cards);
+    if (!styled || !pics) setTimeout(maybeReleaseGhosts, 120);
+    if (filled && styled && pics && (!dashItems || cards.every((c) => c.querySelector('.gcx-card-due-wrap[data-markup]')))) {
       releaseGhosts();
       if (dashItems) saveSnapshot();
     }
@@ -2782,7 +2819,13 @@
     copy.querySelectorAll('script, iframe').forEach((n) => n.remove());
     const markup = copy.outerHTML;
     if (markup.length < 300000 && store.get(snapKey(), null) !== markup) store.set(snapKey(), markup);
+    // BetterCampus styles each card from a stylesheet it adds a moment after load; the stand-ins
+    // need it from the first frame, or they start in Canvas's look and size and then reshape.
+    const css = bcCardCss();
+    if (css && css.length < 200000 && store.get(snapKey() + ':css', '') !== css) store.set(snapKey() + ':css', css);
   }, 800);
+  const BC_CARD_STYLE = ':is(style[id*="card" i], style[id*="dashboard" i]):is([id^="bettercampus"], [id^="bettercanvas"])';
+  const bcCardCss = () => [...document.querySelectorAll(BC_CARD_STYLE)].map((n) => n.textContent).join('\n');
   function enhanceCards() {
     const cards = document.querySelectorAll('#DashboardCard_Container .ic-DashboardCard');
     for (const card of cards) {
