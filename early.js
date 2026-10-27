@@ -96,7 +96,21 @@
     }
   };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  let revealed = false;
+  // Who's signed in, from Canvas's ENV (parsed by now), so another account's saved copy is never shown.
+  const pageUser = () => {
+    for (const sc of document.scripts) {
+      if (sc.src) continue;
+      const m = sc.textContent.match(/"current_user_id":"?(\d+)/);
+      if (m) return m[1];
+    }
+    return '';
+  };
   function standIns() {
+    // Only for this page's first reveal: a page coming back from the back/forward cache already
+    // has its live rail and view.
+    if (revealed) return;
+    revealed = true;
     // Pages classroom.js leaves alone (login, borderless tools) get none.
     if (!document.getElementById('header') || !document.getElementById('wrapper')) return;
     if (!document.getElementById('gcx-rail')) {
@@ -128,9 +142,9 @@
     // Last visit's copy of this very page (saved by classroom.js on the way out), so the page
     // transition slides or grows into real content instead of an empty page. It's swapped for
     // the live view once the transition is over (classroom.js mountView).
-    if (view && !document.getElementById('gcx-snap')) {
+    if (view && !document.getElementById('gcx-snap') && !document.getElementById('gcx-view')) {
       const s = saved('gcx:snap:' + location.pathname + location.search);
-      if (s && s.html) {
+      if (s && s.html && s.user === pageUser()) {
         const n = document.createElement('div');
         n.id = 'gcx-snap';
         if (s.cls) n.className = s.cls;
