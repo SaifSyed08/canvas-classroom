@@ -124,7 +124,26 @@
       }
     }
     const content = document.getElementById('content');
-    if (!content || !course) return;
+    if (!content) return;
+    // Last visit's copy of this very page (saved by classroom.js on the way out), so the page
+    // transition slides or grows into real content instead of an empty page. It's swapped for
+    // the live view once the transition is over (classroom.js mountView).
+    if (view && !document.getElementById('gcx-snap')) {
+      const s = saved('gcx:snap:' + location.pathname + location.search);
+      if (s && s.html) {
+        const n = document.createElement('div');
+        n.id = 'gcx-snap';
+        if (s.cls) n.className = s.cls;
+        if (s.style) n.setAttribute('style', s.style);
+        n.setAttribute('aria-hidden', 'true');
+        n.inert = true;
+        n.innerHTML = s.html;
+        content.prepend(n);
+        html.classList.remove('gcx-enter');
+        return;
+      }
+    }
+    if (!course) return;
     if (html.dataset.gcxHero === 'card' && view === 'home' && !document.getElementById('gcx-view')) {
       let list = [];
       try {
@@ -165,6 +184,8 @@
         standIns();
       } catch {}
     }
+    // classroom.js waits on this before swapping a stand-in for the live page.
+    window.gcxTransition = e.viewTransition ? e.viewTransition.finished.catch(() => {}) : null;
     if (e.viewTransition) e.viewTransition.finished.finally(clear);
     else clear();
   });
