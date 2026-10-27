@@ -267,8 +267,8 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-pv-desc a { color: var(--gcx-link) !important; }
 .gcx-pv-desc.gcx-pv-none { color: var(--gcx-muted); -webkit-mask-image: none; mask-image: none; }
 .gcx-pv-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.gcx-pv-foot { display: flex; justify-content: flex-end; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gcx-border); }
-.gcx-pv-open { font-weight: 600; font-size: 14px; color: var(--gcx-link) !important; text-decoration: none !important; padding: 6px 12px; border-radius: 8px; }
+.gcx-pv-foot { display: flex; justify-content: flex-start; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gcx-border); }
+.gcx-pv-open { font-weight: 600; font-size: 14px; color: var(--gcx-link) !important; text-decoration: none !important; padding: 6px 12px; margin-left: -12px; border-radius: 8px; }
 .gcx-pv-open:hover { background: color-mix(in srgb, var(--gcx-link) 10%, transparent); }
 .gcx-row-ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--c, var(--gcx-link)); color: #fff; }
 /* file type tiles (classroom.js fileTile) */
@@ -619,15 +619,17 @@ html.gcx-dash #right-side .button-sidebar-wide:hover, html.gcx-dash #right-side 
    and rail that stay put. The old page names its content when it leaves (data-gcx-leaving, set
    at pageswap); the new page names last visit's copy of itself (#gcx-snap) or a stand-in. */
 html:is([data-gcx-leaving="left"], [data-gcx-leaving="right"], [data-gcx-leaving="back"]) :is(#gcx-view, #gcx-asg) { view-transition-name: gcx-page; }
-html:is([data-gcx-nav="left"], [data-gcx-nav="right"], [data-gcx-nav="back"]) :is(#gcx-snap, #gcx-view[data-early], #gcx-asg[data-early]) { view-transition-name: gcx-page; }
-::view-transition-group(gcx-page) { animation-duration: 0.42s; animation-timing-function: cubic-bezier(.32,.72,0,1); }
+/* (a tab page loaded ahead of time is already live at the transition, so the live view counts too,
+   unless it's still drawing behind a snapshot) */
+html:is([data-gcx-nav="left"], [data-gcx-nav="right"], [data-gcx-nav="back"]) :is(#gcx-snap, #gcx-view:not(.gcx-behind), #gcx-asg) { view-transition-name: gcx-page; }
+::view-transition-group(gcx-page) { animation-duration: 0.6s; animation-timing-function: cubic-bezier(.22,.8,.24,1); }
 ::view-transition-image-pair(gcx-page) { isolation: auto; }
 ::view-transition-old(gcx-page), ::view-transition-new(gcx-page) { width: 100%; height: auto; object-fit: none; object-position: top center; mix-blend-mode: normal; }
 /* one continuous slide: the current tab moves out as the next one moves in beside it */
-html[data-gcx-nav="left"]::view-transition-old(gcx-page) { animation: gcx-vt-to-left 0.42s cubic-bezier(.32,.72,0,1) both; }
-html[data-gcx-nav="left"]::view-transition-new(gcx-page) { animation: gcx-vt-from-right 0.42s cubic-bezier(.32,.72,0,1) both; }
-html[data-gcx-nav="right"]::view-transition-old(gcx-page) { animation: gcx-vt-to-right 0.42s cubic-bezier(.32,.72,0,1) both; }
-html[data-gcx-nav="right"]::view-transition-new(gcx-page) { animation: gcx-vt-from-left 0.42s cubic-bezier(.32,.72,0,1) both; }
+html[data-gcx-nav="left"]::view-transition-old(gcx-page) { animation: gcx-vt-to-left 0.6s cubic-bezier(.22,.8,.24,1) both; }
+html[data-gcx-nav="left"]::view-transition-new(gcx-page) { animation: gcx-vt-from-right 0.6s cubic-bezier(.22,.8,.24,1) both; }
+html[data-gcx-nav="right"]::view-transition-old(gcx-page) { animation: gcx-vt-to-right 0.6s cubic-bezier(.22,.8,.24,1) both; }
+html[data-gcx-nav="right"]::view-transition-new(gcx-page) { animation: gcx-vt-from-left 0.6s cubic-bezier(.22,.8,.24,1) both; }
 @keyframes gcx-vt-to-left { to { transform: translateX(-100vw); } }
 @keyframes gcx-vt-from-right { from { transform: translateX(100vw); } }
 @keyframes gcx-vt-to-right { to { transform: translateX(100vw); } }
@@ -860,8 +862,8 @@ html.gcx-tint .gcx-banner::after {
 @keyframes gcx-cv-grid { to { background-position: 28px 28px, 28px 28px, 0 0; } }
 @keyframes gcx-cv-dots { to { background-position: 22px 22px, 0 0; } }
 @keyframes gcx-cv-drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
-html.gcx-still .gcx-banner-img::after { animation: none !important; }
-@media (prefers-reduced-motion: reduce) { .gcx-banner-img::after { animation: none !important; } }
+html.gcx-still .gcx-banner-img::after, html.gcx-still .gcx-card-cover { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .gcx-banner-img::after, .gcx-card-cover { animation: none !important; } }
 .gcx-covers-grid button:hover span { transform: scale(1.05); }
 .gcx-covers-grid button.on span { box-shadow: 0 0 0 2px var(--gcx-card), 0 0 0 4px var(--gcx-link); }
 .gcx-covers-grid small { font-size: 11px; text-align: center; }

@@ -17,11 +17,15 @@
   if (!gcx || window.top !== window) return;
   const html = document.documentElement;
   const m = location.pathname.match(/^\/courses\/(\d+)\/assignments\/(\d+)\/?$/);
-  if (!m || new URLSearchParams(location.search).has('gcx-original')) return;
+  const qs = new URLSearchParams(location.search);
+  // Peer reviews open on this same URL with the classmate in the query: that page is about their
+  // work, not his, so it stays Canvas's own.
+  if (!m || qs.has('gcx-original') || qs.has('reviewee_id') || qs.has('anonymous_asset_id')) return;
   const [, cid, aid] = m;
   const { api, esc, el } = gcx;
 
   const ICON = {
+    chevron: 'M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z',
     assignment: 'M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z',
     quiz: 'M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z',
     discussion: 'M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z',
@@ -342,7 +346,7 @@
   }, 12000);
 
   const SUB_PATH = `/courses/${cid}/assignments/${aid}/submissions/self`;
-  const SUB_INCLUDE = '?include[]=submission_history&include[]=submission_comments';
+  const SUB_INCLUDE = '?include[]=submission_history&include[]=submission_comments&include[]=rubric_assessment';
   Promise.all([
     api(`/courses/${cid}/assignments/${aid}?include[]=submission`),
     api(SUB_PATH + SUB_INCLUDE).catch(() => null),
@@ -373,7 +377,7 @@
     busy: false,
     pending: [], // comments on their way
   };
-  const DRAFT_KEY = `asgDraft:${location.host}:${aid}`;
+  const DRAFT_KEY = `asgDraft:${location.host}:${gcx.user || 'anon'}:${aid}`;
   const saveDraft = () => {
     const { type, text, url } = S.draft;
     if (gcx.store) gcx.store.set(DRAFT_KEY, type === 'text' || type === 'url' ? { type, text, url } : null);
@@ -432,14 +436,14 @@
       : '';
     view.querySelector('.gcx-asg-by').textContent = [teacher, when].filter(Boolean).join(' · ');
 
-    // "100 points | Unlimited attempts | Until Nov 3, 11:59 PM" on the left, the due date on the right.
+    // "100 points | Unlimited attempts until Nov 3, 11:59 PM" on the left, the due date on the right.
     const st0 = workState(a, s);
     const facts = [];
     if (a.points_possible) facts.push(`${fmtNum(a.points_possible)} point${a.points_possible === 1 ? '' : 's'}`);
     if (st0.online && kind === 'assignment') {
       const max = allowedAttempts();
-      facts.push(max == null ? 'Unlimited attempts' : `${max} attempt${max === 1 ? '' : 's'}`);
-      if (a.lock_at) facts.push(`Until ${fmtUntil(new Date(a.lock_at))}`);
+      const rule = max == null ? 'Unlimited attempts' : `${max} attempt${max === 1 ? '' : 's'}`;
+      facts.push(a.lock_at ? `${rule} until ${fmtUntil(new Date(a.lock_at))}` : rule);
     }
     if (!facts.length) facts.push(a.points_possible ? '' : 'Ungraded');
     view.querySelector('.gcx-asg-pts').innerHTML = facts
@@ -483,7 +487,7 @@
     html.classList.toggle('gcx-asg-own', tuck);
     if (own) {
       S.pledge = pageEnv('SIMILARITY_PLEDGE');
-      if (S.pledge && !S.pledge.PLEDGE_TEXT) S.pledge = null;
+      if (S.pledge && !S.pledge.PLEDGE_TEXT && !S.pledge.EULA_URL) S.pledge = null;
       const saved = gcx.store ? gcx.store.get(DRAFT_KEY, null) : null;
       if (saved && openState().open && S.ours.includes(saved.type)) {
         Object.assign(S.draft, { type: saved.type, text: saved.text || '', url: saved.url || '' });
@@ -491,8 +495,10 @@
       }
     }
     S.composing = S.composing || (own && !history().length);
+    renderRubric(a, s);
     const rubricBtn = view.querySelector('.gcx-asg-rubric');
-    rubricBtn.hidden = !(tuck && (a.rubric || a.rubric_settings));
+    // With the rubric drawn on the page, Canvas's block isn't needed to see it.
+    rubricBtn.hidden = !(tuck && !Array.isArray(a.rubric) && a.rubric_settings);
     rubricBtn.addEventListener('click', () => {
       const on = !html.classList.contains('gcx-asg-reveal');
       reveal(on);
@@ -508,11 +514,62 @@
 
   // Show (or tuck away again) Canvas's own block under ours.
   function reveal(on) {
+    // Turned in from our card since the page loaded: Canvas's block still shows the old state (and
+    // its Submit could spend another attempt), so show it fresh.
+    if (on && S.turnedInHere) {
+      location.reload();
+      return;
+    }
     html.classList.toggle('gcx-asg-reveal', on);
     const b = view.querySelector('.gcx-asg-rubric');
     b.textContent = on ? 'Hide rubric' : 'Rubric';
     b.setAttribute('aria-expanded', String(on));
   }
+  // ---------------------------------------------------------------- rubric
+  // The grading rubric in the assignment itself, Classroom style: each criterion with its levels and
+  // points, and once it's graded, the level he got (highlighted), his points and the grader's note.
+  function renderRubric(a, s) {
+    view.querySelector('.gcx-asg-rb')?.remove();
+    const crit = Array.isArray(a.rubric) ? a.rubric : [];
+    if (!crit.length) return;
+    const set = a.rubric_settings || {};
+    const hidePts = !!set.hide_points;
+    const got = s.rubric_assessment || {};
+    const graded = Object.keys(got).length > 0;
+    const total = crit.reduce((t, c) => t + (+c.points || 0), 0);
+    const earned = graded ? crit.reduce((t, c) => t + (got[c.id] && got[c.id].points != null ? +got[c.id].points : 0), 0) : null;
+    const pts = (n) => `${fmtNum(n)} pt${n === 1 ? '' : 's'}`;
+    const rows = crit
+      .map((c) => {
+        const g = got[c.id] || {};
+        const levels = (c.ratings || [])
+          .map((r) => {
+            const on = graded && (g.rating_id ? g.rating_id === r.id : g.points != null && +g.points === +r.points);
+            return `<div class="gcx-rb-lv${on ? ' on' : ''}" title="${esc(plainText(r.long_description || ''))}">${hidePts ? '' : `<b>${esc(fmtNum(+r.points || 0))}</b>`}<span>${esc(r.description || '')}</span></div>`;
+          })
+          .join('');
+        const score = hidePts ? '' : graded && g.points != null ? `${esc(fmtNum(+g.points))} / ${esc(pts(+c.points || 0))}` : esc(pts(+c.points || 0));
+        return `<div class="gcx-rb-crit">
+          <div class="gcx-rb-top"><b>${esc(c.description || 'Criterion')}</b><span>${score}</span></div>
+          ${c.long_description ? `<div class="gcx-rb-long">${esc(plainText(c.long_description))}</div>` : ''}
+          ${levels ? `<div class="gcx-rb-levels">${levels}</div>` : ''}
+          ${g.comments ? `<div class="gcx-rb-note">${esc(g.comments)}</div>` : ''}
+        </div>`;
+      })
+      .join('');
+    const nCrit = `${crit.length} ${crit.length === 1 ? 'criterion' : 'criteria'}`;
+    const sum = hidePts ? nCrit : graded ? `${fmtNum(earned)} / ${pts(total)}` : `${nCrit} · ${pts(total)}`;
+    const box = el(`<section class="gcx-asg-rb${graded ? ' open' : ''}">
+      <button type="button" class="gcx-asg-rb-h" aria-expanded="${graded}"><h2>Rubric</h2><span class="gcx-asg-rb-sum">${esc(sum)}</span>${svg('chevron', 20)}</button>
+      <div class="gcx-asg-rb-body"><div class="gcx-asg-rb-in">${rows}</div></div>
+    </section>`);
+    box.querySelector('.gcx-asg-rb-h').addEventListener('click', () => {
+      const open = box.classList.toggle('open');
+      box.querySelector('.gcx-asg-rb-h').setAttribute('aria-expanded', String(open));
+    });
+    view.querySelector('.gcx-asg-files').after(box);
+  }
+
   // An item from the Add or create menu that only Canvas's block can do.
   function useCanvas() {
     reveal(true);
@@ -562,8 +619,8 @@
       if (!os.open) {
         if (os.why) tail = `<div class="gcx-asg-note">${esc(os.why)}</div>`;
       } else if (S.composing) tail = composeHtml(hist.length > 0);
-      // Graded work stays as it is unless he's been asked to redo it.
-      else if (!st.graded || s.redo_request) tail = '<button type="button" class="gcx-asg-btn" data-again>Submit again</button>';
+      // Another attempt whenever Canvas allows one (attempts left, still open), graded or not.
+      else tail = '<button type="button" class="gcx-asg-btn" data-again>Submit again</button>';
     } else if (st.online && !a.locked_for_user) {
       // Only kinds of work Canvas's own block can take (media, annotation): one button into it.
       const again = s.submitted_at && !st.graded && openState().open;
@@ -600,10 +657,10 @@
     const d = S.draft;
     const items = [];
     if (d.type === 'text')
-      items.push(`<div class="gcx-asg-item"><div class="gcx-asg-item-h">${svg('text', 18)}<b>Text entry</b><button type="button" class="gcx-asg-x" data-rm="text" aria-label="Remove text entry">${svg('close', 18)}</button></div>
+      items.push(`<div class="gcx-asg-item"><div class="gcx-asg-item-h">${svg('text', 18)}<b>Text entry</b><button type="button" class="gcx-asg-x" data-rm="text" aria-label="Remove text entry"${S.busy ? ' disabled' : ''}>${svg('close', 18)}</button></div>
         <textarea class="gcx-asg-ta" data-text rows="6" placeholder="Type or paste your work" aria-label="Your text entry"></textarea></div>`);
     if (d.type === 'url')
-      items.push(`<div class="gcx-asg-item"><div class="gcx-asg-item-h">${svg('link', 18)}<b>Link</b><button type="button" class="gcx-asg-x" data-rm="url" aria-label="Remove link">${svg('close', 18)}</button></div>
+      items.push(`<div class="gcx-asg-item"><div class="gcx-asg-item-h">${svg('link', 18)}<b>Link</b><button type="button" class="gcx-asg-x" data-rm="url" aria-label="Remove link"${S.busy ? ' disabled' : ''}>${svg('close', 18)}</button></div>
         <input class="gcx-asg-in" data-url type="url" inputmode="url" placeholder="https://" aria-label="Link to your work" autocomplete="off" spellcheck="false"></div>`);
     if (d.type === 'file')
       d.files.forEach((f, i) =>
@@ -628,8 +685,8 @@
     const accept = exts.length ? ` accept="${esc(exts.map((x) => '.' + x).join(','))}"` : '';
 
     const pledge = S.pledge
-      ? `<label class="gcx-asg-pledge"><input type="checkbox" data-pledge${S.pledged ? ' checked' : ''}${S.busy ? ' disabled' : ''}><span>I agree to the plagiarism pledge. <button type="button" class="gcx-asg-a" data-pledge-read aria-expanded="false">Read it</button></span></label>
-         <div class="gcx-asg-pledge-tx" hidden>${esc(S.pledge.PLEDGE_TEXT)}${S.pledge.COMMENTS ? `\n\n${esc(plainText(S.pledge.COMMENTS))}` : ''}${
+      ? `<label class="gcx-asg-pledge"><input type="checkbox" data-pledge${S.pledged ? ' checked' : ''}${S.busy ? ' disabled' : ''}><span>${S.pledge.PLEDGE_TEXT ? 'I agree to the plagiarism pledge.' : 'I agree to the end-user license agreement.'} <button type="button" class="gcx-asg-a" data-pledge-read aria-expanded="false">Read it</button></span></label>
+         <div class="gcx-asg-pledge-tx" hidden>${esc(S.pledge.PLEDGE_TEXT || '')}${S.pledge.COMMENTS ? `\n\n${esc(plainText(S.pledge.COMMENTS))}` : ''}${
            S.pledge.EULA_URL ? `\n\n<a class="gcx-asg-a" href="${esc(S.pledge.EULA_URL)}" target="_blank" rel="noopener noreferrer">End-user license agreement</a>` : ''
          }</div>`
       : '';
@@ -693,6 +750,7 @@
     }
     work.querySelectorAll('[data-rm]').forEach((b) =>
       b.addEventListener('click', () => {
+        if (S.busy) return;
         S.draft = { type: '', text: '', url: '', files: [] };
         saveDraft();
         renderWork();
@@ -835,6 +893,7 @@
       if (S.pledge && S.pledge.EULA_URL) p.set('submission[eula_agreement_timestamp]', String(Date.now()));
       setProgress('Turning in…', null);
       await send('POST', `/courses/${cid}/assignments/${aid}/submissions`, p);
+      S.turnedInHere = true;
 
       S.busy = false;
       S.composing = false;

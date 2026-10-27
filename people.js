@@ -7,6 +7,7 @@
 // `?gcx-original=1` shows Canvas's own page.
 (() => {
   'use strict';
+  const T0 = performance.now();
   const gcx = window.gcx;
   if (!gcx || window.top !== window) return;
   if (gcx.VIEW !== 'people' || !gcx.people || !gcx.COURSE_ID) return;
@@ -316,7 +317,8 @@
     sSec.querySelector('.gcx-pp-list').innerHTML = students.length ? students.map(rowHtml).join('') : '<div class="gcx-pp-none">No classmates listed.</div>';
     sSec.querySelector('.gcx-pp-n').textContent = students.length ? `${students.length} ${students.length === 1 ? 'student' : 'students'}` : '';
     // Rows rise in one by one the first time only; later refreshes just swap.
-    const anim = !drawnOnce && !still();
+    // Only a roster that had to wait on Canvas rises in; the saved copy just appears.
+    const anim = !drawnOnce && !still() && performance.now() - T0 > 400;
     for (const s of [tSec, sSec]) s.classList.toggle('gcx-stagger', anim);
     drawnOnce = true;
     sync.hidden = !fromCache;
