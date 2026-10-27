@@ -17,6 +17,10 @@
   }
 
   const VIEW = html.dataset.gcxView || '';
+  // Content that's ready this soon (from the saved copy) just appears; only what had to wait on
+  // Canvas fades in. Animating cached content made pages look like they were loading twice.
+  const T0 = performance.now();
+  const waited = () => performance.now() - T0 > 400;
   const COURSE_ID = html.dataset.gcxCourse ? Number(html.dataset.gcxCourse) : null;
   const DAY = 864e5;
   const HORIZON_DAYS = 14;
@@ -865,11 +869,12 @@
         // On cards it goes on a layer of our own (.gcx-card-cover): BetterCampus's custom cards hide
         // Canvas's image layer and draw pictures elsewhere, which left covered cards blank.
         return (
-          `${card} .gcx-card-cover { display: block; background: ${layers}; }\n` +
+          `${card} .gcx-card-cover { display: block; background: ${layers};${motion === 'drift' ? ' background-size: 300% 300%;' : ''} }\n` +
+          (motion ? `${card} .gcx-card-cover { animation: gcx-cv-${motion} ${motion === 'drift' ? '8s ease-in-out infinite alternate' : '5s linear infinite'}; }\n` : '') +
           `html[data-gcx-course="${id}"] .gcx-banner-img::after { content: ''; position: absolute; inset: 0; background: ${layers};${
-            motion === 'drift' ? ' background-size: 220% 220%;' : ''
+            motion === 'drift' ? ' background-size: 300% 300%;' : ''
           } }\n` +
-          (motion ? `html[data-gcx-course="${id}"] .gcx-banner-img::after { animation: gcx-cv-${motion} ${motion === 'drift' ? '16s ease-in-out infinite alternate' : '5s linear infinite'}; }` : '')
+          (motion ? `html[data-gcx-course="${id}"] .gcx-banner-img::after { animation: gcx-cv-${motion} ${motion === 'drift' ? '8s ease-in-out infinite alternate' : '5s linear infinite'}; }` : '')
         );
       })
       .join('\n');
@@ -1435,7 +1440,7 @@
     box.innerHTML = markup;
     // Still rising in with the rest of the page (gcx-enter)? Then that's its entrance; a second
     // fade on top made it flicker.
-    if (first && !document.getAnimations().some((x) => x.playState === 'running' && x.effect && x.effect.target && x.effect.target.contains && x.effect.target.contains(box))) reveal(box);
+    if (first && waited() && !document.getAnimations().some((x) => x.playState === 'running' && x.effect && x.effect.target && x.effect.target.contains && x.effect.target.contains(box))) reveal(box);
     else box.classList.remove('gcx-stagger');
   };
 
@@ -2163,6 +2168,15 @@
           eagerness: 'conservative',
         },
       ],
+      // This class's own tabs load in full while the pointer rests on them, so switching tabs
+      // starts sliding the moment he clicks, with the real page (not one still loading).
+      prerender: [
+        {
+          source: 'document',
+          where: { and: [{ href_matches: '/courses/*' }, { selector_matches: '#gcx-cbar a.gcx-tab:not(.on)' }] },
+          eagerness: 'moderate',
+        },
+      ],
     });
     document.head.append(s);
   }
@@ -2319,7 +2333,7 @@
             : '<div class="gcx-card gcx-empty">This course has no modules or assignments yet.</div>'
         }</div>
       </div>`;
-      if (!drawn) view.querySelector('.gcx-cw').classList.add('gcx-stagger');
+      if (!drawn && waited()) view.querySelector('.gcx-cw').classList.add('gcx-stagger');
       else window.scrollTo(0, scrollY);
       drawn = true;
       wire();

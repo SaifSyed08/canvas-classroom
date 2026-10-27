@@ -243,8 +243,10 @@ html.gcx-imgbg button.gcx-asg-original { background: var(--gcx-card); padding: 2
   }
   html.gcx-asg.gcx-asg-split #content > * { grid-column: 1 / -1; min-width: 0; }
   html.gcx-asg.gcx-asg-split #gcx-asg { display: contents; }
-  html.gcx-asg.gcx-asg-split .gcx-asg-main { grid-column: 1; grid-row: 1 / span 3; animation: gcx-asg-in 0.4s cubic-bezier(.16,.84,.3,1) both; }
-  html.gcx-asg.gcx-asg-split .gcx-asg-side { grid-column: 2; grid-row: 1; animation: gcx-asg-in 0.4s 60ms cubic-bezier(.16,.84,.3,1) both; }
+  /* No second entrance when the page switches to two columns (that happens once Canvas's part loads,
+     after the page is already showing; replaying it made Your work slide in twice). */
+  html.gcx-asg.gcx-asg-split .gcx-asg-main { grid-column: 1; grid-row: 1 / span 3; }
+  html.gcx-asg.gcx-asg-split .gcx-asg-side { grid-column: 2; grid-row: 1; }
   html.gcx-asg.gcx-asg-split #content > .gcx-asg-canvas { grid-column: 2; grid-row: 2; margin-top: 16px; }
   html.gcx-asg.gcx-asg-split .gcx-asg-canvas {
     border: 1px solid var(--gcx-border); border-radius: 12px; background: var(--gcx-card); padding: 4px 12px 12px;
@@ -272,7 +274,7 @@ html.gcx-asg-own:not(.gcx-asg-reveal) .gcx-asg-canvas {
 html.gcx-asg-own:not(.gcx-asg-reveal) .gcx-asg-canvas [data-testid="student-footer"] { visibility: visible !important; }
 html.gcx-asg-own:not(.gcx-asg-reveal) [data-testid="student-footer"] :is(button, a):not([data-testid="previous-assignment-btn"], [data-testid="next-assignment-btn"]) { display: none !important; }
 /* Private comments are posted from our card, so Canvas's "Add Comment" tray button goes. */
-html.gcx-asg-cmts [data-testid="view_feedback_button"] { display: none !important; }
+html.gcx-asg-cmts.gcx-asg-own:not(.gcx-asg-reveal) [data-testid="view_feedback_button"] { display: none !important; }
 
 @media (prefers-reduced-motion: reduce) {
   #gcx-asg, html.gcx-asg.gcx-asg-split .gcx-asg-main, html.gcx-asg.gcx-asg-split .gcx-asg-side,
@@ -280,3 +282,25 @@ html.gcx-asg-cmts [data-testid="view_feedback_button"] { display: none !importan
   .gcx-asg-btn, .gcx-asg-add, .gcx-asg-chip, .gcx-asg-x, .gcx-asg-send { transition: none !important; }
   .gcx-asg-btn:active { transform: none; }
 }
+
+/* ---- rubric, in the assignment (assignment.js renderRubric) */
+.gcx-asg-rb { margin: 22px 0 0 60px; border: 1px solid var(--gcx-border); border-radius: 12px; overflow: hidden; }
+.gcx-asg-rb-h { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 0; background: none; color: var(--gcx-text); font: inherit; text-align: left; cursor: pointer; }
+.gcx-asg-rb-h:hover { background: var(--gcx-bg2); }
+#gcx-asg .gcx-asg-rb-h h2 { flex: 1; font-size: 16px !important; font-weight: 600 !important; }
+.gcx-asg-rb-sum { font-size: 13px; font-weight: 600; color: var(--gcx-muted); }
+.gcx-asg-rb-h .gcx-svg { color: var(--gcx-muted); transform: rotate(-90deg); transition: transform 0.2s ease; }
+.gcx-asg-rb.open .gcx-asg-rb-h .gcx-svg { transform: none; }
+.gcx-asg-rb-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.25s cubic-bezier(.2,.7,.2,1); }
+.gcx-asg-rb.open .gcx-asg-rb-body { grid-template-rows: 1fr; }
+.gcx-asg-rb-in { overflow: hidden; min-height: 0; }
+.gcx-rb-crit { padding: 12px 14px; border-top: 1px solid var(--gcx-border); }
+.gcx-rb-top { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.gcx-rb-top span { flex: none; font-size: 13px; font-weight: 600; color: var(--gcx-muted); }
+.gcx-rb-long { margin-top: 2px; font-size: 13px; color: var(--gcx-muted); line-height: 1.4; }
+.gcx-rb-levels { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.gcx-rb-lv { display: flex; align-items: baseline; gap: 6px; max-width: 100%; padding: 5px 10px; border-radius: 8px; background: var(--gcx-bg2); font-size: 12px; line-height: 1.35; color: var(--gcx-text); }
+.gcx-rb-lv b { font-weight: 700; color: color-mix(in srgb, var(--c, var(--gcx-link)) 70%, var(--gcx-text)); }
+.gcx-rb-lv.on { background: color-mix(in srgb, var(--c, var(--gcx-link)) 22%, var(--gcx-bg2)); box-shadow: inset 0 0 0 1.5px var(--c, var(--gcx-link)); }
+.gcx-rb-note { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--c, var(--gcx-link)); border-radius: 0 8px 8px 0; background: var(--gcx-bg2); font-size: 13px; white-space: pre-wrap; }
+@media (prefers-reduced-motion: reduce) { .gcx-asg-rb-body, .gcx-asg-rb-h .gcx-svg { transition: none; } }
