@@ -34,7 +34,10 @@ html.gcx-imgbg .gcx-asg-original { background: var(--gcx-card); padding: 2px 8px
   display: flex; justify-content: space-between; gap: 12px; margin: 14px 0 0 60px; padding-bottom: 14px;
   border-bottom: 1px solid var(--c, var(--gcx-border)); font-size: 14px; font-weight: 600;
 }
-.gcx-asg-due { color: var(--gcx-text); }
+.gcx-asg-due { color: var(--gcx-text); text-align: right; }
+.gcx-asg-pts { display: flex; flex-wrap: wrap; align-items: center; column-gap: 0; row-gap: 2px; }
+/* "100 points | Unlimited attempts | Until Nov 3": a thin rule between the facts */
+.gcx-asg-sep { display: inline-block; width: 1px; height: 14px; margin: 0 10px; background: var(--gcx-border); }
 .gcx-asg-body { margin: 18px 0 0 60px; line-height: 1.55; overflow-wrap: anywhere; }
 .gcx-asg-body img { max-width: 100%; height: auto; }
 .gcx-asg-body iframe { max-width: 100%; border: 0; border-radius: 8px; }
@@ -95,7 +98,139 @@ html.gcx-imgbg .gcx-asg-original { background: var(--gcx-card); padding: 2px 8px
 .gcx-asg-cmt-tx { margin-top: 2px; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .gcx-asg-link { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--gcx-link); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
 .gcx-asg-link:hover { text-decoration: underline; }
-.gcx-asg-original { align-self: flex-start; font-size: 12px; color: var(--gcx-muted) !important; }
+.gcx-asg-links { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.gcx-asg-original { font-size: 12px; color: var(--gcx-muted) !important; }
+button.gcx-asg-original { padding: 0; border: 0; background: none; font-family: inherit; text-decoration: underline; cursor: pointer; }
+html.gcx-imgbg button.gcx-asg-original { background: var(--gcx-card); padding: 2px 8px; border-radius: 8px; }
+.gcx-asg-original[hidden] { display: none !important; }
+
+/* ---- Your work: the attempt he's looking at */
+.gcx-asg-vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.gcx-asg-att { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.gcx-asg-att-n { font-weight: 600; }
+.gcx-asg-used { font-size: 12px; color: var(--gcx-muted); white-space: nowrap; }
+.gcx-asg-attsel { position: relative; display: inline-flex; }
+.gcx-asg-attsel::after {
+  content: ''; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; pointer-events: none;
+  border-right: 2px solid var(--gcx-muted); border-bottom: 2px solid var(--gcx-muted); transform: translateY(-70%) rotate(45deg);
+}
+#gcx-asg .gcx-asg-attsel select {
+  appearance: none; -webkit-appearance: none; margin: 0; height: 32px; padding: 0 30px 0 10px; box-sizing: border-box;
+  border: 1px solid var(--gcx-border) !important; border-radius: 8px; background: var(--gcx-card) !important; color: var(--gcx-text) !important;
+  font: inherit; font-weight: 600; font-size: 14px; cursor: pointer; box-shadow: none !important;
+}
+#gcx-asg .gcx-asg-attsel select:hover { background: var(--gcx-bg2) !important; }
+#gcx-asg .gcx-asg-attsel select:focus-visible { outline: 2px solid var(--c, var(--gcx-link)); outline-offset: 1px; }
+.gcx-asg-attsel option { background: var(--gcx-card); color: var(--gcx-text); }
+.gcx-asg-late { color: #b06000; }
+.gcx-asg-work-body > .gcx-asg-note:not(:first-child) { margin-top: 12px; }
+.gcx-asg-text { max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
+.gcx-asg-a { padding: 0; border: 0; background: none; color: var(--gcx-link) !important; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+.gcx-asg-a:hover { text-decoration: underline; }
+
+/* ---- Your work: adding work and turning it in */
+.gcx-asg-compose { display: flex; flex-direction: column; }
+.gcx-asg-add-wrap { position: relative; }
+.gcx-asg-add {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; height: 40px; margin-top: 14px; box-sizing: border-box;
+  border: 1px solid var(--gcx-border); border-radius: 8px; background: transparent;
+  color: color-mix(in srgb, var(--c, var(--gcx-link)) 78%, var(--gcx-text)) !important; font: inherit; font-weight: 600; cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.gcx-asg-add:hover, .gcx-asg-add[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--c, var(--gcx-link)) 8%, transparent);
+  border-color: color-mix(in srgb, var(--c, var(--gcx-link)) 45%, var(--gcx-border));
+}
+.gcx-asg-add:disabled { opacity: 0.5; cursor: default; }
+.gcx-asg-menu {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 40; padding: 6px 0;
+  border: 1px solid var(--gcx-border); border-radius: 10px; background: var(--gcx-card); box-shadow: 0 8px 28px rgba(0, 0, 0, 0.2);
+  transform-origin: top center; animation: gcx-asg-pop 0.14s cubic-bezier(.2,.7,.2,1);
+}
+.gcx-asg-menu[hidden] { display: none; }
+@keyframes gcx-asg-pop { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+.gcx-asg-menu hr { margin: 6px 0; border: 0; border-top: 1px solid var(--gcx-border); }
+.gcx-asg-mi {
+  display: flex; align-items: center; gap: 14px; width: 100%; padding: 8px 16px; box-sizing: border-box; border: 0; background: none;
+  color: var(--gcx-text) !important; font: inherit; font-size: 14px; text-align: left; cursor: pointer;
+}
+.gcx-asg-mi > span { min-width: 0; display: flex; flex-direction: column; }
+.gcx-asg-mi small { font-size: 12px; color: var(--gcx-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gcx-asg-mi .gcx-svg { color: color-mix(in srgb, var(--c, var(--gcx-link)) 78%, var(--gcx-text)); }
+.gcx-asg-mi[data-canvas] .gcx-svg { color: var(--gcx-muted); }
+.gcx-asg-mi:hover, .gcx-asg-mi:focus-visible { background: var(--gcx-bg2); outline: none; }
+.gcx-asg-mi[aria-disabled="true"] { opacity: 0.45; cursor: default; }
+.gcx-asg-mi[aria-disabled="true"]:hover { background: none; }
+
+/* What he's added: a text box, a link field, file chips; each with an x */
+.gcx-asg-item {
+  margin-top: 10px; overflow: hidden; border: 1px solid var(--gcx-border); border-radius: 10px; background: var(--gcx-card);
+  animation: gcx-asg-pop 0.16s cubic-bezier(.2,.7,.2,1);
+}
+.gcx-asg-item:focus-within { border-color: color-mix(in srgb, var(--c, var(--gcx-link)) 70%, var(--gcx-border)); }
+.gcx-asg-item-h { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; background: var(--gcx-bg2); font-size: 13px; }
+.gcx-asg-item-h > .gcx-svg { color: color-mix(in srgb, var(--c, var(--gcx-link)) 78%, var(--gcx-text)); }
+.gcx-asg-item-h b { flex: 1; font-weight: 600; }
+#gcx-asg .gcx-asg-ta, #gcx-asg .gcx-asg-in {
+  display: block; width: 100%; margin: 0; padding: 10px 12px; box-sizing: border-box; border: 0 !important; border-radius: 0;
+  background: transparent !important; color: var(--gcx-text) !important; box-shadow: none !important; outline: none;
+  font: inherit; font-size: 13px; line-height: 1.5;
+}
+#gcx-asg .gcx-asg-ta { min-height: 120px; max-height: 360px; resize: vertical; }
+#gcx-asg .gcx-asg-in { height: 40px; }
+.gcx-asg-ta::placeholder, .gcx-asg-in::placeholder, .gcx-asg-cform textarea::placeholder { color: var(--gcx-muted); opacity: 1; }
+.gcx-asg-x {
+  width: 30px; height: 30px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--gcx-muted) !important; cursor: pointer; transition: background-color 0.15s ease;
+}
+.gcx-asg-x:hover { background: color-mix(in srgb, var(--gcx-text) 10%, transparent); color: var(--gcx-text) !important; }
+.gcx-asg-x:disabled { opacity: 0.4; cursor: default; }
+.gcx-asg-chip.draft { padding-right: 4px; }
+.gcx-asg-chip.draft .gcx-asg-chip-tx { flex: 1; }
+.gcx-asg-chip.draft:hover { background: var(--gcx-card); border-color: var(--gcx-border); }
+
+/* Canvas's similarity pledge (the school's), when it has one */
+.gcx-asg-pledge { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 12px; line-height: 1.45; color: var(--gcx-muted); cursor: pointer; }
+.gcx-asg-pledge input { flex: none; margin: 2px 0 0; accent-color: var(--c, var(--gcx-link)); cursor: pointer; }
+.gcx-asg-pledge .gcx-asg-a { font-size: 12px; }
+.gcx-asg-pledge-tx {
+  margin-top: 8px; max-height: 200px; overflow: auto; padding: 8px 10px; border-radius: 8px; background: var(--gcx-bg2);
+  color: var(--gcx-text); font-size: 12px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.gcx-asg-pledge-tx[hidden] { display: none; }
+
+/* Turn in: see-through until there's something to hand in, then the course color. While it
+   works it fills left to right with the upload's progress. */
+.gcx-asg-btn { transition: filter 0.15s ease, transform 0.1s ease, background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease; }
+.gcx-asg-btn:disabled {
+  background: transparent; color: color-mix(in srgb, var(--c, var(--gcx-link)) 60%, var(--gcx-muted)) !important; opacity: 0.55;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--gcx-link)) 35%, var(--gcx-border)); cursor: default; filter: none; transform: none;
+}
+.gcx-asg-btn.busy:disabled {
+  opacity: 1; color: #fff !important; box-shadow: none; cursor: progress;
+  background: linear-gradient(90deg, var(--c, var(--gcx-link)) var(--p, 0%), color-mix(in srgb, var(--c, var(--gcx-link)) 45%, transparent) var(--p, 0%));
+}
+.gcx-asg-cancel { align-self: center; margin-top: 10px; font-size: 13px; color: var(--gcx-muted) !important; }
+
+/* ---- Private comments: the thread and a box to post to it */
+.gcx-asg-cmt-att { margin-left: 6px; font-size: 11px; font-weight: 500; color: var(--gcx-muted); }
+.gcx-asg-cmt.pending { opacity: 0.6; }
+.gcx-asg-cmt-file { display: inline-block; margin-top: 4px; font-size: 12px; }
+.gcx-asg-cmt-list:empty { display: none; }
+.gcx-asg-cmt-list:not(:empty) + .gcx-asg-cform { margin-top: 10px; }
+.gcx-asg-cform { display: flex; align-items: flex-end; gap: 4px; }
+#gcx-asg .gcx-asg-cform textarea {
+  flex: 1; min-width: 0; height: 38px; min-height: 38px; max-height: 160px; margin: 0; padding: 9px 14px; box-sizing: border-box;
+  border: 1px solid var(--gcx-border) !important; border-radius: 19px; background: transparent !important; color: var(--gcx-text) !important;
+  box-shadow: none !important; outline: none; font: inherit; font-size: 13px; line-height: 1.4; resize: none;
+}
+#gcx-asg .gcx-asg-cform textarea:focus { border-color: color-mix(in srgb, var(--c, var(--gcx-link)) 70%, var(--gcx-border)) !important; }
+.gcx-asg-send {
+  width: 38px; height: 38px; flex: none; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; background: none;
+  color: color-mix(in srgb, var(--c, var(--gcx-link)) 78%, var(--gcx-text)) !important; cursor: pointer; transition: background-color 0.15s ease;
+}
+.gcx-asg-send:hover:not(:disabled) { background: color-mix(in srgb, var(--c, var(--gcx-link)) 10%, transparent); }
+.gcx-asg-send:disabled { color: var(--gcx-muted) !important; opacity: 0.45; cursor: default; }
 
 /* Canvas's submission area (attempts, upload/text/link tabs, rubric) sits in the right column
    under Your work, like Classroom's side panel. Its nodes stay where React put them: the page's
@@ -118,10 +253,30 @@ html.gcx-imgbg .gcx-asg-original { background: var(--gcx-card); padding: 2px 8px
   html.gcx-asg.gcx-asg-split .gcx-asg-canvas [data-testid="assignments-2-student-view"] { max-width: none; margin: 0; }
 }
 /* Brought into view (and pointed at) by the Your work button */
-.gcx-asg-pulse { animation: gcx-asg-pulse 1.4s ease-out 0.35s; border-radius: 12px; }
+.gcx-asg-pulse { animation: gcx-asg-pulse 1.4s ease-out 0.35s; border-radius: 12px; scroll-margin-top: 80px; }
 @keyframes gcx-asg-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gcx-link) 45%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
 
 @media (max-width: 900px) {
   #gcx-asg { grid-template-columns: 1fr; }
   .gcx-asg-side { position: static; }
+}
+
+/* Our Your work card turns in what this assignment takes, or there's nothing to turn in online
+   (gcx-asg-own): Canvas's block is tucked away but stays mounted, so its sticky Previous/Next footer (position: fixed, so
+   the zero-height box doesn't clip it) keeps working; its Submit / New Attempt buttons go. The Rubric link
+   or a Canvas-only item in Add or create brings the block back (gcx-asg-reveal). */
+html.gcx-asg-own:not(.gcx-asg-reveal) .gcx-asg-canvas {
+  visibility: hidden !important; height: 0 !important; min-height: 0 !important; overflow: hidden !important;
+  margin: 0 !important; padding: 0 !important; border: 0 !important; box-shadow: none !important;
+}
+html.gcx-asg-own:not(.gcx-asg-reveal) .gcx-asg-canvas [data-testid="student-footer"] { visibility: visible !important; }
+html.gcx-asg-own:not(.gcx-asg-reveal) [data-testid="student-footer"] :is(button, a):not([data-testid="previous-assignment-btn"], [data-testid="next-assignment-btn"]) { display: none !important; }
+/* Private comments are posted from our card, so Canvas's "Add Comment" tray button goes. */
+html.gcx-asg-cmts [data-testid="view_feedback_button"] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  #gcx-asg, html.gcx-asg.gcx-asg-split .gcx-asg-main, html.gcx-asg.gcx-asg-split .gcx-asg-side,
+  .gcx-asg-menu, .gcx-asg-item, .gcx-asg-pulse { animation: none !important; }
+  .gcx-asg-btn, .gcx-asg-add, .gcx-asg-chip, .gcx-asg-x, .gcx-asg-send { transition: none !important; }
+  .gcx-asg-btn:active { transform: none; }
 }

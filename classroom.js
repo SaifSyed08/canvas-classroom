@@ -3880,7 +3880,7 @@
   const refreshInlineColors = () => document.querySelectorAll('.gcx-stream, .gcx-asg-body').forEach(fixInlineColors);
 
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = { api, esc, el, svg, fileTile, swr, store, user: PAGE_USER, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
+  window.gcx = { api, esc, el, svg, fileTile, swr, store, user: PAGE_USER, confetti, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
 
   // ---------------------------------------------------------------- loading bar
   // A thin bar across the top of the page (not the rail): dark grey track, filled with the
