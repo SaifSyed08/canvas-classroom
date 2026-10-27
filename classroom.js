@@ -628,7 +628,8 @@
   // next page transition to the same URL. A few per tab, size-capped.
   function saveSnap() {
     const v = document.getElementById('gcx-view');
-    if (!v || v.classList.contains('gcx-behind') || !v.childElementCount || v.querySelector('.gcx-skel')) return;
+    // Not a filtered-down Classwork either (the rows hidden by the filter would stay hidden).
+    if (!v || v.classList.contains('gcx-behind') || v.classList.contains('gcx-filtering') || !v.childElementCount || v.querySelector('.gcx-skel')) return;
     const copy = v.cloneNode(true);
     copy.querySelectorAll('.gcx-ripple, .gcx-pv, .gcx-pop-panel, script, iframe').forEach((n) => n.remove());
     copy.querySelectorAll('.gcx-pv-on').forEach((n) => n.classList.remove('gcx-pv-on'));
@@ -640,7 +641,7 @@
       const keys = (JSON.parse(sessionStorage.getItem('gcx:snaps') || '[]') || []).filter((k) => k !== key);
       keys.push(key);
       while (keys.length > 6) sessionStorage.removeItem(keys.shift());
-      sessionStorage.setItem(key, JSON.stringify({ cls: v.className.replace(/\bgcx-\w*(stagger|in|filtering)\b/g, '').trim(), style: v.getAttribute('style') || '', html: markup }));
+      sessionStorage.setItem(key, JSON.stringify({ user: PAGE_USER, cls: v.className.replace(/\bgcx-\w*(stagger|in|filtering)\b/g, '').trim(), style: v.getAttribute('style') || '', html: markup }));
       sessionStorage.setItem('gcx:snaps', JSON.stringify(keys));
     } catch {
       try {
@@ -1637,7 +1638,9 @@
       // on every draw (the fresh copy replaces the cached one), but anything already on screen or
       // above it stays put so a refresh never hides what he's looking at.
       if (stream.gcxIo) stream.gcxIo.disconnect();
-      if (prefs().annReveal && 'IntersectionObserver' in window) {
+      // Drawn behind last visit's copy (page transition): everything is laid out out of sight, so
+      // nothing would count as on screen; skip the reveal rather than fade them in twice.
+      if (prefs().annReveal && 'IntersectionObserver' in window && !stream.closest('.gcx-behind')) {
         const io = (stream.gcxIo = new IntersectionObserver(
           (entries) => {
             for (const e of entries) {
