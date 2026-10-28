@@ -4435,11 +4435,10 @@
       if (celebrated) return;
       celebrated = true;
       staleNews();
-      if (!prefs().confetti) return;
       try {
         sessionStorage.removeItem('gcx:celebrate');
       } catch {}
-      confetti();
+      if (prefs().confetti) confetti();
     };
     try {
       const note = JSON.parse(sessionStorage.getItem('gcx:celebrate') || 'null');
@@ -4779,15 +4778,19 @@
   const NEWS_TTL = 3 * 6e4;
   const NEWS_V = 2; // bump when the saved list's shape changes
   let newsJob = null;
+  let newsGen = 0; // goes up when he changes something the list shows (see staleNews)
   function news(fresh = false) {
     if (!PAGE_USER) return Promise.resolve(null);
     const saved = store.get('news', null);
     const mine = saved && saved.user === PAGE_USER && saved.v === NEWS_V ? saved : null;
     if (!fresh && mine && Date.now() - mine.at < NEWS_TTL) return Promise.resolve(mine);
-    if (!newsJob)
+    // A fetch started before his change can't know about it: wait it out, then fetch again.
+    if (newsJob && fresh && newsJob.gen !== newsGen) return newsJob.catch(() => {}).then(() => news(true));
+    if (!newsJob) {
+      const gen = newsGen;
       newsJob = loadNews()
         .then((n) => {
-          store.set('news', n);
+          if (gen === newsGen) store.set('news', n);
           // The rail's Inbox count too, while we're at it.
           if (n.unread !== unread) {
             unread = n.unread;
@@ -4799,6 +4802,8 @@
         })
         .catch(() => mine)
         .finally(() => (newsJob = null));
+      newsJob.gen = gen;
+    }
     return newsJob;
   }
   async function loadNews() {
@@ -4890,6 +4895,7 @@
   const bellUrgent = (d) => !!d && ((d.missing || []).length > 0 || (d.due || []).some((i) => i.due > Date.now() && i.due - Date.now() < DAY));
   // He handed something in or marked it done: the saved list is out of date.
   function staleNews() {
+    newsGen++;
     store.set('news', null);
     window.dispatchEvent(new Event('gcx:news-stale'));
   }
