@@ -260,3 +260,85 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   });
 });
+
+// ---------------------------------------------------------------- pets (pets.js)
+// The pet catalogue lives on openpets.dev, which sends no CORS headers, so pets.js asks here.
+// Only two kinds of URL are fetched: the catalogue's own JSON files and a pet's spritesheet,
+// both on openpets.dev. Sheets are stored in chrome.storage.local as data URLs (the extension
+// has unlimitedStorage) so a page never downloads the same pet twice; the newest few are kept.
+const PET_JSON = /^https:\/\/openpets\.dev\/pets\/catalog\.v3(?:\.json|\/[a-z0-9-]+\.json)$/;
+const PET_SHEET = /^https:\/\/openpets\.dev\/pets\/[A-Za-z0-9._-]+\/spritesheet\.(?:webp|png|svg)$/;
+const PET_JSON_TTL = 6 * 36e5;
+const PET_SHEETS_KEPT = 4;
+const petJsonMem = new Map();
+async function petCapped(r, limit) {
+  const reader = r.body.getReader();
+  const parts = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > limit) {
+      reader.cancel().catch(() => {});
+      throw new Error('too large');
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const p of parts) out.set(p, at), (at += p.byteLength);
+  return out;
+}
+async function petJson(url) {
+  if (!PET_JSON.test(url)) throw new Error('not a catalogue URL');
+  const mem = petJsonMem.get(url);
+  if (mem && Date.now() - mem.t < PET_JSON_TTL) return mem.data;
+  const key = 'gcxPetJson:' + url;
+  const saved = (await chrome.storage.local.get(key))[key];
+  if (saved && Date.now() - saved.t < PET_JSON_TTL) return petJsonMem.set(url, saved), saved.data;
+  try {
+    const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`openpets.dev answered ${r.status}`);
+    const data = JSON.parse(new TextDecoder().decode(await petCapped(r, 4e6)));
+    const rec = { t: Date.now(), data };
+    petJsonMem.set(url, rec);
+    chrome.storage.local.set({ [key]: rec });
+    return data;
+  } catch (e) {
+    // Offline: an old copy beats an empty picker.
+    if (saved) return saved.data;
+    throw e;
+  }
+}
+async function petSheet(id, url) {
+  if (!PET_SHEET.test(url) || !/^[A-Za-z0-9._-]{1,80}$/.test(id)) throw new Error('not a spritesheet URL');
+  const key = 'gcxPetSheet:' + id;
+  const have = (await chrome.storage.local.get(key))[key];
+  if (have && have.url === url) {
+    chrome.storage.local.set({ [key]: { ...have, used: Date.now() } });
+    return key;
+  }
+  const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(60000) });
+  if (!r.ok) throw new Error(`openpets.dev answered ${r.status}`);
+  const type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (!/^image\/(webp|png|svg\+xml)$/.test(type)) throw new Error('that pet is not an image');
+  const bytes = await petCapped(r, 12e6);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  await chrome.storage.local.set({ [key]: { url, dataUrl: `data:${type};base64,${btoa(bin)}`, used: Date.now() } });
+  // Keep the newest few sheets; older ones are fetched again if he goes back to them.
+  const all = await chrome.storage.local.get(null);
+  const sheets = Object.keys(all)
+    .filter((k) => k.startsWith('gcxPetSheet:') && k !== key)
+    .sort((a, b) => (all[b].used || 0) - (all[a].used || 0));
+  if (sheets.length >= PET_SHEETS_KEPT) await chrome.storage.local.remove(sheets.slice(PET_SHEETS_KEPT - 1));
+  return key;
+}
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== 'gcxPets' || !sender.tab) return;
+  const job = msg.op === 'json' ? petJson(String(msg.url || '')).then((data) => ({ data })) : msg.op === 'sheet' ? petSheet(String(msg.id || ''), String(msg.url || '')).then((key) => ({ key })) : null;
+  if (!job) return;
+  job.then(reply, (e) => reply({ error: e.message || String(e) }));
+  return true;
+});

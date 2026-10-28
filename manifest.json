@@ -16,7 +16,8 @@
     "https://api.openai.com/*",
     "https://*.instructure.com/*",
     "https://*.inscloudgate.net/*",
-    "https://*.amazonaws.com/*"
+    "https://*.amazonaws.com/*",
+    "https://openpets.dev/*"
   ],
   "options_ui": {
     "page": "options.html",
@@ -39,7 +40,8 @@
         "fileview.css",
         "ai.css",
         "assignment.css",
-        "people.css"
+        "people.css",
+        "pets.css"
       ],
       "js": [
         "early.js"
@@ -56,6 +58,7 @@
       ],
       "js": [
         "classroom.js",
+        "pets.js",
         "assignment.js",
         "people.js",
         "fileview.js",

@@ -1,0 +1,1131 @@
+// Pets: an OpenPets companion (openpets.dev) living along the bottom of every Canvas page.
+//
+// Sheets are Codex pet atlases: 8 columns of 192x208 cells, 9 rows (v1) or 11 rows (v2), one
+// animation per row, 260 ms a frame. The behaviour follows Saif's TAILS pet (ChatPet.tsx and
+// pet-motion.ts): same rows, same gravity, throw cap, bounce and drag, same wander and glance
+// timings, same "resting states breathe, moments are brisk" frame rates.
+//
+// background.js fetches the catalogue and the sheet (openpets.dev sends no CORS headers) and
+// keeps sheets in chrome.storage.local. Prefs live in localStorage 'gcx:pets'; where the pet is
+// lives in sessionStorage so it carries on from the same spot on the next page.
+(() => {
+  if (window.__gcxPets || window.top !== window) return;
+  window.__gcxPets = true;
+  const html = document.documentElement;
+
+  // ---------------------------------------------------------------- sheet layout (Codex)
+  const COLS = 8;
+  const FRAME_MS = 260;
+  const ROWS = {
+    idle: [0, 6],
+    'running-right': [1, 8],
+    'running-left': [2, 8],
+    waving: [3, 4],
+    jumping: [4, 5],
+    failed: [5, 8],
+    waiting: [6, 6],
+    running: [7, 6],
+    review: [8, 6],
+    'look-right-side': [9, 8],
+    'look-left-side': [10, 8],
+  };
+  // Resting states breathe; reactions are brisk (TAILS sprite-rate.ts). Sleep is slower still.
+  const RATE = { idle: 0.85, waiting: 1, sleep: 0.5, held: 0.9 };
+  const ACTIVE_RATE = 1.35;
+
+  // ---------------------------------------------------------------- feel (TAILS pet-motion.ts)
+  const BASE_H = 96; // cell height on screen at 100%
+  const WALK = 120; // px/s at 100%
+  const GRAVITY = 2600;
+  const BOUNCE = 0.5;
+  const AIR_DRAG = 0.6;
+  const GROUND_DRAG = 6;
+  const REST_SPEED = 12;
+  const MAX_STEP = 0.05;
+  const MAX_THROW = 2400;
+  const WANDER_MIN = 7000;
+  const WANDER_MAX = 16000;
+  const GLANCE_MIN = 4000;
+  const GLANCE_MAX = 11000;
+  const GLANCE_MS = 1100;
+  const REACTION_MS = 1200;
+  const PAT_MS = 420;
+  const PAT_REACTION_MS = 1400;
+  const DROWSY_MS = 60e3;
+  const SLEEP_MS = 120e3;
+  const PERCH_SEL = '.ic-DashboardCard, .gcx-ann, .gcx-post';
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const now = () => performance.now();
+
+  // ---------------------------------------------------------------- prefs
+  const PREFS_KEY = 'gcx:pets';
+  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, sound: false };
+  const readPrefs = () => {
+    try {
+      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+    } catch {
+      return { ...DEFAULTS };
+    }
+  };
+  let prefs = readPrefs();
+  const savePrefs = (patch) => {
+    prefs = { ...prefs, ...patch };
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    } catch {}
+    apply();
+  };
+  // Another tab changed them.
+  window.addEventListener('storage', (e) => {
+    if (e.key !== PREFS_KEY) return;
+    prefs = readPrefs();
+    apply();
+  });
+
+  const reducedMq = matchMedia('(prefers-reduced-motion: reduce)');
+  const calm = () => reducedMq.matches || !!(window.gcx && window.gcx.prefs && window.gcx.prefs().motion === false);
+
+  // A service worker that is just waking up can drop the first message, so that is retried once.
+  const ask = (msg, retry = 1) =>
+    new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'gcxPets', ...msg }, (r) => {
+          const err = chrome.runtime.lastError;
+          if (err && retry > 0) return setTimeout(() => ask(msg, retry - 1).then(resolve, reject), 800);
+          if (err) return reject(new Error(err.message));
+          if (!r || r.error) return reject(new Error((r && r.error) || 'no answer'));
+          resolve(r);
+        });
+      } catch (e) {
+        reject(e); // extension reloaded under the page
+      }
+    });
+
+  // ---------------------------------------------------------------- sound (off by default)
+  let actx = null;
+  const audio = () => {
+    if (!prefs.sound) return null;
+    try {
+      actx = actx || new AudioContext();
+      if (actx.state === 'suspended') actx.resume();
+      return actx;
+    } catch {
+      return null;
+    }
+  };
+  function thud(force) {
+    const ctx = audio();
+    const s = clamp(force, 0, 1);
+    if (!ctx || s < 0.08) return;
+    const t = ctx.currentTime;
+    const d = 0.13;
+    const n = Math.ceil(ctx.sampleRate * d);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.Q.value = 1.2;
+    f.frequency.setValueAtTime(220 + s * 520, t);
+    f.frequency.exponentialRampToValueAtTime(90, t + d);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05 + s * 0.09, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    src.connect(f).connect(g).connect(ctx.destination);
+    src.start(t);
+    src.stop(t + d + 0.01);
+  }
+  function chirp() {
+    const ctx = audio();
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    [523.25, 659.25].forEach((hz, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      const t = t0 + i * 0.07;
+      o.frequency.setValueAtTime(hz, t);
+      if (i) o.frequency.linearRampToValueAtTime(hz * 1.06, t + 0.12);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.045, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
+      o.connect(g).connect(ctx.destination);
+      o.start(t);
+      o.stop(t + 0.14);
+    });
+  }
+
+  // ---------------------------------------------------------------- the sheet
+  // Loaded once per page from chrome.storage.local, then redrawn at the size it is shown at
+  // (cell height x devicePixelRatio), which keeps it sharp and keeps a 1536x2288 atlas out of
+  // memory for the rest of the visit.
+  let sheet = null; // { id, rows, ver, cellW, cellH, bitmap, url, scaledFor, box:{x0,y0,x1,y1} in cell px }
+  let loading = null;
+
+  async function loadSheet(p) {
+    const key = 'gcxPetSheet:' + p.id;
+    let rec = (await chrome.storage.local.get(key))[key];
+    if (!rec || !rec.dataUrl) {
+      await ask({ op: 'sheet', id: p.id, url: p.sheet });
+      rec = (await chrome.storage.local.get(key))[key];
+    }
+    if (!rec || !rec.dataUrl) throw new Error('sheet missing');
+    const blob = await (await fetch(rec.dataUrl)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const cellW = bitmap.width / COLS;
+    // 9 or 11 rows; trust the image over the catalogue.
+    let rows = Math.round(bitmap.height / (cellW * (208 / 192)));
+    if (rows !== 9 && rows !== 11) rows = p.ver === 2 ? 11 : 9;
+    const cellH = bitmap.height / rows;
+    return { id: p.id, rows, ver: rows === 11 ? 2 : 1, cellW, cellH, bitmap, url: '', scaledFor: 0, box: opaqueBox(bitmap, cellW, cellH, rows === 11 ? 7 : 6) };
+  }
+  // The union of the idle frames' painted pixels: where his body is inside the cell. Used for
+  // the hit area, for standing his feet on the floor, and for touching walls with his body.
+  function opaqueBox(bitmap, cellW, cellH, frames) {
+    const k = 4;
+    const w = Math.max(1, Math.round((cellW * frames) / k));
+    const h = Math.max(1, Math.round(cellH / k));
+    const fallback = { x0: cellW * 0.2, y0: cellH * 0.2, x1: cellW * 0.8, y1: cellH * 0.96 };
+    try {
+      const c = new OffscreenCanvas(w, h);
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(bitmap, 0, 0, cellW * frames, cellH, 0, 0, w, h);
+      const d = x.getImageData(0, 0, w, h).data;
+      const cw = w / frames;
+      let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+      for (let yy = 0; yy < h; yy++)
+        for (let xx = 0; xx < w; xx++) {
+          if (d[(yy * w + xx) * 4 + 3] < 48) continue;
+          const cx = xx % cw;
+          if (cx < x0) x0 = cx;
+          if (cx > x1) x1 = cx;
+          if (yy < y0) y0 = yy;
+          if (yy > y1) y1 = yy;
+        }
+      if (x1 < 0) return fallback;
+      const sx = cellW / cw;
+      const sy = cellH / h;
+      return { x0: x0 * sx, y0: y0 * sy, x1: (x1 + 1) * sx, y1: (y1 + 1) * sy };
+    } catch {
+      return fallback;
+    }
+  }
+  let rescaleTimer = 0;
+  async function rescale() {
+    if (!sheet) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const cellPx = Math.max(16, Math.round(dispH() * dpr));
+    if (sheet.scaledFor === cellPx) return;
+    const s = sheet;
+    const w = Math.round(cellPx * (s.cellW / s.cellH)) * COLS;
+    const h = cellPx * s.rows;
+    let url = '';
+    try {
+      const c = new OffscreenCanvas(w, h);
+      const x = c.getContext('2d');
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(s.bitmap, 0, 0, w, h);
+      url = URL.createObjectURL(await c.convertToBlob({ type: 'image/png' }));
+    } catch {
+      return;
+    }
+    if (sheet !== s) return URL.revokeObjectURL(url);
+    if (s.url) URL.revokeObjectURL(s.url);
+    s.url = url;
+    s.scaledFor = cellPx;
+    if (ui) ui.sprite.style.backgroundImage = `url("${url}")`;
+    lastFrameKey = '';
+    render();
+  }
+
+  // ---------------------------------------------------------------- geometry
+  const dispH = () => Math.round(BASE_H * clamp(prefs.size || 1, 0.4, 1.6));
+  const dispW = () => (sheet ? Math.round(dispH() * (sheet.cellW / sheet.cellH)) : dispH());
+  const sc = () => (sheet ? dispH() / sheet.cellH : 1); // cell px -> screen px
+  const body = () => {
+    const b = sheet ? sheet.box : { x0: 38, y0: 42, x1: 154, y1: 200 };
+    const s = sc();
+    return { l: b.x0 * s, t: b.y0 * s, r: b.x1 * s, b: b.y1 * s, w: (b.x1 - b.x0) * s, h: (b.y1 - b.y0) * s };
+  };
+  const vw = () => html.clientWidth || innerWidth;
+  const vh = () => innerHeight;
+
+  // ---------------------------------------------------------------- state
+  // x: left edge of his body on screen. y: where his feet are. Both viewport px.
+  const m = {
+    x: 0, y: 0, vx: 0, vy: 0, target: null, facing: 'right', held: false, perch: null,
+    gesture: null, gestureUntil: 0, squash: null, swing: 0, swingV: 0,
+    sleeping: false, hovered: false,
+  };
+  let ui = null;
+  let frame = 0;
+  let playing = '';
+  let lastFrameKey = '';
+  let lastActive = Date.now();
+  let typingUntil = 0;
+  let caretX = null;
+  let nextWander = 0;
+  let nextGlance = 0;
+  let wavedAt = 0;
+  let pointer = { x: -1e4, y: -1e4 };
+
+  const groundY = () => (m.perch ? m.perch.top : vh());
+  const maxX = () => Math.max(0, vw() - body().w);
+  const onGround = () => !m.held && m.vy === 0 && Math.abs(m.y - groundY()) < 0.5;
+
+  function gesture(name, ms) {
+    m.gesture = name;
+    m.gestureUntil = Date.now() + ms;
+    render();
+  }
+  function fx(cls, text, dx) {
+    if (!ui) return;
+    const s = document.createElement('span');
+    s.className = cls;
+    s.textContent = text;
+    if (dx) s.style.setProperty('--dx', dx + 'px');
+    ui.fx.append(s);
+    setTimeout(() => s.remove(), 2600);
+  }
+  // A short jelly wobble: amount, which side the hit came from, and when.
+  function squash(amount, side) {
+    if (calm()) return;
+    m.squash = { a: clamp(amount, 0.06, 0.42), side, t: now() };
+    wake();
+  }
+  function hop(vy, vx = 0) {
+    if (calm() || m.held) return;
+    m.vy = -vy * Math.sqrt(clamp(prefs.size, 0.4, 1.6));
+    if (vx) m.vx = vx;
+    m.target = null;
+    wake();
+  }
+
+  // Which row to play, most specific first (TAILS ChatPet's order): being carried, falling,
+  // walking, a reaction he owes someone, the user typing, hovering, asleep, idle.
+  function stateNow() {
+    const t = Date.now();
+    const has = (n) => sheet && ROWS[n][0] < sheet.rows;
+    const look = (dir) => (has(`look-${dir}-side`) ? `look-${dir}-side` : 'review');
+    if (m.held) return Math.abs(m.vx) > 120 ? (m.vx < 0 ? 'running-left' : 'running-right') : 'waiting';
+    if (m.vy !== 0 || m.y < groundY() - 1) return 'jumping';
+    if (m.target !== null || Math.abs(m.vx) > 30) return (m.target !== null ? m.target < m.x : m.vx < 0) ? 'running-left' : 'running-right';
+    if (m.gesture && t < m.gestureUntil) return m.gesture.startsWith('look-') ? look(m.gesture.slice(5, -5)) : m.gesture;
+    if (t < typingUntil) {
+      if (caretX == null) return 'review';
+      const mid = m.x + body().w / 2;
+      return Math.abs(caretX - mid) > 160 ? look(caretX < mid ? 'left' : 'right') : 'review';
+    }
+    if (m.hovered) return 'waving';
+    if (m.sleeping) return 'sleep';
+    // Nobody has touched anything for a minute: he waits, then (above) dozes off.
+    if (t - lastActive > DROWSY_MS) return 'waiting';
+    return 'idle';
+  }
+
+  // ---------------------------------------------------------------- render
+  function render() {
+    if (!ui || !sheet) return;
+    const st = stateNow();
+    if (st !== playing) {
+      playing = st;
+      frame = 0;
+      restartTicker();
+    }
+    const rowName = st === 'sleep' ? 'idle' : st;
+    const [row, count0] = ROWS[rowName] && ROWS[rowName][0] < sheet.rows ? ROWS[rowName] : ROWS.idle;
+    const count = row === 0 && sheet.ver === 2 ? 7 : count0;
+    // Asleep: the idle pose held still, breathing slowly (pets.css), with z's floating up.
+    const f = st === 'sleep' ? 0 : frame % count;
+    ui.pet.classList.toggle('gcx-pet-asleep', st === 'sleep');
+    const H = dispH();
+    const W = dispW();
+    const b = body();
+    const left = m.x - b.l;
+    const top = m.y - b.b;
+    ui.pet.style.transform = `translate3d(${left.toFixed(1)}px, ${top.toFixed(1)}px, 0)`;
+    const key = `${W}x${H}:${row}:${f}`;
+    if (key !== lastFrameKey) {
+      lastFrameKey = key;
+      ui.pet.style.width = W + 'px';
+      ui.pet.style.height = H + 'px';
+      ui.sprite.style.backgroundSize = `${W * COLS}px ${H * sheet.rows}px`;
+      ui.sprite.style.backgroundPosition = `${-f * W}px ${-row * H}px`;
+      Object.assign(ui.hit.style, { left: b.l + 'px', top: b.t + 'px', width: b.w + 'px', height: b.h + 'px' });
+      Object.assign(ui.shadow.style, { left: b.l + b.w * 0.15 + 'px', width: b.w * 0.7 + 'px', top: b.b - 4 + 'px' });
+      ui.fx.style.top = b.t - 6 + 'px';
+    }
+    // Squash and stretch, and the swing while he dangles from the pointer.
+    let tf = '';
+    let origin = '50% 100%';
+    if (m.squash) {
+      const t = (now() - m.squash.t) / 1000;
+      if (t > 0.7) m.squash = null;
+      else {
+        const k = m.squash.a * Math.exp(-7 * t) * Math.cos(16 * t);
+        const side = m.squash.side;
+        if (side === 'left' || side === 'right') {
+          tf = `scale(${1 - k}, ${1 + k * 0.6})`;
+          origin = side === 'left' ? `${b.l}px 70%` : `${b.r}px 70%`;
+        } else {
+          tf = `scale(${1 + k * 0.7}, ${1 - k})`;
+          origin = side === 'top' ? `50% ${b.t}px` : `50% ${b.b}px`;
+        }
+      }
+    }
+    if (m.held || Math.abs(m.swing) > 0.2) {
+      tf = `rotate(${m.swing.toFixed(2)}deg)${m.held ? ' scale(0.98, 1.04)' : ''}`;
+      origin = m.grab ? `${m.grab.ox + b.l}px ${m.grab.oy + b.b}px` : '50% 0';
+    }
+    ui.body.style.transform = tf;
+    ui.body.style.transformOrigin = origin;
+    const lift = clamp((groundY() - m.y) / 200, 0, 1);
+    ui.shadow.style.opacity = m.held ? '0' : String(1 - lift);
+    ui.shadow.style.transform = `translateY(${groundY() - m.y}px) scale(${1 - lift * 0.5})`;
+    ui.pet.classList.toggle('gcx-pet-held', m.held);
+  }
+
+  // Sprite frames run on their own clock, at the state's rate.
+  let ticker = 0;
+  function restartTicker() {
+    clearTimeout(ticker);
+    if (!ui || document.hidden) return;
+    const r = RATE[playing === 'waiting' && m.held ? 'held' : playing] || ACTIVE_RATE;
+    ticker = setTimeout(() => {
+      frame++;
+      render();
+      restartTicker();
+    }, FRAME_MS / r);
+  }
+
+  // ---------------------------------------------------------------- physics
+  let raf = 0;
+  let lastT = 0;
+  function wake() {
+    if (raf || !ui) return;
+    lastT = now();
+    raf = requestAnimationFrame(step);
+  }
+  function step(t) {
+    raf = 0;
+    const dt = Math.min(MAX_STEP, Math.max(0, (t - lastT) / 1000));
+    lastT = t;
+    const busy = physics(dt);
+    render();
+    if (busy) raf = requestAnimationFrame(step);
+    else saveSoon();
+  }
+  function physics(dt) {
+    if (m.held) {
+      // The dangle: a damped pendulum pushed by how fast the hand moves sideways.
+      const want = calm() ? 0 : clamp(-m.vx * 0.018, -28, 28);
+      m.swingV += ((want - m.swing) * 60 - m.swingV * 9) * dt;
+      m.swing += m.swingV * dt;
+      m.vx *= Math.max(0, 1 - 10 * dt);
+      return true;
+    }
+    if (Math.abs(m.swing) > 0.2) {
+      m.swingV += (-m.swing * 70 - m.swingV * 8) * dt;
+      m.swing += m.swingV * dt;
+    } else m.swing = m.swingV = 0;
+    if (m.perch && !perchStillThere()) m.perch = null;
+    const g = groundY();
+    const airborne = m.y < g - 0.5 || m.vy !== 0;
+    if (airborne) {
+      const prev = m.y;
+      m.vy += GRAVITY * dt;
+      m.y += m.vy * dt;
+      // Falling past the top of a card: he lands on it.
+      if (m.vy > 0 && !m.perch) {
+        const p = findPerch(prev, m.y);
+        if (p) m.perch = p;
+      }
+      const floor = groundY();
+      const b = body();
+      if (m.y >= floor) {
+        const impact = m.vy;
+        m.y = floor;
+        if (impact > 700 && !calm()) m.vy = -impact * 0.3; // one little bounce
+        else m.vy = 0;
+        squash(impact / 1800, 'bottom');
+        thud(impact / MAX_THROW);
+        if (impact > 1900) gesture('failed', 1100);
+      } else if (m.y - b.h < 0) {
+        m.y = b.h;
+        squash(Math.abs(m.vy) / 1800, 'top');
+        thud(Math.abs(m.vy) / MAX_THROW);
+        m.vy = Math.abs(m.vy) * BOUNCE;
+      }
+    }
+    if (m.vx !== 0) {
+      m.x += m.vx * dt;
+      const mx = m.perch ? m.perch.right - body().w : maxX();
+      const mn = m.perch ? m.perch.left : 0;
+      if (m.x <= mn || m.x >= mx) {
+        if (m.perch && !airborne) {
+          // Skidded off the edge of the card.
+          m.perch = null;
+        } else {
+          const side = m.x <= mn ? 'left' : 'right';
+          m.x = clamp(m.x, mn, mx);
+          squash(Math.abs(m.vx) / 1600, side);
+          thud(Math.abs(m.vx) / MAX_THROW);
+          m.vx = (side === 'left' ? 1 : -1) * Math.abs(m.vx) * BOUNCE;
+        }
+      }
+      m.vx *= Math.max(0, 1 - (airborne ? AIR_DRAG : GROUND_DRAG) * dt);
+      if (Math.abs(m.vx) < REST_SPEED) m.vx = 0;
+      if (m.vx) m.facing = m.vx > 0 ? 'right' : 'left';
+      m.target = null;
+    }
+    if (!airborne && m.vx === 0 && m.target !== null) {
+      const dir = m.target > m.x ? 1 : -1;
+      const next = m.x + dir * WALK * clamp(prefs.size, 0.6, 1.4) * dt;
+      m.facing = dir > 0 ? 'right' : 'left';
+      if (dir > 0 ? next >= m.target : next <= m.target) {
+        m.x = m.target;
+        m.target = null;
+        // Walked into the edge of the screen on purpose: a small bonk.
+        if (m.bonk) squash(0.16, m.x <= 1 ? 'left' : 'right'), thud(0.15);
+        m.bonk = false;
+      } else m.x = next;
+    }
+    const moving = m.y < groundY() - 0.5 || m.vy !== 0 || m.vx !== 0 || m.target !== null;
+    return moving || !!m.squash || Math.abs(m.swing) > 0.2;
+  }
+  function perchStillThere() {
+    const p = m.perch;
+    if (!p.el.isConnected) return false;
+    const r = p.el.getBoundingClientRect();
+    return Math.abs(r.top - p.top) < 2 && Math.abs(r.left - p.left) < 2;
+  }
+  // Card tops he can stand on. Only looked for while he is falling.
+  function findPerch(from, to) {
+    const b = body();
+    const mid = m.x + b.w / 2;
+    let best = null;
+    for (const el of document.querySelectorAll(PERCH_SEL)) {
+      const r = el.getBoundingClientRect();
+      if (r.width < b.w * 1.2 || r.height < 40 || r.top < 70 || r.top > vh() - 40) continue;
+      if (mid < r.left + 8 || mid > r.right - 8 || r.top < from - 0.5 || r.top > to) continue;
+      if (!best || r.top < best.top) best = { el, top: r.top, left: r.left, right: r.right };
+    }
+    return best;
+  }
+
+  // ---------------------------------------------------------------- the brain (4 times a second)
+  let brain = 0;
+  function think() {
+    if (!ui || !sheet || document.hidden) return;
+    const t = Date.now();
+    const idleFor = t - lastActive;
+    if (!m.sleeping && idleFor > SLEEP_MS && onGround() && !m.held) {
+      m.sleeping = true;
+      m.target = null;
+    }
+    if (m.sleeping) {
+      if (Math.random() < 0.12) fx('gcx-pet-z', 'z');
+      render();
+      return;
+    }
+    if (m.held || !onGround() || m.vx) return;
+    if (m.gesture && t > m.gestureUntil) m.gesture = null;
+    // The cursor comes close: a wave, facing it.
+    const b = body();
+    const cx = m.x + b.w / 2;
+    const cy = m.y - b.h / 2;
+    const near = Math.hypot(pointer.x - cx, pointer.y - cy) < 110 + b.w;
+    if (near && !m.hovered && t - wavedAt > 9000 && !m.gesture) {
+      wavedAt = t;
+      m.target = null;
+      gesture('waving', 1500);
+    }
+    const drowsy = idleFor > DROWSY_MS;
+    const busy = m.gesture || t < typingUntil || m.hovered || near;
+    // Wander (TAILS: 7-16 s apart, at least 40 px, within 80% of the width).
+    const roams = prefs.roam && !calm() && !drowsy;
+    if (roams && !busy && m.target === null && t > nextWander) {
+      nextWander = t + rand(WANDER_MIN, WANDER_MAX);
+      const mn = m.perch ? m.perch.left : 0;
+      const mx = m.perch ? m.perch.right - b.w : maxX();
+      if (mx - mn > 60) {
+        let target;
+        if (!m.perch && Math.random() < 0.2) {
+          target = Math.random() < 0.5 ? mn : mx; // all the way to the edge, and bonk
+          m.bonk = true;
+        } else {
+          const span = (mx - mn) * 0.8;
+          const reach = Math.min(span / 2, 420 * clamp(prefs.size, 0.6, 1.4));
+          for (let i = 0; i < 6; i++) {
+            target = clamp(m.x + rand(-reach, reach), mn, mx);
+            if (Math.abs(target - m.x) >= 40) break;
+          }
+        }
+        if (Math.abs(target - m.x) >= 40) {
+          m.target = target;
+          wake();
+        } else m.bonk = false;
+      }
+    }
+    // Glance around now and then (v2 sheets only have the look rows).
+    if (!busy && m.target === null && t > nextGlance) {
+      nextGlance = t + rand(GLANCE_MIN, GLANCE_MAX);
+      if (sheet.ver === 2) gesture(Math.random() < 0.5 ? 'look-left-side' : 'look-right-side', GLANCE_MS);
+    }
+    if (drowsy && !busy) render();
+  }
+
+  // ---------------------------------------------------------------- the user
+  function active() {
+    const was = m.sleeping;
+    lastActive = Date.now();
+    if (!was) return;
+    // Back! He wakes with a little jump and a wave.
+    m.sleeping = false;
+    nextWander = Date.now() + rand(3000, 6000);
+    hop(380);
+    gesture('waving', 1600);
+    fx('gcx-pet-star', '!');
+  }
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      pointer = { x: e.clientX, y: e.clientY };
+      active();
+    },
+    { passive: true, capture: true },
+  );
+  window.addEventListener('pointerdown', active, { passive: true, capture: true });
+  const editable = (el) => {
+    if (!el || !el.tagName) return false;
+    if (el.isContentEditable) return true;
+    if (el.tagName === 'TEXTAREA') return true;
+    return el.tagName === 'INPUT' && /^(text|search|email|url|number|password|tel|)$/i.test(el.type || '');
+  };
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      active();
+      const el = e.composedPath ? e.composedPath()[0] : e.target;
+      if (!ui || !editable(el) || e.ctrlKey || e.metaKey || e.altKey) return;
+      // He looks over at whatever you are typing into.
+      typingUntil = Date.now() + 1800;
+      let x = null;
+      try {
+        const sel = getSelection();
+        if (sel && sel.rangeCount && el.isContentEditable) {
+          const r = sel.getRangeAt(0).getClientRects()[0];
+          if (r) x = r.left;
+        }
+      } catch {}
+      if (x == null) {
+        const r = el.getBoundingClientRect();
+        x = r.left + Math.min(r.width, 24 + (el.value ? el.value.length : 0) * 7);
+      }
+      caretX = x;
+      if (m.target !== null && !m.held) m.target = null;
+      if (Math.random() < 0.06) fx('gcx-pet-q', '?');
+      render();
+      clearTimeout(typingEnd);
+      typingEnd = setTimeout(render, 1900);
+    },
+    { capture: true },
+  );
+  let typingEnd = 0;
+  // Scrolling the page knocks him off balance (and off the card he was standing on).
+  // Only a real scroll counts: 160 px of page movement within half a second, at most every 2.5 s.
+  let lastScrollY = scrollY;
+  let stumbledAt = 0;
+  let scrollSum = 0;
+  let scrollFrom = 0;
+  window.addEventListener(
+    'scroll',
+    (e) => {
+      active();
+      if (!ui || !sheet || m.held) return;
+      // The card under him may have moved; the physics step notices and lets him fall.
+      if (m.perch) wake();
+      const el = e.target === document ? document.scrollingElement : e.target;
+      const y = el === document.scrollingElement ? scrollY : (el && el.scrollTop) || 0;
+      const prev = el === document.scrollingElement ? lastScrollY : el._gcxPetY == null ? y : el._gcxPetY;
+      if (el === document.scrollingElement) lastScrollY = y;
+      else if (el) el._gcxPetY = y;
+      // Not the pet picker's own list, and not little inner panes.
+      if (!el || (el !== document.scrollingElement && el.clientHeight < vh() * 0.5)) return;
+      const t = Date.now();
+      if (t - scrollFrom > 500) (scrollSum = 0), (scrollFrom = t);
+      scrollSum += y - prev;
+      if (Math.abs(scrollSum) < 160 || t - stumbledAt < 2500 || !onGround() || calm()) return;
+      stumbledAt = t;
+      hop(260, (scrollSum > 0 ? -1 : 1) * rand(60, 160));
+      scrollSum = 0;
+      gesture('failed', 700);
+    },
+    { passive: true, capture: true },
+  );
+  window.addEventListener('resize', () => {
+    if (!ui) return;
+    m.perch = null;
+    m.x = clamp(m.x, 0, maxX());
+    if (m.y > vh()) m.y = vh();
+    m.vy = m.vy || (m.y < vh() - 0.5 ? 1 : 0);
+    wake();
+  });
+  // Confetti from classroom.js means work was just handed in: celebrate.
+  new MutationObserver((recs) => {
+    if (!ui || !sheet) return;
+    for (const r of recs)
+      for (const n of r.addedNodes)
+        if (n.nodeType === 1 && n.classList.contains('gcx-confetti')) return celebrate();
+  }).observe(document.body || html, { childList: true });
+  function celebrate() {
+    m.sleeping = false;
+    lastActive = Date.now();
+    m.target = null;
+    gesture('jumping', 2600);
+    hop(520);
+    setTimeout(() => onGround() && hop(420), 900);
+    for (let i = 0; i < 3; i++) setTimeout(() => fx('gcx-pet-star', '★', rand(-20, 20)), i * 250);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      clearTimeout(ticker);
+      save();
+    } else if (ui) {
+      restartTicker();
+      wake();
+    }
+  });
+  reducedMq.addEventListener('change', () => apply());
+  window.addEventListener('gcx:prefs', () => apply());
+
+  // ---------------------------------------------------------------- picking him up
+  function bindPointer(hit) {
+    let press = null;
+    hit.addEventListener('pointerenter', () => {
+      m.hovered = true;
+      if (onGround()) m.target = null;
+      render();
+    });
+    hit.addEventListener('pointerleave', () => {
+      m.hovered = false;
+      render();
+    });
+    hit.addEventListener('contextmenu', (e) => e.preventDefault());
+    hit.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        hit.setPointerCapture(e.pointerId);
+      } catch {}
+      // Followed on the window as well, so a fast hand that leaves his box is not lost.
+      addEventListener('pointermove', move, true);
+      addEventListener('pointerup', up, true);
+      addEventListener('pointercancel', cancel, true);
+      addEventListener('blur', cancel);
+      press = { x: e.clientX, y: e.clientY, t: Date.now(), samples: [{ x: e.clientX, y: e.clientY, t: now() }], moved: false };
+      press.pat = setTimeout(() => {
+        if (!press || press.moved) return;
+        press.patted = true;
+        gesture('waving', PAT_REACTION_MS);
+        fx('gcx-pet-heart', '♥', rand(-12, 12));
+        setTimeout(() => fx('gcx-pet-heart', '♥', rand(-16, 16)), 180);
+        chirp();
+      }, PAT_MS);
+    });
+    const move = (e) => {
+      if (!press) return;
+      const s = press.samples;
+      s.push({ x: e.clientX, y: e.clientY, t: now() });
+      while (s.length > 2 && s[s.length - 1].t - s[0].t > 100) s.shift();
+      if (!press.moved && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 5) {
+        press.moved = true;
+        clearTimeout(press.pat);
+        // Picked up: hold him where he was grabbed.
+        m.held = true;
+        m.sleeping = false;
+        m.target = null;
+        m.perch = null;
+        m.vy = 0;
+        m.gesture = null;
+        // Where he was grabbed, relative to his body's left edge and his feet (also the swing's pivot).
+        m.grab = { ox: press.x - m.x, oy: press.y - m.y };
+        html.classList.add('gcx-pet-dragging');
+        wake();
+      }
+      if (!m.held) return;
+      const prevX = m.x;
+      const b = body();
+      m.x = clamp(e.clientX - (m.grab.ox), 0, maxX());
+      m.y = clamp(e.clientY - m.grab.oy, b.h, vh());
+      const dt = Math.max(0.008, (s[s.length - 1].t - s[0].t) / 1000);
+      m.vx = (s[s.length - 1].x - s[0].x) / dt;
+      if (Math.abs(m.x - prevX) > 1) m.facing = m.x > prevX ? 'right' : 'left';
+      wake();
+    };
+    const end = (e, cancelled) => {
+      if (!press) return;
+      const p = press;
+      press = null;
+      clearTimeout(p.pat);
+      removeEventListener('pointermove', move, true);
+      removeEventListener('pointerup', up, true);
+      removeEventListener('pointercancel', cancel, true);
+      removeEventListener('blur', cancel);
+      try {
+        if (e && e.pointerId != null) hit.releasePointerCapture(e.pointerId);
+      } catch {}
+      html.classList.remove('gcx-pet-dragging');
+      if (!m.held) {
+        // A click that stayed put: a happy jump.
+        if (!cancelled && !p.patted && Date.now() - p.t < PAT_MS) {
+          gesture('jumping', REACTION_MS);
+          hop(420);
+        }
+        return;
+      }
+      m.held = false;
+      const s = p.samples;
+      const dt = Math.max(0.016, (s[s.length - 1].t - s[0].t) / 1000);
+      const fresh = now() - s[s.length - 1].t < 80;
+      if (calm()) {
+        m.vx = m.vy = 0;
+        m.y = vh();
+      } else {
+        // Let go: he keeps the hand's speed and gravity does the rest.
+        m.vx = fresh ? clamp((s[s.length - 1].x - s[0].x) / dt, -MAX_THROW, MAX_THROW) : 0;
+        m.vy = fresh ? clamp((s[s.length - 1].y - s[0].y) / dt, -MAX_THROW, MAX_THROW) : 0;
+        if (Math.abs(m.vx) < REST_SPEED) m.vx = 0;
+        if (m.vy === 0 && m.y < vh() - 0.5) m.vy = 1;
+      }
+      nextWander = Date.now() + rand(WANDER_MIN, WANDER_MAX);
+      wake();
+      saveSoon();
+    };
+    function up(e) {
+      end(e, false);
+    }
+    function cancel(e) {
+      end(e, true);
+    }
+  }
+
+  // ---------------------------------------------------------------- where he was (per tab)
+  const POS_KEY = 'gcx:pet:pos';
+  let saveTimer = 0;
+  function save() {
+    if (!ui) return;
+    try {
+      sessionStorage.setItem(POS_KEY, JSON.stringify({ fx: (m.x + body().w / 2) / vw(), facing: m.facing, sleeping: m.sleeping, lastActive, t: Date.now() }));
+    } catch {}
+  }
+  function saveSoon() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(save, 400);
+  }
+  window.addEventListener('pagehide', save);
+
+  // ---------------------------------------------------------------- show / hide
+  function build() {
+    const layer = document.createElement('div');
+    layer.className = 'gcx-pet-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    layer.innerHTML =
+      '<div class="gcx-pet"><div class="gcx-pet-shadow"></div><div class="gcx-pet-body"><div class="gcx-pet-sprite"></div></div><div class="gcx-pet-fx"></div><div class="gcx-pet-hit" title="Drag to pick up. Click, or hold to pat."></div></div>';
+    (document.body || html).append(layer);
+    const q = (s) => layer.querySelector(s);
+    ui = { layer, pet: q('.gcx-pet'), body: q('.gcx-pet-body'), sprite: q('.gcx-pet-sprite'), hit: q('.gcx-pet-hit'), fx: q('.gcx-pet-fx'), shadow: q('.gcx-pet-shadow') };
+    bindPointer(ui.hit);
+  }
+  function place() {
+    let saved = null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(POS_KEY) || 'null');
+    } catch {}
+    const w = body().w;
+    if (saved && Number.isFinite(saved.fx)) {
+      m.x = clamp(saved.fx * vw() - w / 2, 0, maxX());
+      m.y = vh();
+      m.facing = saved.facing === 'left' ? 'left' : 'right';
+    } else {
+      // First page this tab: he drops in from above, a little right of centre.
+      m.x = clamp(vw() * 0.68, 0, maxX());
+      m.y = calm() ? vh() : Math.max(w, vh() * 0.25);
+      m.vy = calm() ? 0 : 1;
+    }
+    nextWander = Date.now() + rand(3000, WANDER_MIN);
+    nextGlance = Date.now() + rand(GLANCE_MIN, GLANCE_MAX);
+  }
+  function teardown() {
+    if (ui) ui.layer.remove();
+    ui = null;
+    clearTimeout(ticker);
+    clearInterval(brain);
+    cancelAnimationFrame(raf);
+    raf = 0;
+    brain = 0;
+  }
+  let applied = '';
+  async function apply() {
+    const want = prefs.on && prefs.id && prefs.sheet;
+    if (!want) {
+      applied = '';
+      teardown();
+      return;
+    }
+    if (ui && calm()) m.target = null;
+    if (applied === prefs.id) {
+      // Still loading this pet, or it failed and apply() reset `applied`.
+      if (!sheet || sheet.id !== prefs.id || !ui) return;
+      // Size changed (live from the slider): redraw now, resample the sheet once it settles.
+      lastFrameKey = '';
+      m.x = clamp(m.x, 0, maxX());
+      render();
+      clearTimeout(rescaleTimer);
+      rescaleTimer = setTimeout(rescale, 220);
+      return;
+    }
+
+    applied = prefs.id;
+    const p = prefs;
+    const job = (loading = loadSheet(p).catch((e) => (console.warn('[gcx pets]', e.message), null)));
+    const s = await job;
+    if (loading !== job || prefs.id !== p.id || !prefs.on) return;
+    if (!s) {
+      applied = '';
+      return;
+    }
+    if (sheet && sheet.url) URL.revokeObjectURL(sheet.url);
+    if (sheet && sheet.bitmap && sheet.bitmap !== s.bitmap) sheet.bitmap.close();
+    sheet = s;
+    const fresh = !ui;
+    if (fresh) build();
+    lastFrameKey = '';
+    playing = '';
+    if (fresh) place();
+    else m.x = clamp(m.x, 0, maxX());
+    await rescale();
+    render();
+    restartTicker();
+    if (!brain) brain = setInterval(think, 250);
+    wake();
+  }
+
+  // ---------------------------------------------------------------- settings
+  const CAT = 'https://openpets.dev/pets/catalog.v3.json';
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const SET_CSS = `
+    .gcx-set-pets > :first-child { border-top: 1px solid var(--gcx-border, #e4e4e7); }
+    .gcx-set-pets .gcx-set-row + .gcx-set-row, .gcx-set-pets .gcx-set-sub + .gcx-set-row { border-top: 1px solid var(--gcx-border, #e4e4e7); }
+    .gcx-set-pets .gcx-pets-dis { opacity: .4; pointer-events: none; }
+    .gcx-pets-cur { display: flex; align-items: center; gap: 12px; margin: 6px 0 4px; }
+    .gcx-pets-cur img, .gcx-pets-cur .gcx-pets-none { flex: none; width: 52px; height: 56px; object-fit: contain; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-pets-cur div { flex: 1; min-width: 0; }
+    .gcx-pets-cur b { display: block; font-size: 14px; font-weight: 600; color: var(--gcx-text, #18181b); }
+    .gcx-pets-cur small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--gcx-muted, #71717a); line-height: 1.35; }
+    .gcx-pets-btn { flex: none; height: 30px; padding: 0 12px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 8px; background: none; color: var(--gcx-text, #18181b);
+      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .gcx-pets-btn:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-pets-pick[hidden] { display: none; }
+    .gcx-pets-search { display: block; width: 100%; box-sizing: border-box; height: 34px; margin: 8px 0; padding: 0 12px; border: 1px solid var(--gcx-border, #e4e4e7);
+      border-radius: 10px; background: var(--gcx-card, #fff); color: var(--gcx-text, #18181b); font: inherit; font-size: 13px; }
+    .gcx-pets-search:focus { outline: 2px solid var(--gcx-link, #4f46e5); outline-offset: -1px; }
+    .gcx-pets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; padding: 2px; overscroll-behavior: contain; }
+    .gcx-pets-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 5px; border: 1px solid transparent; border-radius: 10px;
+      background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; min-width: 0; position: relative; }
+    .gcx-pets-tile:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-pets-tile[aria-pressed="true"] { border-color: var(--gcx-link, #4f46e5); background: color-mix(in srgb, var(--gcx-link, #4f46e5) 8%, transparent); }
+    .gcx-pets-tile img { width: 56px; height: 60px; object-fit: contain; }
+    .gcx-pets-tile small { display: block; width: 100%; font-size: 11px; line-height: 1.25; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gcx-muted, #71717a); }
+    .gcx-pets-tile.gcx-busy img { opacity: .35; }
+    .gcx-pets-tile.gcx-busy::after { content: ''; position: absolute; top: 22px; left: 50%; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%;
+      border: 2px solid var(--gcx-link, #4f46e5); border-right-color: transparent; animation: gcx-pets-spin .7s linear infinite; }
+    @keyframes gcx-pets-spin { to { transform: rotate(360deg); } }
+    .gcx-pets-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--gcx-muted, #71717a); }
+    .gcx-pets-foot span { flex: 1; min-width: 0; }
+    .gcx-pets-foot a { color: inherit; }
+  `;
+  function injectCss(root) {
+    const host = root instanceof ShadowRoot ? root : document.head || html;
+    const scope = root instanceof ShadowRoot ? root : document;
+    if (scope.querySelector && scope.querySelector('style[data-gcx-pets]')) return;
+    const st = document.createElement('style');
+    st.dataset.gcxPets = '';
+    st.textContent = SET_CSS;
+    host.append(st);
+  }
+
+  // The catalogue: page files of 100 entries each (with thumbnails), plus a lighter search index
+  // that says which page each pet is on.
+  let index = null;
+  const pages = new Map();
+  const getIndex = async () => index || (index = (await ask({ op: 'json', url: CAT })).data);
+  async function getPage(i) {
+    const idx = await getIndex();
+    const url = idx.pages && idx.pages[i];
+    if (!url) return [];
+    if (!pages.has(url)) pages.set(url, ask({ op: 'json', url }).then((r) => (r.data && r.data.pets) || []).catch((e) => (pages.delete(url), Promise.reject(e))));
+    return pages.get(url);
+  }
+  let searchIdx = null;
+  async function getSearch() {
+    if (searchIdx) return searchIdx;
+    const idx = await getIndex();
+    const head = (await ask({ op: 'json', url: idx.search })).data;
+    const lists = await Promise.all((head.pages || []).map((u) => ask({ op: 'json', url: u }).then((r) => r.data.pets || [])));
+    return (searchIdx = lists.flat());
+  }
+
+  function fill(box) {
+    const host = box && box.querySelector && box.querySelector('.gcx-set-pets');
+    if (!host || host.dataset.gcxPetsBound) return;
+    host.dataset.gcxPetsBound = '1';
+    injectCss(host.getRootNode());
+    const p = prefs;
+    host.innerHTML = `
+      <label class="gcx-set-row"><span><b>Pet</b><small>A little OpenPets companion along the bottom of the page. Drag it, throw it, click or hold to pat it</small></span><input type="checkbox" class="gcx-switch" data-pk="on" ${p.on ? 'checked' : ''}></label>
+      <div class="gcx-set-sub gcx-pets-main">
+        <div class="gcx-pets-cur"></div>
+        <div class="gcx-pets-pick" hidden>
+          <input type="search" class="gcx-pets-search" placeholder="Search 1,300+ pets" aria-label="Search pets">
+          <div class="gcx-pets-grid" role="list"></div>
+          <div class="gcx-pets-foot"><span class="gcx-pets-status"></span><button type="button" class="gcx-pets-btn gcx-pets-more" hidden>More</button></div>
+        </div>
+        <div class="gcx-set-lbl">Size <span class="gcx-set-val">${Math.round(p.size * 100)}%</span></div>
+        <input type="range" class="gcx-set-range" data-prange="size" min="40" max="160" step="5" value="${Math.round(p.size * 100)}" aria-label="Pet size">
+      </div>
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Roams around</b><small>Walks along the bottom on its own. Off, it stays where you put it. Always off when page animations are off</small></span><input type="checkbox" class="gcx-switch" data-pk="roam" ${p.roam ? 'checked' : ''}></label>
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A soft thud when it lands, a chirp when you pat it</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>`;
+    const q = (s) => host.querySelector(s);
+    const cur = q('.gcx-pets-cur');
+    const pick = q('.gcx-pets-pick');
+    const grid = q('.gcx-pets-grid');
+    const status = q('.gcx-pets-status');
+    const more = q('.gcx-pets-more');
+    const search = q('.gcx-pets-search');
+    let shown = []; // entries in the grid, by id
+    let nextPage = 0;
+    let gen = 0;
+
+    const sync = () => {
+      const on = prefs.on;
+      q('.gcx-pets-main').classList.toggle('gcx-pets-dis', !on);
+      host.querySelectorAll('.gcx-pets-dep').forEach((n) => n.classList.toggle('gcx-pets-dis', !on || !prefs.id));
+      cur.innerHTML = prefs.id
+        ? `<img alt="" src="${esc(prefs.thumb)}"><div><b>${esc(prefs.name)}</b><small>${esc(prefs.desc)}</small></div><button type="button" class="gcx-pets-btn gcx-pets-change">${pick.hidden ? 'Change' : 'Done'}</button>`
+        : `<span class="gcx-pets-none"></span><div><b>No pet yet</b><small>Pick one below. They come from openpets.dev; the art belongs to each pet's maker.</small></div>`;
+      grid.querySelectorAll('.gcx-pets-tile').forEach((t) => t.setAttribute('aria-pressed', String(t.dataset.petId === prefs.id)));
+    };
+    const tile = (e) =>
+      `<button type="button" class="gcx-pets-tile" role="listitem" data-pet-id="${esc(e.id)}" aria-pressed="${e.id === prefs.id}" title="${esc(e.displayName)}${e.description ? ' — ' + esc(e.description) : ''}"><img alt="" loading="lazy" src="${esc(e.thumbnail)}"><small>${esc(e.displayName)}</small></button>`;
+    const show = (list, append) => {
+      if (!append) (shown = []), (grid.innerHTML = '');
+      const ok = list.filter((e) => e && e.id && e.spritesheet && /^https:\/\/openpets\.dev\//.test(e.spritesheet) && /^https:\/\/openpets\.dev\//.test(e.thumbnail || ''));
+      shown.push(...ok);
+      grid.insertAdjacentHTML('beforeend', ok.map(tile).join(''));
+    };
+    async function browse(append) {
+      const g = ++gen;
+      status.textContent = 'Loading pets…';
+      try {
+        const idx = await getIndex();
+        const list = await getPage(nextPage);
+        if (g !== gen) return;
+        nextPage++;
+        show(list, append);
+        more.hidden = nextPage >= (idx.pages || []).length;
+        status.innerHTML = `${(idx.total || shown.length).toLocaleString()} pets from <a href="https://openpets.dev" target="_blank" rel="noopener">openpets.dev</a>`;
+      } catch (e) {
+        if (g === gen) status.textContent = `Couldn't load pets (${e.message}).`;
+      }
+    }
+    async function find(text) {
+      const g = ++gen;
+      const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+      if (!words.length) {
+        nextPage = 0;
+        return browse(false);
+      }
+      status.textContent = 'Searching…';
+      more.hidden = true;
+      try {
+        const all = await getSearch();
+        const hits = all.filter((e) => words.every((w) => (e.searchText || e.displayName || '').toLowerCase().includes(w))).slice(0, 60);
+        const want = [...new Set(hits.map((e) => e.catalogPage))];
+        const byId = new Map();
+        for (const list of await Promise.all(want.map((i) => getPage(i).catch(() => [])))) for (const e of list) byId.set(e.id, e);
+        if (g !== gen) return;
+        show(hits.map((h) => byId.get(h.id)).filter(Boolean), false);
+        status.textContent = hits.length ? `${hits.length === 60 ? '60+' : hits.length} found` : 'No pets match that.';
+      } catch (e) {
+        if (g === gen) status.textContent = `Search failed (${e.message}).`;
+      }
+    }
+    const open = (yes) => {
+      pick.hidden = !yes;
+      if (yes && !grid.children.length) browse(false);
+      sync();
+    };
+
+    host.addEventListener('change', (e) => {
+      const k = e.target.dataset && e.target.dataset.pk;
+      if (!k) return;
+      e.stopPropagation();
+      savePrefs({ [k]: e.target.checked });
+      if (k === 'on' && e.target.checked && !prefs.id) open(true);
+      sync();
+    });
+    host.addEventListener('input', (e) => {
+      if (e.target.dataset && e.target.dataset.prange === 'size') {
+        e.stopPropagation();
+        const v = Number(e.target.value);
+        e.target.parentElement.querySelector('.gcx-set-val').textContent = v + '%';
+        savePrefs({ size: v / 100 });
+      } else if (e.target === search) {
+        e.stopPropagation();
+        clearTimeout(search._t);
+        search._t = setTimeout(() => find(search.value), 250);
+      }
+    });
+    search.addEventListener('keydown', (e) => e.stopPropagation());
+    host.addEventListener('click', async (e) => {
+      if (e.target.closest('.gcx-pets-change')) return open(pick.hidden);
+      if (e.target.closest('.gcx-pets-more')) return browse(true);
+      const t = e.target.closest('.gcx-pets-tile');
+      if (!t || t.classList.contains('gcx-busy')) return;
+      const entry = shown.find((x) => x.id === t.dataset.petId);
+      if (!entry) return;
+      t.classList.add('gcx-busy');
+      status.textContent = `Fetching ${entry.displayName}…`;
+      try {
+        await ask({ op: 'sheet', id: entry.id, url: entry.spritesheet });
+        savePrefs({
+          on: true,
+          id: entry.id,
+          name: entry.displayName,
+          sheet: entry.spritesheet,
+          thumb: entry.thumbnail,
+          ver: entry.spriteVersionNumber === 2 ? 2 : 1,
+          desc: entry.description || '',
+        });
+        q('[data-pk="on"]').checked = true;
+        status.textContent = `${entry.displayName} is on the page.`;
+      } catch (err) {
+        status.textContent = `Couldn't fetch ${entry.displayName} (${err.message}).`;
+      }
+      t.classList.remove('gcx-busy');
+      sync();
+    });
+    sync();
+    if (prefs.on && !prefs.id) open(true);
+  }
+  window.addEventListener('gcx:settings', (e) => fill(e.detail));
+
+  apply();
+})();
