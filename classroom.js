@@ -1269,6 +1269,7 @@
         <span class="gcx-tabs-ink"></span>
       </nav>
       <div class="gcx-cbar-actions">
+        <button class="gcx-cbar-set" type="button" title="Classroom settings" aria-label="Classroom settings">${svg('palette', 20)}</button>
         <button class="gcx-more-btn" type="button" aria-expanded="false" aria-haspopup="true" title="Search everything else in this course (/)">
           ${svg('search', 20)}<span>More</span><kbd>/</kbd>
         </button>
@@ -1335,6 +1336,7 @@
       );
 
     const panel = bar.querySelector('.gcx-more');
+    bar.querySelector('.gcx-cbar-set').addEventListener('click', (e) => openSettings('classroom', e.currentTarget));
     const btn = bar.querySelector('.gcx-more-btn');
     const input = panel.querySelector('input');
     const list = panel.querySelector('.gcx-more-list');
@@ -2000,7 +2002,7 @@
     if (e.relatedTarget && a.contains(e.relatedTarget)) return;
     clearTimeout(linkTimer);
     // A deliberate pause first: the card is for when he's lingering, not passing over.
-    linkTimer = setTimeout(() => showLinkCard(a, lastPointer || e), 1200);
+    linkTimer = setTimeout(() => showLinkCard(a, lastPointer || e), 800);
   });
   document.addEventListener('pointerout', (e) => {
     const a = e.target.closest && e.target.closest('a[data-gcx-ext]');
@@ -3391,9 +3393,39 @@
     bc.hidden = content;
     content.style.display = 'none';
   }
+  // The settings tab he used last ('classroom' for ours, else BetterCampus's data-tab-id).
+  const SET_TAB = 'setTab';
+  let wantTab = null;
+  const activeBcTab = (bar) => {
+    const on = [...bar.querySelectorAll('[data-tab-id]')].find((b) => /rounded-t-xl|text-theme-0|\bactive\b/.test(b.className) || b.getAttribute('aria-selected') === 'true');
+    return (on && on.dataset.tabId) || '';
+  };
+  function goToSetTab(tab) {
+    const bar = bcBar();
+    if (!bar) return;
+    if (tab === 'classroom') bcActivate();
+    else bar.querySelector(`[data-tab-id="${CSS.escape(tab)}"]`)?.click();
+  }
+  // Opens BetterCampus's settings panel (by pressing its own sidebar button, hidden under our rail)
+  // on a given tab; without BetterCampus, our small settings panel instead.
+  function openSettings(tab, anchor) {
+    if (bcBar()) return goToSetTab(tab);
+    const host = [...document.querySelectorAll('*')].find((n) => n.shadowRoot && n.shadowRoot.querySelector('[data-sidebar-button]'));
+    const opener = host && host.shadowRoot.querySelector('[data-sidebar-button]').parentElement;
+    if (!opener) return openFallbackSettings(anchor);
+    wantTab = tab;
+    opener.click();
+    setTimeout(() => {
+      if (wantTab && !bcBar()) {
+        wantTab = null;
+        openFallbackSettings(anchor);
+      }
+    }, 1500);
+  }
   function bcInject() {
     const bar = bcBar();
     if (!bar) {
+      bc.open = false;
       bcDeactivate();
       return;
     }
@@ -3411,15 +3443,33 @@
       b.textContent = 'Classroom';
       b.addEventListener('click', (e) => {
         e.stopPropagation();
+        store.set(SET_TAB, 'classroom');
         bcActivate();
       });
       bar.append(b);
     }
     if (!bar.dataset.gcxWired) {
       bar.dataset.gcxWired = '1';
-      bar.addEventListener('click', (e) => e.target.closest('[data-tab-id]') && bcDeactivate(), true);
+      bar.addEventListener(
+        'click',
+        (e) => {
+          const t = e.target.closest('[data-tab-id]');
+          if (!t) return;
+          bcDeactivate();
+          if (e.isTrusted) store.set(SET_TAB, t.dataset.tabId);
+        },
+        true,
+      );
     }
     if (bc.active && (!bc.panel || !bc.panel.isConnected)) bcActivate();
+    // The panel just opened: go to the tab he asked for (the palette button) or, instead of
+    // BetterCampus's default To-do page, the one he used last.
+    if (!bc.open) {
+      bc.open = true;
+      const want = wantTab || (/todo/i.test(activeBcTab(bar)) ? store.get(SET_TAB, '') : '');
+      wantTab = null;
+      if (want) setTimeout(() => goToSetTab(want), 0);
+    }
   }
   function hookBcSettings() {
     let tries = 0;
@@ -3441,7 +3491,10 @@
     if (rail.querySelector('.gcx-fallback-set')) return;
     const b = el(`<button class="gcx-ri gcx-fallback-set" type="button" aria-haspopup="dialog"><span class="gcx-ri-ic">${svg('gear')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">Settings</span></span></button>`);
     rail.querySelector('.gcx-rail-bottom').prepend(b);
-    b.addEventListener('click', () => {
+    b.addEventListener('click', () => openFallbackSettings(b));
+  }
+  function openFallbackSettings(b) {
+    {
       const old = document.querySelector('.gcx-fallback-panel');
       if (old) return old.remove();
       const pop = el(`<div class="gcx-fallback-panel gcx-pop-panel" role="dialog" aria-label="Classroom settings">${settingsHtml()}</div>`);
@@ -3453,16 +3506,21 @@
       }
       document.body.append(pop);
       bindSettings(pop);
-      const r = b.getBoundingClientRect();
-      pop.style.left = r.right + 8 + 'px';
-      pop.style.top = Math.max(12, innerHeight - pop.offsetHeight - 12) + 'px';
+      const r = b ? b.getBoundingClientRect() : { right: innerWidth / 2, left: innerWidth / 2, bottom: 80 };
+      if (b && b.closest('#gcx-rail')) {
+        pop.style.left = r.right + 8 + 'px';
+        pop.style.top = Math.max(12, innerHeight - pop.offsetHeight - 12) + 'px';
+      } else {
+        pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 12)) + 'px';
+        pop.style.top = Math.min(r.bottom + 8, innerHeight - pop.offsetHeight - 12) + 'px';
+      }
       const outside = (e) => {
-        if (pop.contains(e.target) || b.contains(e.target)) return;
+        if (pop.contains(e.target) || (b && b.contains(e.target))) return;
         pop.remove();
         document.removeEventListener('mousedown', outside, true);
       };
       document.addEventListener('mousedown', outside, true);
-    });
+    }
   }
   const SETTINGS_CSS = `
     /* BetterCampus wraps its panel in pointer-events: none and opts each control back in. */
