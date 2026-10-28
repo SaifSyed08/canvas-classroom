@@ -434,7 +434,9 @@ html.gcx[data-gcx-shade="1"] .ic-DashboardCard__header a.gcx-card-ov {
 .gcx-card-acts { display: flex; align-items: center; margin-left: auto; }
 .gcx-card-acts .gcx-iconbtn { margin-left: 0; border: 0; background: none; cursor: pointer; padding: 0; }
 .gcx-card-links { display: flex; }
-/* shortcuts look like the email icon beside them: same grey, same size; the class color only on hover */
+/* shortcuts sit back behind the email icon: smaller and fainter; the class color only on hover */
+.gcx-card-link { width: 32px !important; height: 32px !important; opacity: 0.55; transition: opacity 0.15s ease, background-color 0.15s ease; }
+.gcx-card-link:hover { opacity: 1; }
 .gcx-card-link:hover { color: color-mix(in srgb, var(--c, var(--gcx-link)) 75%, var(--gcx-text)) !important; }
 .gcx-card-more { width: 32px !important; opacity: 0.6; transition: opacity 0.15s ease, background-color 0.15s ease; }
 .gcx-card-more:hover, .gcx-card-more:focus-visible, .gcx-card-more[aria-expanded='true'] { opacity: 1; }
