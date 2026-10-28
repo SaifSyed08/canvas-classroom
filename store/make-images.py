@@ -19,11 +19,11 @@ RAW = os.environ.get('GCX_RAW') or os.path.join(ROOT, 'store', 'raw')
 
 # In store order: the first one is what people see first. A slide is built from the screenshots in
 # store/raw when they're all there (full-window 16:10 PNGs), else the plain docs screenshot stands in.
-#   themes: theme-blossom, theme-classroom, theme-schooldark, theme-forest (the dashboard in each look)
+#   themes: theme-blossom, theme-classroom, theme-schooldark, theme-forest (the dashboard in each theme)
 #   ai:     ai-pill (Ask anything open over the page), ai-chat (the same with an answer)
 #   pet:    pet (the pet with its speech bubble up)
 SLIDES = [('themes', 'dashboard'), ('ai', 'ask'), (None, 'course-home'), (None, 'file-viewer'), ('pet', 'assignment')]
-THEMES = [('theme-blossom', 'Blossom'), ('theme-classroom', 'Classroom'), ('theme-schooldark', 'School dark'), ('theme-forest', 'Forest')]
+THEMES = [('theme-blossom', 'Blossom'), ('theme-classroom', 'Default'), ('theme-schooldark', 'School dark'), ('theme-forest', 'Forest')]
 
 TOP = (16, 94, 58)
 BOTTOM = (8, 52, 34)
