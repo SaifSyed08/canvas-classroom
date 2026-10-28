@@ -63,6 +63,7 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
 .gcx-pet-say.gcx-pet-say-link:hover .gcx-pet-say-tail { background: #eef3ff; box-shadow: -6px 0 #1d1d1f, -3px 0 #eef3ff, 3px 0 #eef3ff, 6px 0 #1d1d1f, -3px 3px #1d1d1f, 0 3px #eef3ff, 3px 3px #1d1d1f, 0 6px #1d1d1f; }
 .gcx-pet-say.gcx-out { opacity: 0; transition: opacity .24s steps(3); }
 .gcx-pet-say i { font-style: normal; visibility: hidden; }
+.gcx-pet-say-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .gcx-pet-say i.on { visibility: visible; }
 .gcx-pet-say b { font-weight: inherit; color: #1f5fd1; }
 .gcx-pet-say-tail {

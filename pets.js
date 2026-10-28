@@ -860,9 +860,13 @@
     if (n.unread > 0) {
       const m0 = (n.msgs || [])[0];
       add(
-        `msg:${n.unread}:${m0 ? m0.at : 0}`,
+        m0 ? `msg:${m0.id}:${m0.at}` : `msg:${n.unread}`,
         65,
-        n.unread === 1 && m0 && m0.from ? ['New message from ', [clip(m0.from, 24)], '!'] : [`You have ${n.unread} unread message${n.unread === 1 ? '' : 's'}.`],
+        n.unread === 1 && m0
+          ? m0.from
+            ? ['New message from ', [clip(m0.from, 24)], '!']
+            : ['New message: ', [clip(m0.title, 30)]]
+          : [`You have ${n.unread} unread message${n.unread === 1 ? '' : 's'}.`],
         '/conversations',
       );
     }
@@ -882,33 +886,53 @@
       return {};
     }
   }
+  // He can be seen: the tab is in front, his layer is showing (not under the file viewer), and
+  // he's standing about, not busy.
+  const canTalk = () =>
+    !!ui && !document.hidden && !!ui.layer.getClientRects().length && !html.classList.contains('gcx-fv-open') && !saying && !m.held && !m.leap && !m.sleeping && !m.working && onGround();
+  let talkJob = false;
   async function maybeSay() {
     const g = window.gcx;
-    if (!g || !g.news || !prefs.remind) return;
-    const n = await g.news().catch(() => null);
-    if (!n || !ui || saying || m.held || m.leap || m.sleeping) return;
-    const said = readSaid();
-    const now = Date.now();
-    for (const k of Object.keys(said)) if (now - said[k] > 7 * DAY_MS) delete said[k];
-    const last = said._last || 0;
-    const pick = sayings(n).find((x) => !said[x.key] && now - last > (x.pri >= 90 ? URGENT_GAP : SAY_GAP));
-    // The little extras only some of the time.
-    if (!pick || (pick.pri < 30 && Math.random() < 0.6)) return;
-    said[pick.key] = now;
-    said._last = now;
+    if (!g || !g.news || !prefs.remind || talkJob || !canTalk()) return;
+    if (Date.now() - (readSaid()._last || 0) < URGENT_GAP) return; // nothing could be said yet
+    talkJob = true;
     try {
-      localStorage.setItem(SAID_KEY, JSON.stringify(said));
-    } catch {}
-    say(pick);
+      const n = await g.news().catch(() => null);
+      // Ready with the font too, so the bubble is measured in it.
+      if (document.fonts && document.fonts.load) await document.fonts.load('600 13px "GCX Pixel"').catch(() => {});
+      if (!n || !prefs.remind || !canTalk()) return;
+      const said = readSaid();
+      const now = Date.now();
+      for (const k of Object.keys(said)) if (now - said[k] > 7 * DAY_MS) delete said[k];
+      const last = said._last || 0;
+      const pick = sayings(n).find((x) => !said[x.key] && now - last > (x.pri >= 90 ? URGENT_GAP : SAY_GAP));
+      // The little extras only some of the time.
+      if (!pick || (pick.pri < 30 && Math.random() < 0.6)) return;
+      if (!say(pick)) return;
+      said[pick.key] = now;
+      said._last = now;
+      try {
+        localStorage.setItem(SAID_KEY, JSON.stringify(said));
+      } catch {}
+    } finally {
+      talkJob = false;
+    }
   }
   // The bubble: white, pixel-bordered, the words typing out a letter at a time.
   function say(item) {
-    if (!ui) return;
+    if (!ui) return false;
     unsay(true);
     const box = document.createElement('div');
     box.className = 'gcx-pet-say' + (item.url ? ' gcx-pet-say-link' : '');
-    box.setAttribute('role', 'status');
     if (item.url) box.title = 'Open';
+    // Read out once, whole (the letters typing in are hidden from screen readers).
+    const said = document.createElement('span');
+    said.className = 'gcx-pet-say-sr';
+    said.textContent = item.parts.map((x) => (Array.isArray(x) ? x[0] : x)).join('');
+    box.append(said);
+    const typed = document.createElement('span');
+    typed.setAttribute('aria-hidden', 'true');
+    box.append(typed);
     const chars = [];
     for (const part of item.parts) {
       const name = Array.isArray(part);
@@ -919,20 +943,24 @@
         wrap.append(c);
         chars.push(c);
       }
-      box.append(wrap);
+      typed.append(wrap);
     }
     const tail = document.createElement('span');
     tail.className = 'gcx-pet-say-tail';
     box.append(tail);
     ui.layer.append(box);
-    const me = { box, w: box.offsetWidth, h: box.offsetHeight, timer: 0, typing: 0 };
+    const me = { box, w: box.offsetWidth, h: box.offsetHeight, timer: 0, typing: 0, over: false, tx: '' };
+    if (!me.w) {
+      box.remove();
+      return false;
+    }
     saying = me;
     placeSay();
     gesture('waving', 1200);
     const hold = 3500 + chars.length * 45;
     const done = () => {
       box.classList.add('gcx-done');
-      me.timer = setTimeout(() => saying === me && unsay(), hold);
+      if (!me.over) me.timer = setTimeout(() => saying === me && unsay(), hold);
     };
     if (calm()) {
       chars.forEach((c) => c.classList.add('on'));
@@ -949,8 +977,12 @@
       };
       me.typing = setTimeout(next, 180);
     }
-    box.addEventListener('mouseenter', () => clearTimeout(me.timer));
+    box.addEventListener('mouseenter', () => {
+      me.over = true;
+      clearTimeout(me.timer);
+    });
     box.addEventListener('mouseleave', () => {
+      me.over = false;
       if (!box.classList.contains('gcx-done')) return;
       clearTimeout(me.timer);
       me.timer = setTimeout(() => saying === me && unsay(), 1500);
@@ -960,6 +992,7 @@
       if (item.url) location.href = item.url;
       else unsay();
     });
+    return true;
   }
   function unsay(now) {
     const me = saying;
@@ -979,8 +1012,9 @@
     const cx = m.x + b.w / 2;
     const left = clamp(cx - w / 2, 6, Math.max(6, vw() - w - 6));
     const top = Math.max(6, m.y - b.h - h - 16);
-    box.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
-    box.style.setProperty('--tx', Math.round(clamp(cx - left, 12, w - 12)) + 'px');
+    box.style.translate = `${Math.round(left)}px ${Math.round(top)}px`;
+    const tx = Math.round(clamp(cx - left, 12, w - 12)) + 'px';
+    if (tx !== saying.tx) box.style.setProperty('--tx', (saying.tx = tx));
   }
 
   // ---------------------------------------------------------------- the leap
