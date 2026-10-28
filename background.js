@@ -707,7 +707,11 @@ async function petsLocal() {
   dirs = (Array.isArray(dirs) ? dirs : []).map(String).filter((d) => PET_ID.test(d));
   if (seen.done === null) seen.done = dirs; // the old format: everything already taken in
   const todo = dirs.filter((d) => !seen.done.includes(d) && !seen.gone.includes(d) && Date.now() - (localFailedAt.get(d) || 0) > 10 * 6e4);
-  if (!todo.length) return;
+  const listed = seen.gone.filter((d) => dirs.includes(d));
+  if (!todo.length) {
+    if (listed.length !== seen.gone.length) await chrome.storage.local.set({ gcxPetsLocalSeen: { ...seen, gone: listed } });
+    return;
+  }
   const get = (p) => fetch(chrome.runtime.getURL(p)).catch(() => null);
   for (const dir of todo) {
     try {
@@ -745,7 +749,8 @@ async function petForget(id) {
   return mineLocked(async () => {
     const all = (await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || [];
     const was = all.find((e) => e.id === id);
-    // One that came from pets.local stays removed (until pets.local/index.json changes).
+    // One that came from pets.local stays removed while its folder is listed in index.json
+    // (taking it out of the index and putting it back brings it back).
     if (was && was.source === 'local' && was.dir) {
       const seen = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
       if (seen && typeof seen === 'object') await chrome.storage.local.set({ gcxPetsLocalSeen: { ...seen, gone: [...new Set([...(seen.gone || []), was.dir])] } });

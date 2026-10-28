@@ -362,10 +362,9 @@
       use(URL.createObjectURL(await c.convertToBlob({ type: 'image/png' })));
     } catch {}
     if (!current() || w > s.bitmap.width || h > s.bitmap.height) return;
-    try {
-      const r = await ask({ op: 'scaled', id: s.id, w, h, cw, ch: cellPx });
-      if (r.data && current()) use(URL.createObjectURL(await (await fetch(r.data)).blob()));
-    } catch {}
+    ask({ op: 'scaled', id: s.id, w, h, cw, ch: cellPx })
+      .then(async (r) => r.data && current() && use(URL.createObjectURL(await (await fetch(r.data)).blob())))
+      .catch(() => {});
   }
 
   // ---------------------------------------------------------------- geometry
@@ -698,7 +697,8 @@
         m.target = null;
         m.sleeping = false;
       }
-      else if (m.wasAsking && onGround() && !m.held) {
+      else lastActive = Date.now();
+      if (!working && m.wasAsking && onGround() && !m.held) {
         gesture('waving', 1200);
         fx('gcx-pet-star', '!');
       }
@@ -1135,6 +1135,7 @@
     if (fresh) place();
     else m.x = clamp(m.x, 0, maxX());
     await rescale();
+    if (!ui || sheet !== s) return;
     render();
     restartTicker();
     if (!brain) brain = setInterval(think, 250);
@@ -1212,7 +1213,7 @@
       r.readAsDataURL(f);
     });
 
-  // A file dropped anywhere in our settings panel (just missing the pets) is still not opened by
+  // A file dropped anywhere in the settings panel (just missing the pets) is still not opened by
   // the browser, which would leave Canvas.
   let petsBox = null;
   const strayDrop = (e) => {
@@ -1410,7 +1411,7 @@
       if (pick.hidden) open(true);
       dropped(e.dataTransfer).then(importFiles, (err) => (status.textContent = `Couldn't import that (${err.message}).`));
     });
-    petsBox = box;
+    petsBox = box.getRootNode() instanceof ShadowRoot ? box.getRootNode().host : box;
     host.addEventListener('click', async (e) => {
       if (e.target.closest('.gcx-pets-change')) return open(pick.hidden);
       if (e.target.closest('.gcx-pets-more')) return browse(true);
