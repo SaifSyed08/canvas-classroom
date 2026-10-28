@@ -1311,6 +1311,22 @@
       requestAnimationFrame(() => placeInk(onTab));
     } else placeInk(onTab);
     addEventListener('resize', debounce(() => placeInk(bar.querySelector('.gcx-tab.on')), 100));
+    // Built ahead of time (a prerendered tab): slide the underline over once he actually arrives.
+    if (document.prerendering)
+      addEventListener(
+        'pagereveal',
+        () => {
+          const from = tabEls[Number(html.dataset.gcxFrom)];
+          const on = bar.querySelector('.gcx-tab.on');
+          if (!from || !on || from === on) return;
+          ink.classList.add('still');
+          placeInk(from);
+          void ink.offsetWidth;
+          ink.classList.remove('still');
+          requestAnimationFrame(() => placeInk(on));
+        },
+        { once: true },
+      );
 
     const panel = bar.querySelector('.gcx-more');
     const btn = bar.querySelector('.gcx-more-btn');

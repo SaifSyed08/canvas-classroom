@@ -311,6 +311,7 @@ html.gcx-asg-own.gcx-asg-reveal .gcx-asg-canvas-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 6px; padding: 6px 2px 6px 4px;
   border-bottom: 1px solid var(--gcx-border); font-size: 13px; font-weight: 600; color: var(--gcx-muted);
 }
+.gcx-asg-canvas-bar span { flex: 1; }
 .gcx-asg-canvas-x { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 50%; background: none; color: var(--gcx-muted); cursor: pointer; }
 .gcx-asg-canvas-x:hover { background: var(--gcx-bg2); color: var(--gcx-text); }
 .gcx-asg-canvas-x .gcx-svg { fill: currentColor; }

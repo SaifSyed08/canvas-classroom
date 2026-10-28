@@ -517,22 +517,24 @@
   function closeBar() {
     const box = document.querySelector('.gcx-asg-canvas');
     if (!box || box.querySelector(':scope > .gcx-asg-canvas-bar')) return;
-    const bar = el(`<div class="gcx-asg-canvas-bar"><span>In Canvas</span><button type="button" class="gcx-asg-canvas-x" aria-label="Close" title="Close">${svg('close', 18)}</button></div>`);
-    bar.querySelector('button').addEventListener('click', () => {
+    const bar = el(`<div class="gcx-asg-canvas-bar"><span>In Canvas</span><button type="button" class="gcx-asg-a gcx-asg-canvas-fresh" hidden>Refresh</button><button type="button" class="gcx-asg-canvas-x" aria-label="Close" title="Close">${svg('close', 18)}</button></div>`);
+    // After a turn-in from our card, Canvas's block still shows the page as it was (its Submit could
+    // spend another attempt). Say so, and let him refresh when he's ready rather than reloading on him.
+    bar.querySelector('.gcx-asg-canvas-fresh').addEventListener('click', () => location.reload());
+    bar.querySelector('.gcx-asg-canvas-x').addEventListener('click', () => {
       reveal(false);
       view.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
     });
     box.prepend(bar);
   }
   function reveal(on) {
-    // Turned in from our card since the page loaded: Canvas's block still shows the old state (and
-    // its Submit could spend another attempt), so show it fresh.
-    if (on && S.turnedInHere) {
-      location.reload();
-      return;
-    }
     html.classList.toggle('gcx-asg-reveal', on);
     if (on) closeBar();
+    const cb = document.querySelector('.gcx-asg-canvas-bar');
+    if (cb) {
+      cb.querySelector('span').textContent = S.turnedInHere ? 'In Canvas · from before your turn-in' : 'In Canvas';
+      cb.querySelector('.gcx-asg-canvas-fresh').hidden = !S.turnedInHere;
+    }
     const b = view.querySelector('.gcx-asg-rubric');
     b.textContent = on ? 'Hide rubric' : 'Rubric';
     b.setAttribute('aria-expanded', String(on));
@@ -548,8 +550,10 @@
     const hidePts = !!set.hide_points;
     const got = s.rubric_assessment || {};
     const graded = Object.keys(got).length > 0;
-    const total = crit.reduce((t, c) => t + (+c.points || 0), 0);
-    const earned = graded ? crit.reduce((t, c) => t + (got[c.id] && got[c.id].points != null ? +got[c.id].points : 0), 0) : null;
+    // Totals as Canvas counts them: criteria marked ignore_for_scoring (outcome-only) don't add up.
+    const scored = crit.filter((c) => !c.ignore_for_scoring);
+    const total = set.points_possible != null ? +set.points_possible : scored.reduce((t, c) => t + (+c.points || 0), 0);
+    const earned = graded ? scored.reduce((t, c) => t + (got[c.id] && got[c.id].points != null ? +got[c.id].points : 0), 0) : null;
     const pts = (n) => `${fmtNum(n)} pt${n === 1 ? '' : 's'}`;
     const rows = crit
       .map((c) => {
@@ -570,7 +574,7 @@
       })
       .join('');
     const nCrit = `${crit.length} ${crit.length === 1 ? 'criterion' : 'criteria'}`;
-    const sum = hidePts ? nCrit : graded ? `${fmtNum(earned)} / ${pts(total)}` : `${nCrit} · ${pts(total)}`;
+    const sum = hidePts ? nCrit : graded && !set.hide_score_total ? `${fmtNum(earned)} / ${pts(total)}` : `${nCrit} · ${pts(total)}`;
     const box = el(`<section class="gcx-asg-rb${graded ? ' open' : ''}">
       <button type="button" class="gcx-asg-rb-h" aria-expanded="${graded}"><h2>Rubric</h2><span class="gcx-asg-rb-sum">${esc(sum)}</span>${svg('chevron', 20)}</button>
       <div class="gcx-asg-rb-body"><div class="gcx-asg-rb-in">${rows}</div></div>
@@ -906,6 +910,8 @@
       setProgress('Turning in…', null);
       await send('POST', `/courses/${cid}/assignments/${aid}/submissions`, p);
       S.turnedInHere = true;
+      // Canvas's block, if it was open, is out of date now; tuck it away.
+      if (html.classList.contains('gcx-asg-reveal')) reveal(false);
 
       S.busy = false;
       S.composing = false;

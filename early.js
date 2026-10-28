@@ -187,7 +187,11 @@
     // left saved which way to go.
     if (!html.dataset.gcxNav) {
       const n = takeNav();
-      if (n) html.dataset.gcxNav = n.dir;
+      if (n) {
+        html.dataset.gcxNav = n.dir;
+        // A tab loaded ahead of time (prerendered) never saw the click; tell it where he came from.
+        if (course && String(n.course) === course[1] && n.from >= 0) html.dataset.gcxFrom = n.from;
+      }
     }
     const clear = () => {
       delete html.dataset.gcxNav;
