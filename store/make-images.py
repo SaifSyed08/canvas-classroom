@@ -95,11 +95,12 @@ def chip(bg, xy, text, px=17):
     f = font('fredoka-latin-600-normal.woff2', px)
     w = d.textlength(text, font=f)
     x, y = xy
-    d.rounded_rectangle((x, y, x + w + 24, y + px + 14), (px + 14) // 2, fill=(255, 255, 255))
-    d.text((x + 12, y + 5), text, font=f, fill=(30, 30, 30))
+    padx, hgt = round(px * 0.7), round(px * 1.6)
+    d.rounded_rectangle((x, y, x + w + padx * 2, y + hgt), hgt // 2, fill=(255, 255, 255))
+    d.text((x + padx, y + hgt / 2), text, font=f, fill=(30, 30, 30), anchor='lm')
 
 
-def keycaps(bg, keys, y, px=22):
+def keycaps(bg, keys, y, px=30):
     """Ctrl + Space, as keys, centered."""
     d = ImageDraw.Draw(bg)
     f = font('fredoka-latin-600-normal.woff2', px)
@@ -115,20 +116,44 @@ def keycaps(bg, keys, y, px=22):
             x += gap
 
 
+def tilted(bg, img, center, angle, under, under_angle, r=16, blur=12):
+    """img with rounded corners, turned angle degrees, on a rounded card of color under that's
+    turned a little differently, both centered on center."""
+    pad = blur * 3
+    w, h = img.width + 24, img.height + 24
+    card = Image.new('RGBA', (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
+    ImageDraw.Draw(card).rounded_rectangle((pad, pad, pad + w, pad + h), r + 6, fill=under + (255,))
+    card = card.rotate(under_angle, Image.BICUBIC, expand=True)
+    sh = Image.new('RGBA', card.size, (0, 0, 0, 0))
+    sh.putalpha(card.getchannel('A').point(lambda a: a * 100 // 255))
+    sh = sh.filter(ImageFilter.GaussianBlur(blur))
+    bg.alpha_composite(sh, (center[0] - sh.width // 2, center[1] - sh.height // 2 + blur // 2))
+    bg.alpha_composite(card, (center[0] - card.width // 2, center[1] - card.height // 2))
+    top = Image.new('RGBA', (img.width + pad * 2, img.height + pad * 2), (0, 0, 0, 0))
+    top.alpha_composite(rounded(img, r), (pad, pad))
+    top = top.rotate(angle, Image.BICUBIC, expand=True)
+    sh = Image.new('RGBA', top.size, (0, 0, 0, 0))
+    sh.putalpha(top.getchannel('A').point(lambda a: a * 90 // 255))
+    sh = sh.filter(ImageFilter.GaussianBlur(blur // 2))
+    bg.alpha_composite(sh, (center[0] - sh.width // 2, center[1] - sh.height // 2 + blur // 3))
+    bg.alpha_composite(top, (center[0] - top.width // 2, center[1] - top.height // 2))
+
+
 def slide_themes():
     shots = [(raw(n), label) for n, label in THEMES]
     if any(im is None for im, _ in shots):
         return None
     bg = gradient(1280, 800).convert('RGBA')
-    heading(bg, 'Make it yours', 'Themes, fonts and backgrounds, light or dark', 38, 44, 21)
-    # Wide browser-window shots: tiles near their own shape, so little is cropped.
-    tw, th, gap = 604, 290, 20
-    x0, y0 = (1280 - tw * 2 - gap) // 2, 146
-    for i, (im, label) in enumerate(shots):
-        x = x0 + (i % 2) * (tw + gap)
-        y = y0 + (i // 2) * (th + gap)
-        paste_shadowed(bg, cover(im, tw, th), (x, y), 12, 10)
-        chip(bg, (x + 14, y + th - 44), label)
+    heading(bg, 'Make it yours', 'Themes, fonts and backgrounds, light or dark', 22, 64, 30)
+    # Zoomed in on the sidebar, greeting and first cards, so the page reads at this size. Each is
+    # turned a little, on a card in its theme's color turned the other way.
+    tw, th = 540, 268
+    cards = [((340, 318), -3, (236, 120, 170), 2), ((940, 318), 2.5, (138, 180, 248), -1.5),
+             ((340, 618), 2, (240, 150, 60), -2.5), ((940, 618), -2.5, (168, 224, 110), 1.5)]
+    for (im, label), (c, ang, col, uang) in zip(shots, cards):
+        tile = cover(im, tw, th, (0.3, 0.28), 1.55).convert('RGBA')
+        chip(tile, (14, th - 52), label, 26)
+        tilted(bg, tile, c, ang, col, uang)
     return bg.convert('RGB')
 
 
@@ -137,9 +162,9 @@ def slide_ai():
     if pill is None or chat is None:
         return None
     bg = gradient(1280, 800).convert('RGBA')
-    heading(bg, 'AI assistance', None, 34, 50)
-    keycaps(bg, ['Ctrl', 'Space'], 104)
-    pw, ph, y = 540, 520, 186
+    heading(bg, 'AI assistance', None, 22, 64)
+    keycaps(bg, ['Ctrl', 'Space'], 108)
+    pw, ph, y = 540, 486, 196
     # Ask anything sits in the middle of the page; the answer fills the panel.
     paste_shadowed(bg, cover(pill, pw, ph, (0.5, 0.5), 1.35), (60, y), 16, 12)
     paste_shadowed(bg, cover(chat, pw, ph, (0.5, 0.5), 1.2), (1280 - 60 - pw, y), 16, 12)
@@ -147,9 +172,9 @@ def slide_ai():
     cx, cy = 640, y + ph // 2
     d.ellipse((cx - 30, cy - 30, cx + 30, cy + 30), fill=(255, 255, 255, 245))
     d.polygon([(cx - 10, cy - 14), (cx + 14, cy), (cx - 10, cy + 14)], fill=TOP)
-    f = font('fredoka-latin-600-normal.woff2', 18)
+    f = font('fredoka-latin-600-normal.woff2', 24)
     note = 'Runs on your own OpenAI key. We never see it, or anything you ask.'
-    d.text(((1280 - d.textlength(note, font=f)) / 2, y + ph + 22), note, font=f, fill=(214, 240, 225))
+    d.text(((1280 - d.textlength(note, font=f)) / 2, y + ph + 26), note, font=f, fill=(214, 240, 225))
     return bg.convert('RGB')
 
 
@@ -158,15 +183,17 @@ def slide_pet(at=None):
     if shot is None:
         return None
     bg = gradient(1280, 800).convert('RGBA')
-    heading(bg, 'A pettable companion', 'that keeps you on track', 26, 44, 22)
-    # Close to a browser window's shape, so little of the page is cut off.
-    sw, sh = 1180, 560
-    x, y = (1280 - sw) // 2, 166
-    paste_shadowed(bg, cover(shot, sw, sh), (x, y), 14, 12)
+    heading(bg, 'A pettable companion', 'that keeps you on track', 22, 64, 32)
+    # Turned a little on a card, like the themes slide.
+    sw, sh = 1100, 540
+    x, y = (1280 - sw) // 2, 200
+    # The class cards and the to-do list, without Canvas's sidebar (where the pet isn't).
+    box = (round(shot.width * 0.172), round(shot.height * 0.14), shot.width, shot.height)
+    tilted(bg, cover(shot.crop(box), sw, sh).convert('RGBA'), (640, y + sh // 2), -1.2, (236, 120, 170), 1.2)
     if at:
         # A closer look at the pet and its bubble: a circle at the bottom right, 2.4x the slide's scale.
         r = 150
-        k = max(sw / shot.width, sh / shot.height)
+        k = max(sw / (box[2] - box[0]), sh / (box[3] - box[1]))
         base = max(2 * r / shot.width, 2 * r / shot.height)
         z = cover(shot, 2 * r, 2 * r, (at[0] / shot.width, at[1] / shot.height), 2.4 * k / base).convert('RGBA')
         m = Image.new('L', (2 * r, 2 * r), 0)
@@ -233,8 +260,8 @@ def main():
             im = Image.open(os.path.join(SHOTS, fallback + '.jpg')).convert('RGB').resize((1280, 800), Image.LANCZOS)
         im.save(os.path.join(OUT, f'screenshot-{i}-{name}.png'))
     two = '\n'.join(a.name.rsplit(' ', 1))
-    promo(440, 280, two, 'Canvas, Classroom-style', 320, 40, 32, 15, 22, show=0.6).save(os.path.join(OUT, 'promo-small.png'))
-    promo(1400, 560, two, 'Canvas, Classroom-style.\nWith AI that knows your classes.', 1000, 96, 92, 36, 64).save(os.path.join(OUT, 'promo-marquee.png'))
+    promo(440, 280, two, 'Canvas, Classroom-style', 300, 40, 40, 20, 22, show=0.5).save(os.path.join(OUT, 'promo-small.png'))
+    promo(1400, 560, two, 'Canvas, Classroom-style.\nWith AI that knows your classes.', 900, 84, 108, 44, 56, show=0.72).save(os.path.join(OUT, 'promo-marquee.png'))
     print('wrote', OUT)
 
 
