@@ -762,22 +762,75 @@ const genPetPrompt = (desc, flat) =>
     flat ? 'Plain flat solid magenta (#FF00FF) background.' : 'Transparent background.',
   ].join(' ');
 
-// The image models newest first, as for covers; the last error if none of them works.
-async function openaiImage(body) {
+// One picture, as base64. Streamed, so the reply starts as soon as there's a first draft (Chrome
+// stops a worker whose fetch takes over 30 s to answer); a model that can't stream is asked again
+// plainly.
+async function imageCall(key, body) {
+  const go = (b) =>
+    fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify(b),
+      signal: AbortSignal.timeout(150000),
+    });
+  let r = await go({ ...body, stream: true, partial_images: 2 });
+  let j = null;
+  if (!r.ok) {
+    j = await r.json().catch(() => ({}));
+    if (!/stream|partial/i.test((j.error && j.error.message) || '')) return { r, j };
+    r = await go(body);
+    return { r, j: await r.json().catch(() => ({})) };
+  }
+  if (!/event-stream/.test(r.headers.get('content-type') || '')) return { r, j: await r.json().catch(() => ({})) };
+  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '';
+  let done = null;
+  for (;;) {
+    const { value, done: end } = await reader.read();
+    if (end) break;
+    buf += value;
+    let i;
+    while ((i = buf.indexOf('\n\n')) >= 0) {
+      const ev = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      const line = ev.split('\n').find((l) => l.startsWith('data:'));
+      if (!line) continue;
+      let d;
+      try {
+        d = JSON.parse(line.slice(5));
+      } catch {
+        continue;
+      }
+      if (d.type === 'image_generation.completed' && d.b64_json) done = d.b64_json;
+      else if (d.type === 'error' || d.error) return { r: { ok: false, status: 500 }, j: { error: d.error || d } };
+    }
+  }
+  return { r, j: done ? { data: [{ b64_json: done }] } : { error: { message: 'the picture never arrived' } } };
+}
+// The image models newest first, as for covers; the last error if none of them works. `alt` is
+// a second body for a model that turns the first down over its background (one that can't draw
+// on a transparent one), tried only once no model takes the first.
+async function openaiImage(body, alt) {
   const key = await getKey();
   if (!key) throw new Error('No OpenAI key is set');
   let last;
+  const later = [];
   for (const model of IMAGE_MODELS) {
-    const r = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, ...body }),
-    });
-    const j = await r.json().catch(() => ({}));
+    const { r, j } = await imageCall(key, { model, ...body });
+    if (r.ok && j.data && j.data[0] && j.data[0].b64_json) return j.data[0].b64_json;
+    const msg = (j.error && j.error.message) || `HTTP ${r.status}`;
+    last = new Error(msg);
+    if (alt && /background|transparen/i.test(msg)) {
+      later.push(model);
+      continue;
+    }
+    // Only a model this key can't use is worth trying the next one for.
+    if (!(r.status === 404 || r.status === 403 || /model/i.test(msg))) break;
+  }
+  for (const model of later) {
+    const { r, j } = await imageCall(key, { model, ...alt });
     if (r.ok && j.data && j.data[0] && j.data[0].b64_json) return j.data[0].b64_json;
     last = new Error((j.error && j.error.message) || `HTTP ${r.status}`);
-    // Only a model this key can't use is worth trying the next one for.
-    if (!(r.status === 404 || r.status === 403 || (j.error && /model/i.test(j.error.message || '')))) break;
   }
   throw last;
 }
@@ -808,18 +861,12 @@ function genMask(px, w, h) {
   const br = ((bk >> 8) << 4) + 8;
   const bg = (((bk >> 4) & 15) << 4) + 8;
   const bb = ((bk & 15) << 4) + 8;
-  const near = (i) => Math.abs(px[i * 4] - br) + Math.abs(px[i * 4 + 1] - bg) + Math.abs(px[i * 4 + 2] - bb) < 110;
-  a.fill(255);
-  const stack = edge.filter(near);
-  for (const i of stack) a[i] = 0;
-  while (stack.length) {
-    const i = stack.pop();
-    const x = i % w;
-    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
-      if (j < 0 || j >= n || a[j] === 0 || !near(j)) continue;
-      a[j] = 0;
-      stack.push(j);
-    }
+  // Anything close to that color goes (the gaps between legs as well as the outside); pixels
+  // part way there (the blended edge) keep part of their alpha.
+  const dist = (i) => Math.abs(px[i * 4] - br) + Math.abs(px[i * 4 + 1] - bg) + Math.abs(px[i * 4 + 2] - bb);
+  for (let i = 0; i < n; i++) {
+    const d = dist(i);
+    a[i] = d < 110 ? 0 : d < 260 ? Math.round((255 * (d - 110)) / 150) : 255;
   }
   return a;
 }
@@ -857,7 +904,7 @@ function genBlobs(a, w, h) {
           if (on[j] >= 2 && !seen[j]) (seen[j] = 1), st.push(j);
         }
     }
-    boxes.push(b);
+    if (b.n >= 12) boxes.push(b); // specks (noise, sparkles) never make a pose
   }
   // merge boxes closer than 3 coarse pixels (a hand or a hat apart from the body)
   for (let merged = true; merged; ) {
@@ -977,8 +1024,9 @@ async function genSheet(bytes) {
   const poses = {};
   found.forEach((b, i) => (poses[GEN_POSES[i]] = b));
   const has = (name) => !!poses[name];
-  // One scale for every pose, so it stays the same size whatever it's doing.
-  const k = Math.min(150 / poses.idle.h, 176 / Math.max(...found.map((b) => b.w)), 178 / Math.max(...found.map((b) => b.h)));
+  // One scale for every pose, so it stays the same size whatever it's doing, with room left for
+  // the tilts, squashes and hops (up to ~10% wider and 22 px higher than the pose).
+  const k = Math.min(148 / poses.idle.h, 160 / Math.max(...found.map((b) => b.w)), 165 / Math.max(...found.map((b) => b.h)));
   const CW = 192;
   const CH = 208;
   const out = new OffscreenCanvas(CW * 8, CH * 11);
@@ -1001,29 +1049,46 @@ async function genSheet(bytes) {
   return { bytes: new Uint8Array(await (await out.convertToBlob({ type: 'image/png' })).arrayBuffer()), poses: found.length };
 }
 
-// A short name from the description: "Bevo, the Texas longhorn" -> "Bevo"; "a tiny dragon" -> "Tiny dragon".
+// A short name from the description: "Bevo, the Texas longhorn" -> "Bevo"; "a tiny dragon" -> "Tiny
+// dragon"; "a frog wearing a graduation cap" -> "Frog".
 function genName(desc) {
-  const s = String(desc).split(/[,.;:(\n]/)[0].replace(/^\s*(an?|the)\s+/i, '').trim().slice(0, 28) || 'My pet';
+  let s = String(desc).split(/[,.;:(\n]/)[0].split(/\s+(?:with|wearing|in|holding|on|that|who|and)\s+/i)[0];
+  s = s.replace(/^\s*(an?|the)\s+/i, '').trim();
+  if (s.length > 24) s = s.slice(0, 24).replace(/\s+\S*$/, '');
+  s = s || 'My pet';
   return s[0].toUpperCase() + s.slice(1);
 }
 
-async function petGenerate(desc) {
+const genJobs = new Map();
+function petGenerate(desc) {
   desc = String(desc || '').replace(/\s+/g, ' ').trim().slice(0, 400);
-  if (desc.length < 3) throw new Error('describe your pet first');
-  const base = { size: '1536x1024', quality: 'medium', n: 1 };
-  let b64png;
-  try {
-    b64png = await openaiImage({ ...base, prompt: genPetPrompt(desc, false), background: 'transparent', output_format: 'png' });
-  } catch (e) {
-    // A model without transparent backgrounds: a flat color, taken out here instead.
-    if (!/background|transparen/i.test(e.message || '')) throw e;
-    b64png = await openaiImage({ ...base, prompt: genPetPrompt(desc, true), output_format: 'png' });
+  if (desc.length < 3) return Promise.reject(new Error('describe your pet first'));
+  if (!genJobs.has(desc)) genJobs.set(desc, petGenerateNow(desc).finally(() => genJobs.delete(desc)));
+  return genJobs.get(desc);
+}
+const GEN_KEPT = 'gcxPetGenLast';
+async function petGenerateNow(desc) {
+  const kept = (await chrome.storage.session.get(GEN_KEPT).catch(() => ({})))[GEN_KEPT];
+  let b64png = kept && kept.desc === desc && Date.now() - kept.at < 600000 ? kept.b64 : '';
+  if (!b64png) {
+    const base = { size: '1536x1024', quality: 'low', n: 1, output_format: 'png' };
+    // A model without transparent backgrounds gets a flat color, taken out here instead.
+    b64png = await openaiImage({ ...base, prompt: genPetPrompt(desc, false), background: 'transparent' }, { ...base, prompt: genPetPrompt(desc, true) });
+    await chrome.storage.session.set({ [GEN_KEPT]: { desc, b64: b64png, at: Date.now() } }).catch(() => {});
   }
-  const sheet = await genSheet(fromDataUrl(`data:image/png;base64,${b64png}`));
+  let sheet;
+  try {
+    sheet = await genSheet(fromDataUrl(`data:image/png;base64,${b64png}`));
+  } catch (e) {
+    await chrome.storage.session.remove(GEN_KEPT).catch(() => {}); // a picture that can't be used isn't kept
+    throw e;
+  }
   const name = genName(desc);
   const slug = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'pet';
   const manifest = new TextEncoder().encode(JSON.stringify({ displayName: name, description: desc }));
-  return petAdopt([{ name: 'pet.json', bytes: manifest }, { name: `${slug}.png`, bytes: sheet.bytes }], 'ai');
+  const pet = await petAdopt([{ name: 'pet.json', bytes: manifest }, { name: `${slug}.png`, bytes: sheet.bytes }], 'ai');
+  await chrome.storage.session.remove(GEN_KEPT).catch(() => {});
+  return pet;
 }
 
 // "Your school's mascot": who the school behind this Canvas is, and what its mascot looks like.

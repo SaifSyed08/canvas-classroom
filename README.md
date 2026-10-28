@@ -164,7 +164,7 @@ to page.
 - **Pick it up**: drag it, throw it, and it squishes on landing, bonks off the edges, and dusts up little
   clouds as it runs.
 - **Sound, if you want it**: soft footsteps, a thud when it lands, a whoosh when you throw it, a chirp when
-  you pat it. Off by default.
+  you pat it, with its own volume slider. Off by default.
 
 Sprites are shrunk to their on-screen size with a sharpening pass, so the pixel art stays crisp at any size
 and zoom. Pet, size, roaming and sound are in settings.
@@ -189,7 +189,7 @@ dashboard preview beside it, so you see each change as you make it:
 - the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), a course-color wash over class
   images and how strong it is, black-and-white or dimmed images, and how dark class images get behind their
   white titles
-- pets: which one, size, roaming and sound
+- pets: which one, size, roaming, sound and its volume
 - page animations, the click ripple on class cards, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,
   New Year, Valentine's, St. Patrick's and the Fourth
@@ -248,7 +248,8 @@ unpacked.
 
 - It runs on `*.instructure.com` pages and uses Canvas's own API with your session. Questions you ask
   (with your course list and the Canvas data the assistant looks up), Inbox messages you write with
-  suggestions on (and the thread you're replying to), and AI cover requests go to OpenAI. See the
+  suggestions on (and the thread you're replying to), AI cover and AI pet requests (and, for "My school's
+  mascot", your Canvas address) go to OpenAI. See the
   [privacy policy](docs/privacy.md).
 - Assignments, Classwork, files and announcements are cached in the extension's storage, per Canvas site
   and per user, and dropped after 30 days without a refresh. Pages draw the cached copy at once, refresh in

@@ -57,7 +57,8 @@ All of it stays in your browser:
   back
 - your OpenAI key, if you added one; it is only ever sent to api.openai.com, by the extension's
   background worker, and never given to Canvas's own page scripts
-- pets you picked or imported
+- pets you picked, imported or made with AI, and for ten minutes the last AI pet picture (so a lost reply
+  isn't paid for twice)
 
 It also changes two of BetterCampus's settings in your browser: its to-do range is switched to Month once (so
 the two-week list works), and its saved theme colors are kept in step with dark and light mode.

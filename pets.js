@@ -62,7 +62,7 @@
 
   // ---------------------------------------------------------------- prefs
   const PREFS_KEY = 'gcx:pets';
-  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, sound: false };
+  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, sound: false, volume: 1 };
   const readPrefs = () => {
     let p;
     try {
@@ -87,6 +87,7 @@
   window.addEventListener('storage', (e) => {
     if (e.key !== PREFS_KEY) return;
     prefs = readPrefs();
+    if (out) out.gain.value = volume();
     apply();
   });
 
@@ -113,7 +114,8 @@
   // Chrome keeps a page's audio suspended until someone clicks or types on it, so the context is
   // made (or woken) on the first click or key, not when he first lands, which is usually unprompted.
   let actx = null;
-  let out = null; // a limiter in front of the speakers, so a hard landing never clips
+  let out = null; // every sound goes here: his volume, then a limiter so a hard landing never clips
+  const volume = () => Math.max(0, Math.min(2, Number(prefs.volume) >= 0 ? Number(prefs.volume) : 1));
   let hush = 0;
   let suspending = false;
   // For a sound: the context if a click or key has made one. Sounds scheduled while it is still
@@ -136,10 +138,13 @@
     if (!prefs.sound || actx) return;
     try {
       actx = new AudioContext();
-      out = actx.createDynamicsCompressor();
-      out.threshold.value = -10;
-      out.ratio.value = 8;
-      out.connect(actx.destination);
+      const limit = actx.createDynamicsCompressor();
+      limit.threshold.value = -10;
+      limit.ratio.value = 8;
+      limit.connect(actx.destination);
+      out = actx.createGain();
+      out.gain.value = volume();
+      out.connect(limit);
       audio();
     } catch {
       actx = null;
@@ -1242,6 +1247,29 @@
   window.addEventListener('dragover', strayDrop);
   window.addEventListener('drop', strayDrop);
 
+  // A pet being drawn ({ desc, run }), kept outside the settings panel so closing and reopening it
+  // can't start (and pay for) a second one. Once drawn, it becomes the pet.
+  let genJob = null;
+  function startGen(text) {
+    // A message now and then keeps the background worker awake while the picture is drawn.
+    const awake = setInterval(() => ask({ op: 'ping' }, 0).catch(() => {}), 15000);
+    // Sent again only if it never reached the worker (nothing was drawn or paid for then).
+    const send = () =>
+      ask({ op: 'generate', desc: text }, 0).catch((e) => {
+        if (/Receiving end does not exist|Could not establish connection/i.test(e.message)) return new Promise((r) => setTimeout(r, 800)).then(() => ask({ op: 'generate', desc: text }, 0));
+        throw e;
+      });
+    return send()
+      .then(({ pet }) => {
+        const entry = { ...pet, mine: true };
+        savePrefs({ on: true, id: entry.id, name: entry.displayName, sheet: 'mine', thumb: entry.thumbnail, ver: entry.spriteVersionNumber, desc: entry.description || '' });
+        return entry;
+      })
+      .finally(() => {
+        clearInterval(awake);
+        genJob = null;
+      });
+  }
   // Starting points for an AI-made pet ('mascot' asks which school this Canvas belongs to).
   const IDEAS = [
     ['🎓 My school’s mascot', 'mascot'],
@@ -1276,7 +1304,11 @@
         <input type="range" class="gcx-set-range" data-prange="size" min="40" max="160" step="5" value="${Math.round(p.size * 100)}" aria-label="Pet size">
       </div>
       <label class="gcx-set-row gcx-pets-dep"><span><b>Roams around</b><small>Walks along the bottom on its own. Off, it stays where you put it. Always off when page animations are off</small></span><input type="checkbox" class="gcx-switch" data-pk="roam" ${p.roam ? 'checked' : ''}></label>
-      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A thud when it lands, soft footsteps, a whoosh when you throw it, a chirp when you pat it, and a quiet snore when it dozes off</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>`;
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A thud when it lands, soft footsteps, a whoosh when you throw it, a chirp when you pat it, and a quiet snore when it dozes off</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>
+      <div class="gcx-set-sub gcx-pets-dep gcx-pets-vol">
+        <div class="gcx-set-lbl">Volume <span class="gcx-set-val">${Math.round(volume() * 100)}%</span></div>
+        <input type="range" class="gcx-set-range" data-prange="volume" min="0" max="200" step="5" value="${Math.round(volume() * 100)}" aria-label="Pet volume">
+      </div>`;
     const q = (s) => host.querySelector(s);
     const cur = q('.gcx-pets-cur');
     const pick = q('.gcx-pets-pick');
@@ -1296,7 +1328,7 @@
     const sync = () => {
       const on = prefs.on;
       q('.gcx-pets-main').classList.toggle('gcx-pets-dis', !on);
-      host.querySelectorAll('.gcx-pets-dep').forEach((n) => n.classList.toggle('gcx-pets-dis', !on || !prefs.id));
+      host.querySelectorAll('.gcx-pets-dep').forEach((n) => n.classList.toggle('gcx-pets-dis', !on || !prefs.id || (n.classList.contains('gcx-pets-vol') && !prefs.sound)));
       cur.innerHTML = prefs.id
         ? `<img alt="" src="${esc(prefs.thumb)}"><div><b>${esc(prefs.name)}</b><small>${esc(prefs.desc)}</small></div><button type="button" class="gcx-pets-btn gcx-pets-change">${pick.hidden ? 'Change' : 'Done'}</button>`
         : `<span class="gcx-pets-none"></span><div><b>No pet yet</b><small>Pick one below from codex-pets.net (the art belongs to each pet's maker), or import your own.</small></div>`;
@@ -1403,19 +1435,25 @@
     }
 
     // A pet drawn by AI from his description (background.js makes the sheet).
+    const drawing = () => {
+      go.disabled = true;
+      genBox.hidden = false;
+      q('.gcx-pets-make').setAttribute('aria-expanded', 'true');
+      if (genJob) desc.value = genJob.desc;
+      genStatus.textContent = 'Drawing your pet… (about half a minute)';
+    };
     async function generate() {
       const text = desc.value.trim();
+      if (genJob) return;
       if (text.length < 3) {
         genStatus.textContent = 'Describe your pet first.';
         return desc.focus();
       }
-      go.disabled = true;
-      genStatus.textContent = 'Drawing your pet… (about half a minute)';
-      // A message now and then keeps the background worker awake while the picture is drawn.
-      const awake = setInterval(() => ask({ op: 'ping' }, 0).catch(() => {}), 15000);
+      genJob = { desc: text, run: startGen(text) };
+      drawing();
       try {
-        // No retry: a second try would draw (and pay for) a second picture.
-        const { pet } = await ask({ op: 'generate', desc: text }, 0);
+        const pet = await genJob.run;
+        if (!host.isConnected) return;
         search.value = '';
         await browse(false);
         await choose({ ...pet, mine: true });
@@ -1425,9 +1463,28 @@
           ? 'Add your OpenAI key first (the key button in Ask anything, or the extension’s options).'
           : `Couldn't make it (${e.message}).`;
       } finally {
-        clearInterval(awake);
         go.disabled = false;
       }
+    }
+    // Settings reopened while a pet is still being drawn: show that, and pick it up when it's done.
+    if (genJob) {
+      const job = genJob;
+      drawing();
+      job.run.then(
+        async (pet) => {
+          if (!host.isConnected) return;
+          go.disabled = false;
+          q('[data-pk="on"]').checked = true;
+          await browse(false);
+          sync();
+          genStatus.textContent = `Made ${pet.displayName}. Make another, or pick it above any time.`;
+        },
+        (e) => {
+          if (!host.isConnected) return;
+          go.disabled = false;
+          genStatus.textContent = `Couldn't make it (${e.message}).`;
+        },
+      );
     }
     async function idea(b) {
       if (b.dataset.idea !== 'mascot') {
@@ -1471,6 +1528,18 @@
         const v = Number(e.target.value);
         e.target.parentElement.querySelector('.gcx-set-val').textContent = v + '%';
         savePrefs({ size: v / 100 });
+      } else if (e.target.dataset && e.target.dataset.prange === 'volume') {
+        e.stopPropagation();
+        const v = Number(e.target.value);
+        e.target.parentElement.querySelector('.gcx-set-val').textContent = v + '%';
+        savePrefs({ volume: v / 100 });
+        if (out) out.gain.value = volume();
+        // a soft pat to hear the new level (at most a few a second while dragging)
+        if (Date.now() - (e.target._at || 0) > 250) {
+          e.target._at = Date.now();
+          unlock();
+          chirp();
+        }
       } else if (e.target === search) {
         e.stopPropagation();
         clearTimeout(search._t);
