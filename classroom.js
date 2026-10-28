@@ -3284,7 +3284,7 @@
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
     school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
-    uiFont: '', art: '', artAmt: 18,
+    uiFont: '', art: '', artAmt: 18, themeAmt: 85,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -3401,17 +3401,32 @@
     else delete html.dataset.gcxUi;
     applyArt();
   }
-  // Page backgrounds: two drawings (each with an ink for light pages and one for dark), or his
-  // own picture (uploaded or made with AI, in chrome.storage). The strength is how much of it
-  // shows through the page color.
+  // Page backgrounds: his BetterCampus theme's own picture (when it has one), two drawings (each
+  // with an ink for light pages and one for dark), or his own picture (uploaded or made with AI, in
+  // chrome.storage). The strength is how much of it shows through the page color. Never picked
+  // (art ''): the theme's picture if there is one, else none.
   const ARTS = [
-    ['', 'None'],
+    ['none', 'None'],
+    ['theme', 'Theme', 'center'],
     ['trees', 'Trees', 'center bottom'],
     ['blossom', 'Blossom', 'center top'],
     ['mine', 'Yours', 'center'],
   ];
   const BG_KEY = 'gcx:bgimg';
   let bgMine = null; // his picture once read ('' if there's none)
+  // The picture in his BetterCampus theme (its own layer variable), or ''.
+  const bcPicture = () => {
+    const m = getComputedStyle(html)
+      .getPropertyValue('--bcbackground-image-layer')
+      .match(/url\(\s*["']?([^"')]+)["']?\s*\)/);
+    return m && /^(https:|chrome-extension:|data:image\/)/.test(m[1]) ? m[1] : '';
+  };
+  const artOf = (p = prefs()) => {
+    const a = p.art === '' || p.art == null ? 'theme' : p.art;
+    return a === 'theme' && !bcPicture() ? 'none' : a;
+  };
+  // The theme's picture has its own strength (it's meant to be seen; the drawings are faint).
+  const amtKey = (a) => (a === 'theme' ? 'themeAmt' : 'artAmt');
   const pageIsDark = () => {
     const n = document.createElement('i');
     n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0-ungradient, var(--bcbackground-1, #fff))';
@@ -3425,14 +3440,22 @@
   async function applyArt() {
     const run = ++artRun;
     const p = prefs();
-    const amt = Math.max(3, Math.min(100, Number(p.artAmt) || 18));
-    const art = ARTS.find((a) => a[0] === p.art && a[0]);
+    const picture = bcPicture();
+    // BetterCampus hasn't drawn its theme yet: keep what early.js put up from last time.
+    if ((p.art === '' || p.art === 'theme') && !picture && !document.getElementById('bettercanvas-theme-preset')) return;
+    const which = artOf(p);
+    const art = ARTS.find((a) => a[0] === which && a[0] !== 'none');
+    const amt = Math.max(3, Math.min(100, Number(p[amtKey(which)]) || PREF_DEFAULTS[amtKey(which)]));
+    // None over a theme with a picture: the plain page color instead of it.
+    html.classList.toggle('gcx-noart', which === 'none' && !!picture);
     let url = '';
     if (art && art[0] === 'mine') {
       if (bgMine === null) bgMine = (await chrome.storage.local.get(BG_KEY).catch(() => ({})))[BG_KEY] || '';
       if (run !== artRun) return;
       url = bgMine;
-    } else if (art) url = chrome.runtime.getURL(`art/${art[0]}-${pageIsDark() ? 'dark' : 'light'}.svg`);
+    } else if (art && art[0] === 'theme') url = picture;
+    else if (art) url = chrome.runtime.getURL(`art/${art[0]}-${pageIsDark() ? 'dark' : 'light'}.svg`);
+    if (url.includes('"')) url = '';
     html.classList.toggle('gcx-art', !!url);
     html.classList.toggle('gcx-artbold', !!url && amt >= 40);
     let src = document.getElementById('gcx-art-src');
@@ -3775,16 +3798,16 @@
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Background</div>
           <div class="gcx-set-tone gcx-set-arts" role="radiogroup" aria-label="Background">${ARTS.map(
-            ([k, label]) => `<button type="button" role="radio" data-art="${k}" aria-checked="${(p.art || '') === k}">${label}</button>`,
+            ([k, label]) => (k === 'theme' && !bcPicture() ? '' : `<button type="button" role="radio" data-art="${k}" aria-checked="${artOf(p) === k}">${label}</button>`),
           ).join('')}</div>
-          <div class="gcx-set-bgmine"${p.art === 'mine' ? '' : ' hidden'}>
+          <div class="gcx-set-bgmine"${artOf(p) === 'mine' ? '' : ' hidden'}>
             <button type="button" class="gcx-set-try gcx-set-bgup">Upload a picture</button>
             <input type="file" class="gcx-set-bgfile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
             <form class="gcx-set-bggen"><input type="text" maxlength="300" placeholder="Or describe one for AI: misty mountains at dawn" aria-label="Describe a background for AI to make"><button type="submit" class="gcx-set-try">Make it</button></form>
           </div>
           <div class="gcx-set-need" data-needs="art">
-            <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p.artAmt}%</span></div>
-            <input type="range" class="gcx-set-range" data-range="artAmt" min="5" max="100" step="1" value="${p.artAmt}" aria-label="Background strength">
+            <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p[amtKey(artOf(p))]}%</span></div>
+            <input type="range" class="gcx-set-range gcx-set-artamt" data-range="${amtKey(artOf(p))}" min="5" max="100" step="1" value="${p[amtKey(artOf(p))]}" aria-label="Background strength">
           </div>
         </div>
         ${toggle('tint', 'Color over class images', "Each class image takes a wash of that class's color, like Canvas's own color overlay")}
@@ -3828,11 +3851,21 @@
       applyShadePref();
       applyLayoutPref();
       if ('school' in patch || 'uniform' in patch || 'theme' in patch) applySchoolPref();
-      if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
+      if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch || 'themeAmt' in patch) applyLook();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
-    const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : prefs()[k]);
+    const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? artOf() !== 'none' : prefs()[k]);
+    // The strength slider shows (and sets) the strength of whatever background is up.
+    const syncAmt = () => {
+      const r = box.querySelector('.gcx-set-artamt');
+      if (!r) return;
+      const k = amtKey(artOf());
+      r.dataset.range = k;
+      r.value = prefs()[k];
+      const val = r.parentElement.querySelector('.gcx-set-val');
+      if (val) val.textContent = `${prefs()[k]}%`;
+    };
     // His own background: an upload, or one made with AI. Kept at screen size, then shown.
     const useBackdrop = async (blob) => {
       const data = await shrinkBackdrop(blob);
@@ -3843,12 +3876,7 @@
       save({ art: 'mine', ...amt });
       box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.art === 'mine')));
       box.querySelector('.gcx-set-bgmine')?.removeAttribute('hidden');
-      const r = box.querySelector('[data-range="artAmt"]');
-      if (r) {
-        r.value = prefs().artAmt;
-        const val = r.parentElement.querySelector('.gcx-set-val');
-        if (val) val.textContent = `${prefs().artAmt}%`;
-      }
+      syncAmt();
       sync();
     };
     box.querySelector('.gcx-set-bgfile')?.addEventListener('change', async (e) => {
@@ -3912,6 +3940,7 @@
         box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b === ar)));
         const mine = box.querySelector('.gcx-set-bgmine');
         if (mine) mine.hidden = ar.dataset.art !== 'mine';
+        syncAmt();
         sync();
       } else if (e.target.closest('.gcx-set-bgup')) {
         box.querySelector('.gcx-set-bgfile').click();

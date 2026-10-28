@@ -27,7 +27,7 @@
   try {
     const art = JSON.parse(localStorage.getItem('gcx:art') || 'null');
     const put = (url) => {
-      if (!/^(chrome-extension:\/\/|data:image\/)/.test(url) || url.includes('"')) return;
+      if (!/^(chrome-extension:\/\/|https:\/\/|data:image\/)/.test(url) || url.includes('"')) return;
       const st = document.createElement('style');
       st.id = 'gcx-art-src';
       st.textContent = `:root{--gcx-art:url("${url}")}`;
