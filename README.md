@@ -181,7 +181,7 @@ and zoom. Pet, size, roaming (and how much it walks), reminders and sound are in
 
 ## Themes, fonts and backgrounds
 
-**Background**: Trees, Blossom, or your own picture (upload one, or describe one and AI makes it), with a
+**Background**: Trees, Blossom, Mountains, Waves, Clouds, Stars, Doodles, or your own picture (upload one, or describe one and AI makes it), with a
 strength slider for how much shows through. **Font for everything**: Canvas's own, Nunito, Lexend or Lora.
 
 To get each kind of greeting for a screenshot, add `?gcx-hello=returns`, `spooky`, `morning` or `due` to the

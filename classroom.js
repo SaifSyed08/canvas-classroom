@@ -3317,7 +3317,7 @@
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
-    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
+    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true, bell: true,
     school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
     uiFont: '', art: '', artAmt: 18,
   };
@@ -3436,7 +3436,7 @@
     else delete html.dataset.gcxUi;
     applyArt();
   }
-  // Page backgrounds: his BetterCampus theme's own picture (when it has one), two drawings (each
+  // Page backgrounds: his BetterCampus theme's own picture (when it has one), drawings (each
   // with an ink for light pages and one for dark), or his own picture (uploaded or made with AI, in
   // chrome.storage). The strength is how much of it shows through the page color. Never picked
   // (art ''): the theme's picture if there is one, else none.
@@ -3445,6 +3445,11 @@
     ['theme', 'Theme', 'center'],
     ['trees', 'Trees', 'center bottom'],
     ['blossom', 'Blossom', 'center top'],
+    ['mountains', 'Mountains', 'center bottom'],
+    ['waves', 'Waves', 'center bottom'],
+    ['clouds', 'Clouds', 'center top'],
+    ['stars', 'Stars', 'center'],
+    ['doodles', 'Doodles', 'center'],
     ['mine', 'Yours', 'center'],
   ];
   const BG_KEY = 'gcx:bgimg';
@@ -3607,6 +3612,7 @@
     const p = prefs();
     welcomeCtx.wel.classList.toggle('no-hello', !p.greeting);
     welcomeCtx.wel.classList.toggle('no-ask', !p.ask);
+    welcomeCtx.wel.classList.toggle('no-bell', !p.bell);
   }
   function updateWelcome(items, fromCache, failed = false) {
     if (!welcomeCtx) return;
@@ -3787,7 +3793,7 @@
   // it reads that small) over the page color.
   function artThumb(k) {
     const url =
-      k === 'theme' ? bcPicture() : k === 'mine' ? (typeof bgMine === 'string' ? bgMine : '') : k === 'trees' || k === 'blossom' ? chrome.runtime.getURL(`art/${k}-${pageIsDark() ? 'dark' : 'light'}.svg`) : '';
+      k === 'theme' ? bcPicture() : k === 'mine' ? (typeof bgMine === 'string' ? bgMine : '') : k !== 'none' ? chrome.runtime.getURL(`art/${k}-${pageIsDark() ? 'dark' : 'light'}.svg`) : '';
     if (!url || url.includes('"')) return { cls: k === 'mine' ? 'add' : '', style: '' };
     const pos = (ARTS.find((a) => a[0] === k) || [])[2] || 'center';
     return { cls: k === 'theme' || k === 'mine' ? 'pic' : '', style: `--tn:url("${url}");--tn-pos:${pos}` };
@@ -3820,6 +3826,7 @@
           <div class="gcx-set-lbl">Space between the menu rail and your classes <span class="gcx-set-val">${p.dashGap}px</span></div>
           <input type="range" class="gcx-set-range" data-range="dashGap" data-unit="px" min="0" max="${DASH_GAP_MAX}" step="8" value="${p.dashGap}" aria-label="Space between the menu rail and your classes">
         </div>
+        ${toggle('bell', 'Notifications bell', 'New messages and announcements, next to the greeting')}
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden. Ctrl + Shift + Space brings back your last chat')}
         ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
@@ -3904,6 +3911,10 @@
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
     const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? !['none', 'theme'].includes(artOf()) : prefs()[k]);
+    // The strip of backgrounds starts scrolled to the one he has.
+    const arts = box.querySelector('.gcx-set-arts');
+    const on = arts && arts.querySelector('[aria-checked="true"]');
+    if (on) arts.scrollLeft = Math.max(0, on.offsetLeft - arts.offsetLeft - 8);
     const paintMine = () => {
       const t = box.querySelector('[data-art="mine"] .gcx-art-tn');
       if (!t) return;
@@ -4275,8 +4286,9 @@
     .gcx-ui-nunito { font-family: 'GCX Nunito', sans-serif; font-weight: 700; }
     .gcx-ui-lexend { font-family: 'GCX Lexend', sans-serif; font-weight: 600; }
     .gcx-ui-lora { font-family: 'GCX Lora', serif; font-weight: 700; }
-    .gcx-set-arts { display: flex; gap: 8px; margin: 2px 0 10px; }
-    .gcx-set-arts button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 0; border: 0; background: none;
+    .gcx-set-arts { display: flex; gap: 8px; margin: 2px -4px 10px; padding: 4px 4px 8px; overflow-x: auto; scroll-snap-type: x proximity;
+      scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--gcx-muted, #71717a) 45%, transparent) transparent; }
+    .gcx-set-arts button { flex: 0 0 84px; scroll-snap-align: start; display: flex; flex-direction: column; gap: 5px; padding: 0; border: 0; background: none;
       color: var(--gcx-muted, #71717a); font: inherit; cursor: pointer; }
     .gcx-set-arts small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; text-align: center; }
     .gcx-set-arts button[aria-checked="true"] small { color: var(--gcx-text, #18181b); font-weight: 700; }
@@ -4871,6 +4883,7 @@
     const gone = bellCleared();
     return d.unread + d.anns.length + d.grades.filter((g) => g.at > seen && !gone[gradeKey(g)]).length;
   }
+  const bellUrgent = (d) => !!d && ((d.missing || []).length > 0 || (d.due || []).some((i) => i.due - Date.now() < DAY));
   function annReadPath(a) {
     const m = String(a.url || '').match(/\/(courses|groups)\/(\d+)\/(?:discussion_topics|announcements)\/(\d+)/);
     if (m) return `/${m[1]}/${m[2]}/discussion_topics/${m[3]}/read`;
@@ -4919,10 +4932,14 @@
     };
     const paint = () => {
       const n = bellCount(data);
+      const hot = bellUrgent(data);
       const b = btn.querySelector('.gcx-bell-n');
-      b.hidden = !n;
-      b.textContent = n > 99 ? '99+' : String(n);
-      btn.setAttribute('aria-label', n ? `Notifications, ${n} new` : 'Notifications');
+      // Red only for missing work or something due within a day; with nothing new, just a dot.
+      b.hidden = !n && !hot;
+      b.classList.toggle('urgent', hot);
+      b.classList.toggle('dot', !n);
+      b.textContent = n > 99 ? '99+' : n ? String(n) : '';
+      btn.setAttribute('aria-label', `Notifications${n ? `, ${n} new` : ''}${hot ? ', work needs attention' : ''}`);
     };
     paint();
     news().then((d) => {
@@ -5035,6 +5052,10 @@
     const sec = (label, rows) => (rows.length ? `<div class="gcx-bell-sec">${esc(label)}</div>${rows.join('')}` : '');
     const more = d.unread > d.msgs.length ? [`<a class="gcx-bell-more" href="/conversations">${d.unread - d.msgs.length} more in Inbox</a>`] : [];
     const html0 =
+      sec(
+        'Missing',
+        (d.missing || []).map((i) => row(TYPE_ICON[i.type] || 'assignment', i.title, [i.course, 'Missing'].filter(Boolean).join(' · '), i.url, false, color(i.courseId))),
+      ) +
       sec('Messages', [
         ...d.msgs.map((m) => row('chat', m.title, [m.from, m.text].filter(Boolean).join(': ') || ago(m.at), '/conversations', true, '', ['msg', m.id, 'Mark as read'])),
         ...more,
