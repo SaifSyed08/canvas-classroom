@@ -428,6 +428,8 @@
     store.set('coursesAt', 0);
     store.set('unread', 0);
     store.set('unreadAt', 0);
+    store.set('groups', null);
+    store.set('groupsAt', 0);
   }
   let COURSES = store.get('courses', null);
   const COURSES_TTL = 10 * 6e4;
@@ -593,7 +595,7 @@
   let me = store.get('me', null);
   // The groups he's in: [{ id, name, courseId }], checked again every half hour.
   let myGroups = store.get('groups', null);
-  if (!myGroups || Date.now() - store.get('groupsAt', 0) > 30 * 6e4)
+  if (!myGroups || Date.now() - store.get('groupsAt', 0) > 30 * 6e4 || /^\/(courses\/\d+\/)?groups\/?$/.test(location.pathname))
     api('/users/self/groups?per_page=100', true)
       .then((list) => {
         const gs = (list || []).filter((g) => g.context_type === 'Course' && g.course_id).map((g) => ({ id: g.id, name: g.name, courseId: g.course_id }));
@@ -1420,8 +1422,12 @@
       ...(myGroups || []).filter((g) => g.courseId === id).map((g) => ({ label: `Your group: ${g.name}`, href: `/groups/${g.id}`, icon: 'people' })),
       { label: 'Canvas home page', href: `${base}?gcx-original=1`, icon: 'home' },
       ...(hasModules ? [{ label: 'Canvas modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' }] : []),
-      { label: 'Canvas people page', href: `${base}/users?gcx-original=1`, icon: 'people' },
-      { label: 'Groups (join or leave)', href: `${base}/groups`, icon: 'people' },
+      ...(hasPeople
+        ? [
+            { label: 'Canvas people page', href: `${base}/users?gcx-original=1`, icon: 'people' },
+            { label: 'Groups (join or leave)', href: `${base}/groups`, icon: 'people' },
+          ]
+        : []),
     ];
     let sel = 0;
     let index = null;
