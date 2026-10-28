@@ -517,6 +517,19 @@ html[data-gcx-font="canvas"] .gcx-hello { font-family: inherit !important; font-
 .gcx-bell-sec { padding: 10px 10px 4px; font-size: 12px; font-weight: 600; color: var(--gcx-muted); }
 .gcx-bell-row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 10px; border-radius: 10px; color: var(--gcx-text) !important; text-decoration: none !important; }
 .gcx-bell-row:hover { background: color-mix(in srgb, var(--gcx-text) 6%, transparent); }
+/* the check that shows on hover: mark read (messages, announcements) or clear (grades, comments) */
+.gcx-bell-item { position: relative; transition: height .2s ease, opacity .2s ease; }
+.gcx-bell-item.gcx-gone { height: 0 !important; opacity: 0; overflow: hidden; }
+.gcx-bell-item:has(.gcx-bell-done) .gcx-bell-row { padding-right: 46px; }
+.gcx-bell-done {
+  position: absolute; top: 50%; right: 8px; display: grid; place-items: center; width: 32px; height: 32px; margin-top: -16px; padding: 0;
+  border: 1px solid var(--gcx-border); border-radius: 50%; background: var(--gcx-card); color: var(--gcx-muted); cursor: pointer;
+  opacity: 0; transform: scale(.85); transition: opacity .12s ease, transform .12s ease, background-color .12s ease, color .12s ease;
+}
+.gcx-bell-item:hover .gcx-bell-done, .gcx-bell-done:focus-visible { opacity: 1; transform: none; }
+.gcx-bell-done:hover { background: color-mix(in srgb, var(--gcx-green, #188038) 12%, var(--gcx-card)); color: var(--gcx-green, #188038); border-color: currentColor; }
+.gcx-bell-item.gcx-going .gcx-bell-done { opacity: 1; color: var(--gcx-green, #188038); pointer-events: none; }
+@media (hover: none) { .gcx-bell-done { opacity: 1; transform: none; } }
 .gcx-bell-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; color: #fff; background: var(--c, var(--gcx-link)); }
 .gcx-bell-tx { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .gcx-bell-tx b { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }

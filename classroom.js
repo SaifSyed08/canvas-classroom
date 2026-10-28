@@ -44,6 +44,7 @@
     link: 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z',
     tool: 'M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z',
     bell: 'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z',
+    check: 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
     chat: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
     grade: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z',
     announce: 'M18 11v2h4v-2h-4zm-2 6.61c.96.71 2.21 1.65 3.2 2.39.4-.53.8-1.07 1.2-1.6-.99-.74-2.24-1.68-3.2-2.4-.4.54-.8 1.08-1.2 1.61zM20.4 5.6c-.4-.53-.8-1.07-1.2-1.6-.99.74-2.24 1.68-3.2 2.4.4.53.8 1.07 1.2 1.6.96-.72 2.21-1.65 3.2-2.4zM4 9c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h1v4h2v-4h1l5 3V6L8 9H4zm11.5 3c0-1.33-.58-2.53-1.5-3.35v6.69c.92-.81 1.5-2.01 1.5-3.34z',
@@ -4411,7 +4412,15 @@
     const anns = (stream || [])
       .filter((x) => x.type === 'Announcement' && x.read_state === false && Date.parse(x.created_at) > week)
       .slice(0, 10)
-      .map((x) => ({ id: x.id, title: x.title || 'Announcement', courseId: x.course_id || null, course: cname(x.course_id), at: Date.parse(x.created_at) || 0, url: x.html_url || '/' }));
+      .map((x) => ({
+        id: x.id,
+        topicId: x.discussion_topic_id || Number((String(x.html_url || '').match(/\/(?:discussion_topics|announcements)\/(\d+)/) || [])[1]) || null,
+        title: x.title || 'Announcement',
+        courseId: x.course_id || null,
+        course: cname(x.course_id),
+        at: Date.parse(x.created_at) || 0,
+        url: x.html_url || '/',
+      }));
     const grades = [];
     for (const x of stream || []) {
       if (x.type !== 'Submission') continue;
@@ -4455,10 +4464,31 @@
   };
   const fmtPts = (x) => String(Math.round(x * 100) / 100);
   const gradeText = (g) => (!g.graded ? '' : g.score != null && g.pts ? `${fmtPts(g.score)}/${fmtPts(g.pts)}` : g.grade);
+  // Grades and comments he cleared from the bell (by assignment and time, so a new one comes back).
+  const gradeKey = (g) => `${g.id}:${g.at}`;
+  const bellCleared = () => store.get('bellCleared', {}) || {};
   function bellCount(d) {
     if (!d) return 0;
     const seen = store.get('bellSeen', 0);
-    return d.unread + d.anns.length + d.grades.filter((g) => g.at > seen).length;
+    const gone = bellCleared();
+    return d.unread + d.anns.length + d.grades.filter((g) => g.at > seen && !gone[gradeKey(g)]).length;
+  }
+  // Marking things read in Canvas (only when he clicks the check). Canvas checks X-CSRF-Token
+  // against the _csrf_token cookie on anything that changes data.
+  async function canvasPut(path, body = '') {
+    const c = document.cookie.match(/(?:^|;\s*)_csrf_token=([^;]*)/);
+    const r = await fetch(location.origin + '/api/v1' + path, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'X-CSRF-Token': c ? decodeURIComponent(c[1]) : '',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body,
+    });
+    if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'Canvas said no (are you still signed in?)' : `Canvas error ${r.status}`);
   }
   function mountBell(wel) {
     const btn = el(
@@ -4485,10 +4515,67 @@
       store.set('bellSeen', d.at);
       paint();
     };
+    // One row checked off: it folds away and the count drops; if Canvas says no, it comes back.
+    async function check(done) {
+      const item = done.closest('.gcx-bell-item');
+      const { kind, id } = done.dataset;
+      if (!item || !data || item.classList.contains('gcx-going')) return;
+      item.classList.add('gcx-going');
+      const before = data;
+      const d = { ...data, msgs: data.msgs.slice(), anns: data.anns.slice() };
+      try {
+        if (kind === 'msg') {
+          await canvasPut(`/conversations/${encodeURIComponent(id)}`, 'conversation%5Bworkflow_state%5D=read');
+          d.msgs = d.msgs.filter((m) => String(m.id) !== id);
+          d.unread = Math.max(0, d.unread - 1);
+        } else if (kind === 'ann') {
+          const a = d.anns.find((x) => String(x.id) === id);
+          if (!a || !a.courseId || !a.topicId) throw new Error("couldn't tell which announcement");
+          await canvasPut(`/courses/${a.courseId}/discussion_topics/${a.topicId}/read`);
+          d.anns = d.anns.filter((x) => x !== a);
+        } else {
+          const gone = bellCleared();
+          const cut = Date.now() - 30 * DAY;
+          for (const k of Object.keys(gone)) if (gone[k] < cut) delete gone[k];
+          gone[id] = Date.now();
+          store.set('bellCleared', gone);
+        }
+      } catch (err) {
+        item.classList.remove('gcx-going');
+        toast(`Couldn't mark it read: ${err.message}`);
+        return;
+      }
+      // Only if nothing newer came in meanwhile.
+      if (data === before) {
+        data = d;
+        if (kind !== 'grade') store.set('news', d);
+        if (d.unread !== unread) {
+          unread = d.unread;
+          store.set('unread', unread);
+          queueRail();
+        }
+      }
+      paint();
+      item.style.height = item.offsetHeight + 'px';
+      requestAnimationFrame(() => item.classList.add('gcx-gone'));
+      setTimeout(() => {
+        const sec = item.previousElementSibling && item.previousElementSibling.classList.contains('gcx-bell-sec') ? item.previousElementSibling : null;
+        item.remove();
+        // The section's last row: its heading goes too.
+        if (sec && !(sec.nextElementSibling && sec.nextElementSibling.classList.contains('gcx-bell-item'))) sec.remove();
+      }, 220);
+    }
     btn.addEventListener('click', () => {
       if (closeBell) return closeBell();
       const shown = data;
       const pop = openBell(btn, shown);
+      pop.addEventListener('click', (e) => {
+        const done = e.target.closest('.gcx-bell-done');
+        if (!done) return;
+        e.preventDefault();
+        e.stopPropagation();
+        check(done);
+      });
       // Older than a minute: fetch again and redraw it.
       if (!shown || Date.now() - shown.at > 6e4)
         news(true).then((d) => {
@@ -4513,22 +4600,29 @@
       const c = id && (COURSES || []).find((x) => x.id === Number(id));
       return c ? c.color : '';
     };
-    const row = (icon, title, sub, url, isNew, c) =>
-      `<a class="gcx-bell-row${isNew ? ' new' : ''}" href="${esc(url)}"${c ? ` style="--c:${esc(c)}"` : ''}><span class="gcx-bell-ic">${svg(icon, 18)}</span><span class="gcx-bell-tx"><b>${esc(title)}</b><small>${esc(sub)}</small></span></a>`;
+    // act: [kind, id, label] for the check that shows on hover (none for Due soon).
+    const row = (icon, title, sub, url, isNew, c, act) =>
+      `<div class="gcx-bell-item"><a class="gcx-bell-row${isNew ? ' new' : ''}" href="${esc(url)}"${c ? ` style="--c:${esc(c)}"` : ''}><span class="gcx-bell-ic">${svg(icon, 18)}</span><span class="gcx-bell-tx"><b>${esc(title)}</b><small>${esc(sub)}</small></span></a>${
+        act
+          ? `<button type="button" class="gcx-bell-done" data-kind="${act[0]}" data-id="${esc(act[1])}" title="${act[2]}" aria-label="${act[2]}: ${esc(title)}">${svg('check', 18)}</button>`
+          : ''
+      }</div>`;
+    const gone = bellCleared();
     const sec = (label, rows) => (rows.length ? `<div class="gcx-bell-sec">${esc(label)}</div>${rows.join('')}` : '');
     const more = d.unread > d.msgs.length ? [`<a class="gcx-bell-more" href="/conversations">${d.unread - d.msgs.length} more in Inbox</a>`] : [];
     const html0 =
       sec('Messages', [
-        ...d.msgs.map((m) => row('chat', m.title, [m.from, m.text].filter(Boolean).join(': ') || ago(m.at), '/conversations', true, '')),
+        ...d.msgs.map((m) => row('chat', m.title, [m.from, m.text].filter(Boolean).join(': ') || ago(m.at), '/conversations', true, '', ['msg', m.id, 'Mark as read'])),
         ...more,
       ]) +
       sec(
         'Announcements',
-        d.anns.map((a) => row('announce', a.title, [a.course, ago(a.at)].filter(Boolean).join(' · '), a.url, true, color(a.courseId))),
+        d.anns.map((a) => row('announce', a.title, [a.course, ago(a.at)].filter(Boolean).join(' · '), a.url, true, color(a.courseId), a.topicId && a.courseId ? ['ann', a.id, 'Mark as read'] : null)),
       ) +
       sec(
         'Grades and feedback',
         d.grades
+          .filter((g) => !gone[gradeKey(g)])
           .slice(0, 8)
           .map((g) =>
             row(
@@ -4540,6 +4634,7 @@
               g.url,
               g.at > seen,
               color(g.courseId),
+              ['grade', gradeKey(g), 'Clear'],
             ),
           ),
       ) +
