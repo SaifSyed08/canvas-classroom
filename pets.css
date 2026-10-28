@@ -1,7 +1,9 @@
 /* Pets (pets.js): a sprite that lives in a fixed, click-through layer over the page. Only the
    pet's opaque middle (.gcx-pet-hit) takes the pointer, so the page under it stays usable. */
 .gcx-pet-layer {
-  position: fixed; inset: 0; z-index: 2147482300; pointer-events: none; overflow: hidden; contain: strict;
+  /* above the page and our rail, but under every menu, panel and Canvas dialog, so he never
+     covers a control someone is reaching for */
+  position: fixed; inset: 0; z-index: 9000; pointer-events: none; overflow: hidden; contain: strict;
 }
 .gcx-pet-layer[hidden], html.gcx-fv-open .gcx-pet-layer { display: none !important; }
 @media print { .gcx-pet-layer { display: none !important; } }

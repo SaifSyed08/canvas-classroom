@@ -1801,8 +1801,10 @@
   let closeLinkPicker = null;
   function openLinkPicker(btn, options, verb, onAdd) {
     if (closeLinkPicker) {
+      // Its own button toggles it; anything else (a card's ⋮ › Add shortcut) opens a fresh one.
+      const same = btn.getAttribute('aria-expanded') === 'true';
       closeLinkPicker();
-      return;
+      if (same) return;
     }
     const pop = el(`<div class="gcx-picker gcx-pop-panel" role="dialog" aria-label="${esc(verb)}">
         <div class="gcx-more-search">${svg('search', 20)}<input type="text" placeholder="Search course tools" aria-label="Search course tools" autocomplete="off"></div>
@@ -2954,7 +2956,12 @@
   hiddenStyle.id = 'gcx-hidden-cards';
   (document.head || html).append(hiddenStyle);
   function paintHidden() {
-    const ids = store.get(HIDDEN_KEY(), []);
+    let ids = store.get(HIDDEN_KEY(), []);
+    // A hidden class that's no longer on the dashboard (unfavorited, term over) is forgotten.
+    if (COURSES && COURSES.length) {
+      const on = ids.filter((x) => COURSES.some((c) => String(c.id) === String(x)));
+      if (on.length !== ids.length) store.set(HIDDEN_KEY(), (ids = on));
+    }
     hiddenStyle.textContent = ids
       .filter((x) => /^\d+$/.test(String(x)))
       .map((x) => `.ic-DashboardCard:has(a.gcx-card-ov[href="/courses/${x}"]) { display: none !important; }`)
@@ -3647,6 +3654,16 @@
       );
     }
     if (bc.active && (!bc.panel || !bc.panel.isConnected)) bcActivate();
+    else if (bc.active && bc.panel) {
+      // BetterCampus may replace its page (data arriving) while ours is showing: keep it hidden.
+      const col = bc.panel.parentElement;
+      const header = bar.parentElement.parentElement;
+      const now = col && [...col.children].find((c) => c !== header && c !== bc.panel && !c.classList.contains('gcx-bc-panel') && c.style.display !== 'none');
+      if (now && now !== bc.hidden) {
+        bc.hidden = now;
+        now.style.display = 'none';
+      }
+    }
     // The panel just opened: go to the tab he asked for (the palette button) or, instead of
     // BetterCampus's default To-do page, the one he used last.
     if (!bc.open) {
