@@ -295,10 +295,10 @@
     for (const k of Object.keys(m)) if (!m[k] || Date.now() - m[k].t > MARK_TTL) delete m[k];
     return m;
   };
-  const setDoneMark = (key, done) => store.set('doneMarks', { ...doneMarks(), [key]: { done, t: Date.now() } });
+  const setDoneMark = (key, done, ovr) => store.set('doneMarks', { ...doneMarks(), [key]: { done, t: Date.now(), ovr: ovr || null } });
   const applyMarks = (list) => {
     const m = doneMarks();
-    return list.map((i) => (m[i.key] ? statusOf(i, m[i.key].done) : i));
+    return list.map((i) => (m[i.key] ? plannerStatus({ ...i, ovr: m[i.key].ovr || i.ovr }, m[i.key].done) : i));
   };
   const reviveItems = (list) => applyMarks(list.map((i) => ({ ...i, due: i.due ? new Date(i.due) : null })));
 
@@ -484,7 +484,7 @@
 
   // Done, missing (past due with nothing handed in) and flagged (Canvas itself calls it missing;
   // in-class and on-paper work is past due without being flagged until it's graded).
-  function statusOf(i, markedDone) {
+  function plannerStatus(i, markedDone) {
     const past = !!(i.due && new Date(i.due) < new Date());
     const done = !!(markedDone || i.submitted || i.excused || i.graded || (i.noSub && past));
     return { ...i, done, missing: !done && (past || !!i.canvasMissing), flagged: !done && !!i.canvasMissing };
@@ -493,7 +493,7 @@
     const due = it.plannable_date ? new Date(it.plannable_date) : null;
     const s = it.submissions;
     const po = it.planner_override;
-    return statusOf(
+    return plannerStatus(
       {
       key: `${it.plannable_type}:${it.plannable_id}`,
       type: it.plannable_type,
@@ -3263,12 +3263,13 @@
     } catch (err) {
       pendingDone.delete(key);
       row.classList.remove('gcx-going');
+      document.querySelectorAll('.gcx-due-done').forEach((b) => b.dataset.key === key && b.closest('.gcx-due-row')?.classList.remove('gcx-going'));
       toast(`Couldn't mark it done: ${err.message}`);
       return;
     }
     const ovr = (o && o.id) || btn.dataset.ovr || null;
     if (ovr) btn.dataset.ovr = ovr;
-    setDoneMark(key, true);
+    setDoneMark(key, true, ovr);
     // Keyboard focus goes to the row after it (or before it) once the list redraws.
     const list = row.closest('.gcx-card-body, .gcx-upc-list');
     const rows = list ? [...list.querySelectorAll('.gcx-due-row')] : [];
@@ -3283,7 +3284,7 @@
       else row.remove();
       if (hadFocus && list && list.isConnected) {
         const items = list.querySelectorAll('.gcx-due-item');
-        const to = items[at] || items[at - 1] || list.closest('.ic-DashboardCard')?.querySelector('a[href]');
+        const to = items[at] || items[at - 1] || list.closest('.ic-DashboardCard')?.querySelector('a[href]') || list.parentElement?.querySelector('.gcx-upc-all');
         to?.focus();
       }
     }, 220);
@@ -3294,7 +3295,7 @@
         toast(`Couldn't undo: ${err.message}`);
         return;
       }
-      setDoneMark(key, false);
+      setDoneMark(key, false, ovr);
       showMarks();
     });
   }
@@ -3318,7 +3319,7 @@
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
     school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
-    uiFont: '', art: '', artAmt: 18, themeAmt: 85,
+    uiFont: '', art: '', artAmt: 18,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -3448,19 +3449,22 @@
   ];
   const BG_KEY = 'gcx:bgimg';
   let bgMine = null; // his picture once read ('' if there's none)
-  // The picture in his BetterCampus theme (its own layer variable), or ''.
+  // The picture in his BetterCampus theme, or ''. BetterCampus puts it in its own layer (a picture
+  // with a filter), after the overlay colors in --bcbackground-image, or in the page background
+  // itself (older presets).
   const bcPicture = () => {
-    const m = getComputedStyle(html)
-      .getPropertyValue('--bcbackground-image-layer')
-      .match(/url\(\s*["']?([^"')]+)["']?\s*\)/);
-    return m && /^(https:|chrome-extension:|data:image\/)/.test(m[1]) ? m[1] : '';
+    const cs = getComputedStyle(html);
+    for (const v of ['--bcbackground-image-layer', '--bcbackground-image', '--bcbackground-0']) {
+      const all = [...cs.getPropertyValue(v).matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g)];
+      const u = all.length ? all[all.length - 1][1] : '';
+      if (/^(https:|chrome-extension:|data:image\/)/.test(u)) return u;
+    }
+    return '';
   };
   const artOf = (p = prefs()) => {
     const a = p.art === '' || p.art == null ? 'theme' : p.art;
     return a === 'theme' && !bcPicture() ? 'none' : a;
   };
-  // The theme's picture has its own strength (it's meant to be seen; the drawings are faint).
-  const amtKey = (a) => (a === 'theme' ? 'themeAmt' : 'artAmt');
   const pageIsDark = () => {
     const n = document.createElement('i');
     n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0-ungradient, var(--bcbackground-1, #fff))';
@@ -3475,20 +3479,19 @@
     const run = ++artRun;
     const p = prefs();
     const picture = bcPicture();
-    // BetterCampus hasn't drawn its theme yet: keep what early.js put up from last time.
-    if ((p.art === '' || p.art === 'theme') && !picture && !document.getElementById('bettercanvas-theme-preset')) return;
     const which = artOf(p);
-    const art = ARTS.find((a) => a[0] === which && a[0] !== 'none');
-    const amt = Math.max(3, Math.min(100, Number(p[amtKey(which)]) || PREF_DEFAULTS[amtKey(which)]));
-    // None over a theme with a picture: the plain page color instead of it.
+    const art = ARTS.find((a) => a[0] === which && a[0] !== 'none' && a[0] !== 'theme');
+    const amt = Math.max(3, Math.min(100, Number(p.artAmt) || 18));
+    // The theme's picture, as BetterCampus draws it: the page lets it through. None over it: the
+    // plain page color instead.
+    html.classList.toggle('gcx-bcpic', which === 'theme');
     html.classList.toggle('gcx-noart', which === 'none' && !!picture);
     let url = '';
     if (art && art[0] === 'mine') {
       if (bgMine === null) bgMine = (await chrome.storage.local.get(BG_KEY).catch(() => ({})))[BG_KEY] || '';
       if (run !== artRun) return;
       url = bgMine;
-    } else if (art && art[0] === 'theme') url = picture;
-    else if (art) url = chrome.runtime.getURL(`art/${art[0]}-${pageIsDark() ? 'dark' : 'light'}.svg`);
+    } else if (art) url = chrome.runtime.getURL(`art/${art[0]}-${pageIsDark() ? 'dark' : 'light'}.svg`);
     if (url.includes('"')) url = '';
     html.classList.toggle('gcx-art', !!url);
     html.classList.toggle('gcx-artbold', !!url && amt >= 40);
@@ -3851,8 +3854,8 @@
             <form class="gcx-set-bggen"><input type="text" maxlength="300" placeholder="Or describe one for AI: misty mountains at dawn" aria-label="Describe a background for AI to make"><button type="submit" class="gcx-set-try">Make it</button></form>
           </div>
           <div class="gcx-set-need" data-needs="art">
-            <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p[amtKey(artOf(p))]}%</span></div>
-            <input type="range" class="gcx-set-range gcx-set-artamt" data-range="${amtKey(artOf(p))}" min="5" max="100" step="1" value="${p[amtKey(artOf(p))]}" aria-label="Background strength">
+            <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p.artAmt}%</span></div>
+            <input type="range" class="gcx-set-range gcx-set-artamt" data-range="artAmt" min="5" max="100" step="1" value="${p.artAmt}" aria-label="Background strength">
           </div>
         </div>
         ${toggle('tint', 'Color over class images', "Each class image takes a wash of that class's color, like Canvas's own color overlay")}
@@ -3896,11 +3899,11 @@
       applyShadePref();
       applyLayoutPref();
       if ('school' in patch || 'uniform' in patch || 'theme' in patch) applySchoolPref();
-      if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch || 'themeAmt' in patch) applyLook();
+      if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
-    const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? artOf() !== 'none' : prefs()[k]);
+    const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? !['none', 'theme'].includes(artOf()) : prefs()[k]);
     const paintMine = () => {
       const t = box.querySelector('[data-art="mine"] .gcx-art-tn');
       if (!t) return;
@@ -3916,15 +3919,13 @@
         },
         () => {},
       );
-    // The strength slider shows (and sets) the strength of whatever background is up.
+    // The strength slider shows what's saved (an upload can change it).
     const syncAmt = () => {
       const r = box.querySelector('.gcx-set-artamt');
       if (!r) return;
-      const k = amtKey(artOf());
-      r.dataset.range = k;
-      r.value = prefs()[k];
+      r.value = prefs().artAmt;
       const val = r.parentElement.querySelector('.gcx-set-val');
-      if (val) val.textContent = `${prefs()[k]}%`;
+      if (val) val.textContent = `${prefs().artAmt}%`;
     };
     // His own background: an upload, or one made with AI. Kept at screen size, then shown.
     const useBackdrop = async (blob) => {
