@@ -481,6 +481,12 @@ html.gcx-cards #dashboard_header_container { display: none !important; }
   animation: gcx-hello-in 0.7s cubic-bezier(.2,.8,.2,1.15) both;
 }
 @keyframes gcx-hello-in { from { opacity: 0; transform: translateX(-28px); } }
+/* An emoji in the greeting, hovered: snaps between tilted left and tilted right, like stop motion. */
+.gcx-hello .gcx-emo { display: inline-block; transform-origin: 50% 70%; }
+.gcx-hello .gcx-emo:hover { animation: gcx-emo-tick .4s steps(1, end) infinite; }
+@keyframes gcx-emo-tick { 0% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+html.gcx-still .gcx-hello .gcx-emo:hover { animation: none; }
+@media (prefers-reduced-motion: reduce) { .gcx-hello .gcx-emo:hover { animation: none; } }
 html[data-gcx-font="poppins"] .gcx-hello { font-family: 'GCX Poppins', sans-serif !important; font-weight: 800 !important; font-size: 40px !important; letter-spacing: -0.02em; }
 html[data-gcx-font="playfair"] .gcx-hello { font-family: 'GCX Playfair', Georgia, serif !important; font-weight: 800 !important; letter-spacing: -0.01em; }
 html[data-gcx-font="caveat"] .gcx-hello { font-family: 'GCX Caveat', cursive !important; font-size: 54px !important; letter-spacing: 0; }

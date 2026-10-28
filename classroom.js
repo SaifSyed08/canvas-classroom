@@ -3331,9 +3331,24 @@
     }, 350);
   }
   let welcomeCtx = null;
+  // Emoji in the greeting get their own box, so hovering one can wiggle it (classroom.css).
+  const EMOJI = /\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier}|‍\p{Extended_Pictographic}️?)*/gu;
+  function helloText(hello, text) {
+    hello.textContent = '';
+    let at = 0;
+    for (const m of text.matchAll(EMOJI)) {
+      if (m.index > at) hello.append(text.slice(at, m.index));
+      const e = document.createElement('span');
+      e.className = 'gcx-emo';
+      e.textContent = m[0];
+      hello.append(e);
+      at = m.index + m[0].length;
+    }
+    if (at < text.length) hello.append(text.slice(at));
+  }
   function setHello(text, animate, since = Date.now()) {
     const hello = welcomeCtx.wel.querySelector('.gcx-hello');
-    hello.textContent = text;
+    helloText(hello, text);
     welcomeCtx.refs = greetRefs;
     welcomeCtx.kind = greetKind;
     if (animate) reveal(hello);
