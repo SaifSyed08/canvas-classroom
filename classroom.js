@@ -2176,12 +2176,14 @@
 
   // Canvas data trimmed to what Classwork draws, so it caches small.
   async function fetchClasswork(id, strict = false, tally) {
+    const optional = (e) => (e && (e.status === 401 || e.status === 403) ? null : softFail(strict, null, tally)(e));
     const [mods, groups, quizzes, discs] = await Promise.all([
       api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(softFail(strict, null, tally)),
       api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(softFail(strict, null, tally)),
-      // A class that hides its Quizzes or Discussions tab answers 404: nothing is missing then.
-      api(`/courses/${id}/quizzes?per_page=100`, true).catch(softFail(strict, null, tally)),
-      api(`/courses/${id}/discussion_topics?per_page=100`, true).catch(softFail(strict, null, tally)),
+      // Extras: a hidden Quizzes tab (404) or a school that keeps students out of these lists
+      // (401/403) just means none. A signed-out session still fails on the two calls above.
+      api(`/courses/${id}/quizzes?per_page=100`, true).catch(optional),
+      api(`/courses/${id}/discussion_topics?per_page=100`, true).catch(optional),
     ]);
     if (!mods && !groups) throw new Error('Canvas returned nothing');
     // Big modules come back without inline items.
