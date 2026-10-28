@@ -4414,7 +4414,7 @@
       .slice(0, 10)
       .map((x) => ({
         id: x.id,
-        topicId: x.discussion_topic_id || Number((String(x.html_url || '').match(/\/(?:discussion_topics|announcements)\/(\d+)/) || [])[1]) || null,
+        topicId: x.announcement_id || x.discussion_topic_id || Number((String(x.html_url || '').match(/\/(?:discussion_topics|announcements)\/(\d+)/) || [])[1]) || null,
         title: x.title || 'Announcement',
         courseId: x.course_id || null,
         course: cname(x.course_id),
@@ -4497,6 +4497,15 @@
     wel.append(btn);
     let data = store.get('news', null);
     if (data && data.user !== PAGE_USER) data = null;
+    const marked = { msg: new Map(), ann: new Map() }; // id -> when he marked it read
+    const scrub = (d) => {
+      if (!d) return d;
+      const old = (kind, id) => marked[kind].has(String(id)) && d.at < marked[kind].get(String(id));
+      const msgs = d.msgs.filter((m) => !old('msg', m.id));
+      const anns = d.anns.filter((a) => !old('ann', a.id));
+      if (msgs.length === d.msgs.length && anns.length === d.anns.length) return d;
+      return { ...d, msgs, anns, unread: Math.max(0, d.unread - (d.msgs.length - msgs.length)) };
+    };
     const paint = () => {
       const n = bellCount(data);
       const b = btn.querySelector('.gcx-bell-n');
@@ -4506,7 +4515,7 @@
     };
     paint();
     news().then((d) => {
-      if (d) (data = d), paint();
+      if (d) (data = scrub(d)), paint();
     });
     // What he has now seen stops counting as new (it stays marked in the list until next time):
     // everything up to when the list he's looking at was fetched.
@@ -4521,18 +4530,15 @@
       const { kind, id } = done.dataset;
       if (!item || !data || item.classList.contains('gcx-going')) return;
       item.classList.add('gcx-going');
-      const before = data;
-      const d = { ...data, msgs: data.msgs.slice(), anns: data.anns.slice() };
       try {
         if (kind === 'msg') {
           await canvasPut(`/conversations/${encodeURIComponent(id)}`, 'conversation%5Bworkflow_state%5D=read');
-          d.msgs = d.msgs.filter((m) => String(m.id) !== id);
-          d.unread = Math.max(0, d.unread - 1);
+          marked.msg.set(id, Date.now());
         } else if (kind === 'ann') {
-          const a = d.anns.find((x) => String(x.id) === id);
+          const a = data.anns.find((x) => String(x.id) === id);
           if (!a || !a.courseId || !a.topicId) throw new Error("couldn't tell which announcement");
           await canvasPut(`/courses/${a.courseId}/discussion_topics/${a.topicId}/read`);
-          d.anns = d.anns.filter((x) => x !== a);
+          marked.ann.set(id, Date.now());
         } else {
           const gone = bellCleared();
           const cut = Date.now() - 30 * DAY;
@@ -4545,24 +4551,30 @@
         toast(`Couldn't mark it read: ${err.message}`);
         return;
       }
-      // Only if nothing newer came in meanwhile.
-      if (data === before) {
-        data = d;
-        if (kind !== 'grade') store.set('news', d);
-        if (d.unread !== unread) {
-          unread = d.unread;
+      // Off the current list (whichever it is by now) and the saved copy.
+      if (kind !== 'grade' && data) {
+        data = scrub(data);
+        store.set('news', data);
+        if (data.unread !== unread) {
+          unread = data.unread;
           store.set('unread', unread);
+          store.set('unreadAt', Date.now());
           queueRail();
         }
       }
       paint();
+      // Fold it away: from its height to nothing (the height is applied before the fold starts).
       item.style.height = item.offsetHeight + 'px';
-      requestAnimationFrame(() => item.classList.add('gcx-gone'));
+      void item.offsetHeight;
+      item.classList.add('gcx-gone');
       setTimeout(() => {
+        const list = item.parentElement;
         const sec = item.previousElementSibling && item.previousElementSibling.classList.contains('gcx-bell-sec') ? item.previousElementSibling : null;
         item.remove();
-        // The section's last row: its heading goes too.
-        if (sec && !(sec.nextElementSibling && sec.nextElementSibling.classList.contains('gcx-bell-item'))) sec.remove();
+        // The section's last row (the "more in Inbox" link counts): its heading goes too.
+        const next = sec && sec.nextElementSibling;
+        if (sec && !(next && (next.classList.contains('gcx-bell-item') || next.classList.contains('gcx-bell-more')))) sec.remove();
+        if (list && !list.querySelector('.gcx-bell-item, .gcx-bell-more')) list.innerHTML = `<div class="gcx-bell-empty">You're all caught up.</div>`;
       }, 220);
     }
     btn.addEventListener('click', () => {
@@ -4585,11 +4597,11 @@
             else if (list) seenUpTo(shown);
             return;
           }
-          data = d;
+          data = scrub(d);
           paint();
           if (!list) return;
-          list.innerHTML = bellList(d, store.get('bellSeen', 0));
-          seenUpTo(d);
+          list.innerHTML = bellList(data, store.get('bellSeen', 0));
+          seenUpTo(data);
         });
       else setTimeout(() => seenUpTo(shown), 600);
     });
