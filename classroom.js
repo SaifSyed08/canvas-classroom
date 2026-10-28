@@ -4364,11 +4364,12 @@
   // What's new for him: unread messages and announcements, recent grades and teacher comments, and
   // work due in the next few days. One fetch every few minutes, shared by every tab.
   const NEWS_TTL = 3 * 6e4;
+  const NEWS_V = 2; // bump when the saved list's shape changes
   let newsJob = null;
   function news(fresh = false) {
     if (!PAGE_USER) return Promise.resolve(null);
     const saved = store.get('news', null);
-    const mine = saved && saved.user === PAGE_USER ? saved : null;
+    const mine = saved && saved.user === PAGE_USER && saved.v === NEWS_V ? saved : null;
     if (!fresh && mine && Date.now() - mine.at < NEWS_TTL) return Promise.resolve(mine);
     if (!newsJob)
       newsJob = loadNews()
@@ -4450,7 +4451,7 @@
     const slim = (i) => ({ key: i.key, type: i.type, title: i.title, due: i.due ? +i.due : 0, url: i.url, courseId: i.courseId, course: cname(i.courseId, i.courseName) });
     const due = work.filter((i) => !i.done && i.due && +i.due > now && +i.due < now + 4 * DAY).sort((u, v) => u.due - v.due).slice(0, 20).map(slim);
     const missing = work.filter((i) => i.flagged).slice(0, 10).map(slim);
-    return { user: PAGE_USER, at: now, unread: count, msgs, anns, grades: grades.slice(0, 12), due, missing };
+    return { v: NEWS_V, user: PAGE_USER, at: now, unread: count, msgs, anns, grades: grades.slice(0, 12), due, missing };
   }
 
   // The bell on the dashboard, next to the AI button: unread messages and announcements, new grades
@@ -4472,6 +4473,11 @@
     const seen = store.get('bellSeen', 0);
     const gone = bellCleared();
     return d.unread + d.anns.length + d.grades.filter((g) => g.at > seen && !gone[gradeKey(g)]).length;
+  }
+  function annReadPath(a) {
+    const m = String(a.url || '').match(/\/(courses|groups)\/(\d+)\/(?:discussion_topics|announcements)\/(\d+)/);
+    if (m) return `/${m[1]}/${m[2]}/discussion_topics/${m[3]}/read`;
+    return a.courseId && a.topicId ? `/courses/${a.courseId}/discussion_topics/${a.topicId}/read` : '';
   }
   // Marking things read in Canvas (only when he clicks the check). Canvas checks X-CSRF-Token
   // against the _csrf_token cookie on anything that changes data.
@@ -4496,7 +4502,7 @@
     );
     wel.append(btn);
     let data = store.get('news', null);
-    if (data && data.user !== PAGE_USER) data = null;
+    if (data && (data.user !== PAGE_USER || data.v !== NEWS_V)) data = null;
     const marked = { msg: new Map(), ann: new Map() }; // id -> when he marked it read
     const scrub = (d) => {
       if (!d) return d;
@@ -4536,8 +4542,9 @@
           marked.msg.set(id, Date.now());
         } else if (kind === 'ann') {
           const a = data.anns.find((x) => String(x.id) === id);
-          if (!a || !a.courseId || !a.topicId) throw new Error("couldn't tell which announcement");
-          await canvasPut(`/courses/${a.courseId}/discussion_topics/${a.topicId}/read`);
+          const path = a && annReadPath(a);
+          if (!path) throw new Error("couldn't tell which announcement");
+          await canvasPut(path);
           marked.ann.set(id, Date.now());
         } else {
           const gone = bellCleared();
@@ -4629,7 +4636,7 @@
       ]) +
       sec(
         'Announcements',
-        d.anns.map((a) => row('announce', a.title, [a.course, ago(a.at)].filter(Boolean).join(' · '), a.url, true, color(a.courseId), a.topicId && a.courseId ? ['ann', a.id, 'Mark as read'] : null)),
+        d.anns.map((a) => row('announce', a.title, [a.course, ago(a.at)].filter(Boolean).join(' · '), a.url, true, color(a.courseId), annReadPath(a) ? ['ann', a.id, 'Mark as read'] : null)),
       ) +
       sec(
         'Grades and feedback',
