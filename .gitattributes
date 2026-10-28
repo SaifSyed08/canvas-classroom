@@ -1,0 +1,6 @@
+# Left out of the Web Store zip (git archive)
+docs/ export-ignore
+store/ export-ignore
+README.md export-ignore
+.gitignore export-ignore
+.gitattributes export-ignore

@@ -17,7 +17,6 @@
     "https://*.instructure.com/*",
     "https://*.inscloudgate.net/*",
     "https://*.amazonaws.com/*",
-    "https://openpets.dev/*",
     "https://codex-pets.net/*"
   ],
   "options_ui": {
