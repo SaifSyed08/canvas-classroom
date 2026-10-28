@@ -212,6 +212,21 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   return true;
 });
 
+// A page background from a prompt (Settings > Background > Make one). Calm and low-contrast: it
+// sits faded behind everything.
+async function genBackdrop(prompt) {
+  const full = `Wide desktop wallpaper: ${prompt}. Soft, calm and low in contrast, with plenty of quiet empty space, gentle light. No text, no letters, no logos, no people's faces.`;
+  return `data:image/jpeg;base64,${await openaiImage({ prompt: full, size: '1536x1024', quality: 'low', output_format: 'jpeg', output_compression: 80 })}`;
+}
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== 'genBackdrop' || !sender.tab) return;
+  genBackdrop(String(msg.prompt || '').slice(0, 300)).then(
+    (data) => reply({ data }),
+    (e) => reply({ error: e.message }),
+  );
+  return true;
+});
+
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg && msg.type === 'openOptions') chrome.runtime.openOptionsPage();
 });

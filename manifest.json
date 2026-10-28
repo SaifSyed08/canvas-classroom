@@ -72,7 +72,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "fonts/*.woff2"
+        "fonts/*.woff2",
+        "art/*.svg"
       ],
       "matches": [
         "https://*.instructure.com/*"

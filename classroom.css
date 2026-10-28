@@ -329,8 +329,17 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 /* Over a picture background (BetterCampus image themes) the list needs a surface to be readable. */
 /* the theme's picture fills the window and stays put (drawn at its own size it repeated, with a seam, on long pages) */
 html.gcx-imgbg :is(body, #application.ic-app) { background-size: cover !important; background-position: center !important; background-attachment: fixed !important; background-repeat: no-repeat !important; }
-html.gcx-imgbg .gcx-topic, html.gcx-imgbg .gcx-pp-sec { background: var(--gcx-card); border-radius: 14px; padding: 16px 12px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
-html.gcx-imgbg .gcx-toc { background: var(--gcx-card); border-radius: 14px; padding: 8px 8px 8px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+/* A background picture of ours (Settings > Background), faded by a veil of the page color laid over
+   it. Both layers are opaque and identical wherever they're drawn, so it doesn't matter which of
+   these is the one showing. */
+html.gcx.gcx-art :is(body, #application.ic-app) {
+  background: linear-gradient(var(--gcx-veil), var(--gcx-veil)) fixed, var(--gcx-art) var(--gcx-art-pos, center) / cover no-repeat fixed, var(--gcx-bg) !important;
+}
+html.gcx.gcx-art :is(#wrapper, #main, #not_right_side, #content-wrapper, #content, .ic-Layout-wrapper, .ic-Layout-columns, .ic-Layout-contentWrapper, .ic-Layout-contentMain, #dashboard, #DashboardCard_Container) {
+  background-color: transparent !important;
+}
+:is(html.gcx-imgbg, html.gcx-artbold) .gcx-topic, :is(html.gcx-imgbg, html.gcx-artbold) .gcx-pp-sec { background: var(--gcx-card); border-radius: 14px; padding: 16px 12px 10px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+:is(html.gcx-imgbg, html.gcx-artbold) .gcx-toc { background: var(--gcx-card); border-radius: 14px; padding: 8px 8px 8px 0; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
 .gcx-topic-h {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 0 4px 10px; margin: 0 0 4px; cursor: pointer;
   border: 0; border-bottom: 2px solid var(--c); background: none; color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)); font: inherit; text-align: left;
@@ -467,6 +476,20 @@ html.gcx[data-gcx-shade="1"] .ic-DashboardCard__header a.gcx-card-ov {
 @font-face { font-family: 'GCX Playfair'; font-weight: 800; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/playfair-display-latin-800-normal.woff2') format('woff2'); }
 @font-face { font-family: 'GCX Caveat'; font-weight: 700; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/caveat-latin-700-normal.woff2') format('woff2'); }
 @font-face { font-family: 'GCX Grotesk'; font-weight: 700; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/space-grotesk-latin-700-normal.woff2') format('woff2'); }
+/* The font for everything (Settings > Look); regular and bold of each. */
+@font-face { font-family: 'GCX Nunito'; font-weight: 100 500; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/nunito-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'GCX Nunito'; font-weight: 600 900; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/nunito-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'GCX Lexend'; font-weight: 100 500; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/lexend-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'GCX Lexend'; font-weight: 600 900; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/lexend-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'GCX Lora'; font-weight: 100 500; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/lora-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'GCX Lora'; font-weight: 600 900; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/lora-latin-700-normal.woff2') format('woff2'); }
+html.gcx[data-gcx-ui="nunito"] { --gcx-uifont: 'GCX Nunito', 'Lato Extended', sans-serif; }
+html.gcx[data-gcx-ui="lexend"] { --gcx-uifont: 'GCX Lexend', 'Lato Extended', sans-serif; }
+html.gcx[data-gcx-ui="lora"] { --gcx-uifont: 'GCX Lora', Georgia, serif; }
+/* Not icons (icon fonts), code, math, the greeting (its own font) or the pet's pixel bubble. */
+html.gcx[data-gcx-ui] :where(body, body *:not(i, code, pre, kbd, samp, [class*="icon"], .gcx-hello, .gcx-hello *, .gcx-pet-say, .gcx-pet-say *, [class^="gcx-font-"], mjx-container, mjx-container *, .MathJax, .MathJax *, .katex, .katex *)) {
+  font-family: var(--gcx-uifont) !important;
+}
 html.gcx-cards #dashboard_header_container { display: none !important; }
 /* The greeting sits a little down from the top; the long rule under it (Canvas's dashboard
    header line) separates it from the cards, which start right after. */

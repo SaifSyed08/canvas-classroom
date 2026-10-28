@@ -53,7 +53,9 @@ In the Inbox, start a reply and gray text suggests the rest, in your voice. Tab 
 The AI runs on your own OpenAI key, which you paste into the settings. It stays in your browser and goes only to OpenAI. We never see it, or anything you ask.
 
 MAKE IT YOURS
-• Themes, or your school's own colors and logo
+• Whole styles in one tap: Classroom, Blossom, Forest, Midnight, School dark
+• Themes, or your school's own colors and logo, and a font for everything
+• Page backgrounds: drawn, your own picture, or one AI makes from your description
 • Illustrated, moving or AI-made class covers
 • Shortcuts on class cards, pinned links on a class's Home
 • Smooth page transitions (cards grow into the class banner), or turn motion off
@@ -72,9 +74,21 @@ GOOD TO KNOW
 Not affiliated with Instructure, Google or BetterCampus (BetterCanvas).
 ```
 
-**Screenshots** (1280x800, in this order): `screenshot-1-dashboard.png`, `screenshot-2-course-home.png`,
-`screenshot-3-assignment.png`, `screenshot-4-ask.png`, `screenshot-5-file-viewer.png`. Still missing: the pet
-and Inbox suggestions; they'd be the strongest two.
+**Screenshots** (1280x800, at most 5, in the order `store/images/screenshot-*` is numbered). Slides 1, 2 and
+5 are built from your own screenshots in `store/raw/` (git-ignored, since they're unblurred), then
+`python store/make-images.py` (add `--pet-at X,Y`, the pet's pixel spot, for a zoomed circle):
+
+| File in `store/raw/` | What to capture (full window, 16:10, e.g. 1920x1200) |
+| --- | --- |
+| `theme-blossom.png` | Dashboard in the Blossom style, greeting via `/?gcx-hello=returns`, a few class icons set |
+| `theme-classroom.png` | Classroom style, `/?gcx-hello=morning` |
+| `theme-schooldark.png` | School dark style, `/?gcx-hello=due` |
+| `theme-forest.png` | Forest style, `/?gcx-hello=spooky` |
+| `ai-pill.png` | Ctrl + Space open over a page, nothing typed yet |
+| `ai-chat.png` | The same after asking something, with the answer showing |
+| `pet.png` | The pet with its speech bubble up |
+
+Until they're there, the old dashboard, Ask and assignment screenshots stand in.
 
 **Small promo tile** (440x280, required): `promo-small.png`
 
