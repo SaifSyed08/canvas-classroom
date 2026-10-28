@@ -110,13 +110,21 @@
   let actx = null;
   let out = null; // a limiter in front of the speakers, so a hard landing never clips
   let hush = 0;
+  let suspending = false;
   // For a sound: the context if a click or key has made one. Sounds scheduled while it is still
-  // waking up play the moment it does. It goes back to sleep 3 s after the last sound.
+  // waking up play the moment it does. It goes back to sleep 12 s after the last sound.
   const audio = () => {
     if (!prefs.sound || !actx || document.hidden) return null;
-    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    if (actx.state !== 'running' || suspending) actx.resume().catch(() => {});
     clearTimeout(hush);
-    hush = setTimeout(() => actx && actx.state === 'running' && actx.suspend().catch(() => {}), 3000);
+    hush = setTimeout(() => {
+      if (!actx || actx.state !== 'running') return;
+      suspending = true;
+      actx
+        .suspend()
+        .catch(() => {})
+        .finally(() => (suspending = false));
+    }, 12000);
     return actx;
   };
   const unlock = () => {
@@ -331,33 +339,33 @@
     const cellPx = devH();
     if (sheet.scaledFor === cellPx) return;
     const s = sheet;
-    const w = devW() * COLS;
+    const cw = devW();
+    const w = cw * COLS;
     const h = cellPx * s.rows;
-    let url = '';
-    // The sharp shrink (background.js); the browser's own if that isn't available (growing past
-    // the sheet's size, or the extension just reloaded).
+    const current = () => sheet === s && devH() === cellPx;
+    const use = (url) => {
+      if (!current()) return URL.revokeObjectURL(url);
+      if (s.url) URL.revokeObjectURL(s.url);
+      s.url = url;
+      s.scaledFor = cellPx;
+      if (ui) ui.sprite.style.backgroundImage = `url("${url}")`;
+      lastFrameKey = '';
+      render();
+    };
+    // The browser's own shrink first, so he shows up at once; then the sharp one (background.js)
+    // swaps in when it's ready. Growing past the sheet's size stays with the browser's.
     try {
-      const r = await ask({ op: 'scaled', id: s.id, w, h });
-      if (r.data) url = URL.createObjectURL(await (await fetch(r.data)).blob());
+      const c = new OffscreenCanvas(w, h);
+      const x = c.getContext('2d');
+      x.imageSmoothingQuality = 'high';
+      x.drawImage(s.bitmap, 0, 0, w, h);
+      use(URL.createObjectURL(await c.convertToBlob({ type: 'image/png' })));
     } catch {}
-    if (sheet !== s || devH() !== cellPx) return url && URL.revokeObjectURL(url);
-    if (!url)
-      try {
-        const c = new OffscreenCanvas(w, h);
-        const x = c.getContext('2d');
-        x.imageSmoothingQuality = 'high';
-        x.drawImage(s.bitmap, 0, 0, w, h);
-        url = URL.createObjectURL(await c.convertToBlob({ type: 'image/png' }));
-      } catch {
-        return;
-      }
-    if (sheet !== s || devH() !== cellPx) return URL.revokeObjectURL(url);
-    if (s.url) URL.revokeObjectURL(s.url);
-    s.url = url;
-    s.scaledFor = cellPx;
-    if (ui) ui.sprite.style.backgroundImage = `url("${url}")`;
-    lastFrameKey = '';
-    render();
+    if (!current() || w > s.bitmap.width || h > s.bitmap.height) return;
+    try {
+      const r = await ask({ op: 'scaled', id: s.id, w, h, cw, ch: cellPx });
+      if (r.data && current()) use(URL.createObjectURL(await (await fetch(r.data)).blob()));
+    } catch {}
   }
 
   // ---------------------------------------------------------------- geometry
@@ -686,7 +694,10 @@
     const working = asking || !!document.querySelector('.gcx-progress.on:not(.done)');
     if (working !== m.working) {
       m.working = working;
-      if (working) m.target = null;
+      if (working) {
+        m.target = null;
+        m.sleeping = false;
+      }
       else if (m.wasAsking && onGround() && !m.held) {
         gesture('waving', 1200);
         fx('gcx-pet-star', '!');
@@ -1201,6 +1212,16 @@
       r.readAsDataURL(f);
     });
 
+  // A file dropped anywhere in our settings panel (just missing the pets) is still not opened by
+  // the browser, which would leave Canvas.
+  let petsBox = null;
+  const strayDrop = (e) => {
+    if (!petsBox || !petsBox.isConnected || ![...((e.dataTransfer && e.dataTransfer.types) || [])].includes('Files')) return;
+    if (e.composedPath().includes(petsBox)) e.preventDefault();
+  };
+  window.addEventListener('dragover', strayDrop);
+  window.addEventListener('drop', strayDrop);
+
   function fill(box) {
     const host = box && box.querySelector && box.querySelector('.gcx-set-pets');
     if (!host || host.dataset.gcxPetsBound) return;
@@ -1389,12 +1410,7 @@
       if (pick.hidden) open(true);
       dropped(e.dataTransfer).then(importFiles, (err) => (status.textContent = `Couldn't import that (${err.message}).`));
     });
-    // Anywhere else in the settings: still not opened by the browser.
-    const panel = box.getRootNode() instanceof ShadowRoot ? box.getRootNode().host : box;
-    const near = (e) => host.isConnected && e.composedPath().includes(panel);
-    const stray = (e) => hasFiles(e) && near(e) && e.preventDefault();
-    window.addEventListener('dragover', stray);
-    window.addEventListener('drop', stray);
+    petsBox = box;
     host.addEventListener('click', async (e) => {
       if (e.target.closest('.gcx-pets-change')) return open(pick.hidden);
       if (e.target.closest('.gcx-pets-more')) return browse(true);
