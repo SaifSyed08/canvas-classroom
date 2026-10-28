@@ -565,10 +565,17 @@
     const rows = crit
       .map((c) => {
         const g = got[c.id] || {};
+        // Fewest points on the left to most on the right (Canvas lists them the other way), each
+        // with its full description.
         const levels = (c.ratings || [])
-          .map((r) => {
+          .map((r, i) => ({ r, i }))
+          .sort((x, y) => (+x.r.points || 0) - (+y.r.points || 0) || y.i - x.i)
+          .map(({ r }) => {
             const on = graded && (g.rating_id ? g.rating_id === r.id : g.points != null && +g.points === +r.points);
-            return `<div class="gcx-rb-lv${on ? ' on' : ''}" title="${esc(plainText(r.long_description || ''))}">${hidePts ? '' : `<b>${esc(fmtNum(+r.points || 0))}</b>`}<span>${esc(r.description || '')}</span></div>`;
+            const long = plainText(r.long_description || '');
+            return `<div class="gcx-rb-lv${on ? ' on' : ''}"><div class="gcx-rb-lv-h">${hidePts ? '' : `<b>${esc(fmtNum(+r.points || 0))}</b>`}<span>${esc(r.description || '')}</span></div>${
+              long ? `<p>${esc(long)}</p>` : ''
+            }</div>`;
           })
           .join('');
         const score = hidePts ? '' : graded && g.points != null ? `${esc(fmtNum(+g.points))} / ${esc(pts(+c.points || 0))}` : esc(pts(+c.points || 0));
