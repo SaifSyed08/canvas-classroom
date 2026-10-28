@@ -3195,7 +3195,7 @@
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
     school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
-    look: '', uiFont: '', art: '', artAmt: 18,
+    uiFont: '', art: '', artAmt: 18,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -3297,86 +3297,20 @@
       side.prepend(box);
     }
   }
-  // Looks: a whole style in one tap (page colors, theme color, fonts, background). Picking one sets
-  // the settings below it, which can still be changed one by one; its page colors stay until another
-  // look (or None, back to BetterCampus's colors) is picked. Page colors: background, second and
-  // third surfaces, cards, text (strong, muted, faint), borders, links.
-  const LOOKS = [
-    { id: '', label: 'None', sw: [] },
-    {
-      id: 'classroom',
-      label: 'Classroom',
-      vars: ['#ffffff', '#f1f3f4', '#e8eaed', '#ffffff', '#1f1f1f', '#5f6368', '#80868b', '#dadce0', '#1a73e8'],
-      set: { theme: '', uniform: false, font: 'grotesk', uiFont: '', art: '' },
-    },
-    {
-      id: 'blossom',
-      label: 'Blossom',
-      vars: ['#fff6f9', '#fde7ef', '#f9d5e2', '#ffffff', '#3a1f2b', '#86566a', '#a77f90', '#f3d1de', '#c2185b'],
-      set: { theme: 'blossom', uniform: true, font: 'playfair', uiFont: 'nunito', art: 'blossom', artAmt: 30 },
-    },
-    {
-      id: 'forest',
-      label: 'Forest',
-      vars: ['#f3f7f1', '#e4ede0', '#d5e3cf', '#ffffff', '#1c2a1f', '#56695a', '#7d8f80', '#d0ddca', '#2e7d32'],
-      set: { theme: 'forest', uniform: true, font: 'fredoka', uiFont: 'lexend', art: 'trees', artAmt: 16 },
-    },
-    {
-      id: 'midnight',
-      label: 'Midnight',
-      dark: true,
-      vars: ['#0c1430', '#141f45', '#1b2856', '#17224b', '#e8ecf8', '#a3add0', '#7c87ad', '#2a3870', '#8ab4ff'],
-      set: { theme: 'deepblue', uniform: false, font: 'poppins', uiFont: '', art: '' },
-    },
-    {
-      id: 'schooldark',
-      label: 'School dark',
-      dark: true,
-      vars: ['#141414', '#1e1e1e', '#262626', '#232323', '#f5f5f5', '#b0b0b0', '#8a8a8a', '#343434', 'color-mix(in oklab, var(--ic-brand-global-nav-bgd, #8ab4f8) 55%, white)'],
-      set: { theme: 'school', uniform: true, font: 'grotesk', uiFont: 'lexend', art: '' },
-    },
-  ];
-  const LOOK_VARS = ['--bcbackground-0', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks'];
-  const lookOf = (id) => LOOKS.find((l) => l.id === id && l.vars) || null;
-  function lookCss(l) {
-    if (!l) return '';
-    const d = LOOK_VARS.map((k, i) => `${k}: ${l.vars[i]} !important`);
-    d.push(
-      `--bcbackground-0-ungradient: ${l.vars[0]} !important`,
-      '--bcbackground-image: initial !important',
-      '--bcbackground-image-layer: initial !important',
-      `color-scheme: ${l.dark ? 'dark' : 'light'}`,
-    );
-    return `:root.gcx, :root.gcx body { ${d.join('; ')} } html.gcx :is(body, #application.ic-app) { background-color: ${l.vars[0]} !important; color: ${l.vars[4]}; }`;
-  }
-  // The look's colors go in over BetterCampus's (they're its variables, so its own dark mode
-  // follows them too); early.js puts the same style in before the next page's first frame.
-  function applyLook(changed = false) {
+  // The font for everything and the background. (A page-colors style from an earlier version is
+  // cleared out.)
+  function applyLook() {
     const p = prefs();
-    const css = lookCss(lookOf(p.look));
-    let st = document.getElementById('gcx-look');
-    if (css) {
-      if (!st) {
-        st = document.createElement('style');
-        st.id = 'gcx-look';
-        html.append(st);
-      }
-      if (st.textContent !== css) st.textContent = css;
-      store.set('look', { css });
-    } else {
-      st?.remove();
+    if (document.getElementById('gcx-look') || store.get('look', null)) {
+      document.getElementById('gcx-look')?.remove();
       try {
         localStorage.removeItem('gcx:look');
       } catch {}
+      if (p.look) store.set('prefs', { ...store.get('prefs', {}), look: undefined });
     }
     if (p.uiFont && UI_FONTS.some((f) => f[0] === p.uiFont)) html.dataset.gcxUi = p.uiFont;
     else delete html.dataset.gcxUi;
     applyArt();
-    if (changed) {
-      checkFlatSurface();
-      refreshInlineColors();
-      saveThemeVars();
-    }
   }
   // Page backgrounds: two drawings (each with an ink for light pages and one for dark), or his
   // own picture (uploaded or made with AI, in chrome.storage). The strength is how much of it
@@ -3390,8 +3324,6 @@
   const BG_KEY = 'gcx:bgimg';
   let bgMine = null; // his picture once read ('' if there's none)
   const pageIsDark = () => {
-    const l = lookOf(prefs().look);
-    if (l) return !!l.dark;
     const n = document.createElement('i');
     n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0-ungradient, var(--bcbackground-1, #fff))';
     (document.body || html).append(n);
@@ -3738,15 +3670,6 @@
       <div class="gcx-set-h">Look</div>
       <div class="gcx-set-card">
         <div class="gcx-set-sub">
-          <div class="gcx-set-lbl">Style (sets everything below in one go; dark ones color the rest of Canvas when BetterCampus's dark mode is on)</div>
-          <div class="gcx-set-looks" role="radiogroup" aria-label="Style">${LOOKS.map(
-            (l) =>
-              `<button type="button" role="radio" data-look="${l.id}" aria-checked="${(p.look || '') === l.id}" title="${l.label}"><span class="gcx-lk"${
-                l.vars ? ` style="--lk-bg:${l.vars[0]};--lk-card:${l.vars[3]};--lk-text:${l.vars[4]};--lk-bar:${(THEMES.find((t) => t[0] === l.set.theme) || [])[2] || l.vars[8]}"` : ''
-              }><i></i><b></b><b></b></span><small>${l.label}</small></button>`,
-          ).join('')}</div>
-        </div>
-        <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Theme (menu rail and accents; School uses your school's Canvas colors and logo)</div>
           <div class="gcx-set-themes" role="radiogroup" aria-label="Theme">${THEMES.map(
             ([k, label, color]) =>
@@ -3816,8 +3739,7 @@
       applyShadePref();
       applyLayoutPref();
       if ('school' in patch || 'uniform' in patch || 'theme' in patch) applySchoolPref();
-      if ('look' in patch) applyLook(true);
-      else if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
+      if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
@@ -3889,35 +3811,9 @@
       const f = e.target.closest('[data-font]');
       const sh = e.target.closest('[data-shade]');
       const th = e.target.closest('[data-theme]');
-      const lk = e.target.closest('[data-look]');
       const uf = e.target.closest('[data-uifont]');
       const ar = e.target.closest('[data-art]');
-      if (lk) {
-        const l = LOOKS.find((x) => x.id === lk.dataset.look);
-        if (!l) return;
-        save({ look: l.id, ...(l.set || {}), ...(l.set ? { school: false } : {}) });
-        applySchoolPref();
-        // The rows below show what it set.
-        const now = prefs();
-        const mark = (sel, key) => box.querySelectorAll(`[${sel}]`).forEach((b) => b.setAttribute('aria-checked', String(b.getAttribute(sel) === String(now[key] || ''))));
-        mark('data-look', 'look');
-        mark('data-theme', 'theme');
-        mark('data-font', 'font');
-        mark('data-uifont', 'uiFont');
-        mark('data-art', 'art');
-        const u = box.querySelector('[data-k="uniform"]');
-        if (u) u.checked = now.uniform !== false;
-        const amt = box.querySelector('[data-range="artAmt"]');
-        if (amt) {
-          amt.value = now.artAmt;
-          const val = amt.parentElement.querySelector('.gcx-set-val');
-          if (val) val.textContent = `${now.artAmt}%`;
-        }
-        if (welcomeCtx) reveal(welcomeCtx.wel.querySelector('.gcx-hello'));
-        sync();
-        if (l.dark && (document.getElementById('darkcss')?.textContent || '').length < 2000)
-          toast("Turn on BetterCampus's dark mode too, so the rest of Canvas goes dark with it.");
-      } else if (uf) {
+      if (uf) {
         save({ uiFont: uf.dataset.uifont });
         box.querySelectorAll('[data-uifont]').forEach((b) => b.setAttribute('aria-checked', String(b === uf)));
       } else if (ar) {
@@ -4204,20 +4100,6 @@
     .gcx-set-fonts button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); background: color-mix(in srgb, var(--gcx-link, #4f46e5) 8%, transparent); }
     .gcx-set-fonts span { font-size: 22px; line-height: 1.1; }
     .gcx-set-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; margin-bottom: 4px; }
-    .gcx-set-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin-bottom: 4px; }
-    .gcx-set-looks button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 4px; border: 1px solid transparent; border-radius: 12px;
-      background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
-    .gcx-set-looks button:hover { background: var(--gcx-bg2, #f4f4f5); }
-    .gcx-set-looks button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); }
-    .gcx-set-looks small { font-size: 11px; color: var(--gcx-muted, #71717a); white-space: nowrap; }
-    /* A tiny page: the rail, two cards. "None" is BetterCampus's own colors. */
-    .gcx-lk { position: relative; display: block; width: 64px; height: 42px; border-radius: 8px; overflow: hidden; background: var(--lk-bg, conic-gradient(#f4f4f5 0 25%, #e4e4e7 0 50%, #f4f4f5 0 75%, #e4e4e7 0) 0 0 / 12px 12px);
-      box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
-    .gcx-lk i { position: absolute; inset: 0 auto 0 0; width: 11px; background: var(--lk-bar, transparent); }
-    .gcx-lk b { position: absolute; top: 9px; width: 20px; height: 24px; border-radius: 4px; background: var(--lk-card, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--lk-text, transparent) 14%, transparent); }
-    .gcx-lk b:first-of-type { left: 17px; }
-    .gcx-lk b:last-of-type { left: 40px; }
-    .gcx-lk:not([style]) b, .gcx-lk:not([style]) i { display: none; }
     .gcx-set-uifonts { grid-template-columns: repeat(4, 1fr); }
     .gcx-ui-canvas { font-family: 'Lato Extended', Lato, sans-serif; font-weight: 700; }
     .gcx-ui-nunito { font-family: 'GCX Nunito', sans-serif; font-weight: 700; }
