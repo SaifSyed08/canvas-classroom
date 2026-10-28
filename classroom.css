@@ -146,7 +146,13 @@ html.gcx-course #main { margin-left: 0 !important; }
   transition: left 0.35s cubic-bezier(.2,.7,.2,1), width 0.35s cubic-bezier(.2,.7,.2,1);
 }
 #gcx-cbar .gcx-tabs-ink.still { transition: none; }
-#gcx-cbar .gcx-cbar-actions { display: flex; justify-content: flex-end; position: relative; }
+#gcx-cbar .gcx-cbar-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; position: relative; }
+#gcx-cbar .gcx-cbar-set {
+  width: 40px; height: 40px; flex: none; display: grid; place-items: center; border: 1px solid var(--gcx-border); border-radius: 50%;
+  background: var(--gcx-bg); color: var(--gcx-text); cursor: pointer; transition: background-color 0.15s ease;
+}
+#gcx-cbar .gcx-cbar-set:hover { background: var(--gcx-bg2); }
+#gcx-cbar .gcx-cbar-set .gcx-svg { fill: currentColor; }
 #gcx-cbar .gcx-more-btn {
   display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 12px; border-radius: 20px;
   border: 1px solid var(--gcx-border); background: var(--gcx-bg); color: var(--gcx-text); font: inherit; font-size: 14px; cursor: pointer;
@@ -695,6 +701,9 @@ html.gcx-theme-vt::view-transition-new(*) { animation: gcx-vt-fade-in 0.5s ease 
 
 /* ---------- web links in Classwork: domain on the right, preview card by the cursor */
 .gcx-row[data-gcx-ext] .gcx-row-meta { display: inline-flex; align-items: center; gap: 4px; }
+/* Canvas's own script marks links that open a new tab with an external-link icon and hidden text,
+   ours included; in a row that pushed the site onto a second line until the next redraw. */
+:is(.gcx-row, .gcx-post-file, .gcx-asg-chip, .gcx-pv-open) :is(.external_link_icon, .ui-icon-extlink, .screenreader-only) { display: none !important; }
 .gcx-row[data-gcx-ext] .gcx-row-meta .gcx-svg { opacity: 0.7; }
 .gcx-linkcard {
   position: fixed; left: 0; top: 0; z-index: 2147483400; width: 220px; pointer-events: none; overflow: hidden;
