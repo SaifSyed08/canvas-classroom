@@ -507,6 +507,13 @@
 
     renderWork();
     setupComments();
+    // Back from the refresh that "More options in Canvas" asked for after a turn-in.
+    try {
+      if (sessionStorage.getItem('gcx:asg-canvas') === aid) {
+        sessionStorage.removeItem('gcx:asg-canvas');
+        if (tuck) useCanvas();
+      }
+    } catch {}
 
     view.removeAttribute('aria-busy');
     view.classList.add('ready');
@@ -588,6 +595,21 @@
 
   // An item from the Add or create menu that only Canvas's block can do.
   function useCanvas() {
+    if (S.turnedInHere) {
+      // Canvas's block still shows the page from before the turn-in (its Submit could spend another
+      // attempt), so this opens it on a fresh page instead, unless that would lose something.
+      const typed = (cbox.querySelector('textarea') || {}).value;
+      const d = S.draft || {};
+      if ((typed && typed.trim()) || d.text || d.url || (d.files && d.files.length)) {
+        gcx.toast('Post or clear what you were writing first; Canvas’s options need a fresh page after turning in.');
+        return;
+      }
+      try {
+        sessionStorage.setItem('gcx:asg-canvas', aid);
+      } catch {}
+      location.reload();
+      return;
+    }
     reveal(true);
     requestAnimationFrame(goToSubmission);
   }
