@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Canvas Classroom",
   "version": "0.2.0",
-  "description": "Google Classroom-style layout for Canvas. Runs on top of BetterCampus.",
+  "description": "Canvas, Classroom-style: a class rail, Classwork, one To-do list, files that open in place, an AI that knows your classes and a pet.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",

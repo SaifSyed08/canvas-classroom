@@ -9,7 +9,7 @@ This page says what it reads, where that goes, and what it keeps. Last updated O
   tracking or advertising.
 - The extension reads your Canvas through your own signed-in session, and keeps what it reads in your
   browser.
-- The AI features send data to OpenAI using **your own** OpenAI key, and only when you use them.
+- The AI features send data to OpenAI using **your own** OpenAI key. Without a key, nothing goes to OpenAI.
 
 ## What it reads
 
@@ -24,16 +24,21 @@ reads.
 | Where | What | When |
 | --- | --- | --- |
 | Your school's Canvas | Ordinary Canvas API requests with your session | While you use Canvas |
-| OpenAI (api.openai.com) | Your question and the Canvas data the assistant looks up to answer it (which can include course content, grades, feedback, files and messages) | When you ask the AI something |
-| OpenAI | The Inbox conversation you're replying to and your draft | While you write a message in Canvas's Inbox, if "Suggestions in Inbox" is on |
+| Canvas's file storage (Instructure's file proxy, Amazon S3) | File downloads, and files you turn in | When you open a course file, the assistant reads one, or you upload a submission |
+| OpenAI (api.openai.com) | Your question and the conversation so far; your name, your school's Canvas address, your time zone, and your current courses with their instructors and your current grade in each; and whatever the assistant looks up to answer (which can include course content, grades, feedback, files and Inbox messages) | When you ask the AI something |
+| OpenAI | The Inbox conversation you're replying to (with its course, people and subject), your name, and your draft | As soon as you open a reply or a new message in Canvas's Inbox, and again as you write, while "Suggestions in Inbox" is on (it's on by default once a key is set) |
 | OpenAI | The class name and your description of the cover | When you generate an AI class cover |
-| codex-pets.net | Library page and search requests, and the pet images you pick | When you browse or pick a pet |
+| codex-pets.net | Library page and search requests, the small preview images of the pets shown, and the pet you pick | When you browse or pick a pet |
 | Google's favicon service and YouTube's image server | The address of a web link in a course | When you hover that link to preview it |
 
+Images from codex-pets.net, Google and YouTube load directly in the Canvas page, so those sites can also see
+your school's Canvas address (as the page they were loaded from).
+
 OpenAI's handling of these requests is covered by [OpenAI's policies](https://openai.com/policies) and your
-own OpenAI account's settings. Without a key nothing is sent to OpenAI. With one, the assistant and covers
-send only when you ask them something, and Inbox suggestions send while you write a message (turn off
-"Suggestions in Inbox" in settings to stop that).
+own OpenAI account's settings. Assistant conversations are kept by OpenAI so follow-up questions can
+continue them; Inbox suggestions are sent with storage turned off. Without a key nothing is sent to OpenAI.
+With one, the assistant and covers send only when you ask them something; turn off "Suggestions in Inbox" in
+settings to stop the Inbox ones.
 
 ## What it keeps
 
@@ -42,9 +47,14 @@ All of it stays in your browser, in the extension's storage and in Canvas's `loc
 - copies of Canvas data (courses, assignments, Classwork, files, announcements) so pages open instantly,
   kept per Canvas site and per user, and dropped after 30 days without a refresh
 - your settings, class icons and colors, covers, pinned links and shortcuts
+- your recent AI chat (the latest 40 messages, per Canvas site and user) so Ctrl + Shift + Space can bring it
+  back
 - your OpenAI key, if you added one; it is only ever sent to api.openai.com, by the extension's
   background worker, and never shown to the Canvas page
 - pets you picked or imported
+
+It also changes two of BetterCampus's settings in your browser: its to-do range is switched to Month once (so
+the two-week list works), and its saved theme colors are kept in step with dark and light mode.
 
 Removing the extension deletes its storage. Its `localStorage` entries on Canvas (named `gcx:...`) are
 cleared with Canvas's site data.

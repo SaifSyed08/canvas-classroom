@@ -21,9 +21,9 @@ Everything the Developer Dashboard asks for, ready to paste. Images are in `stor
 
 **Name** (from the manifest, max 75): Canvas Classroom
 
-**Summary** (from the manifest `description`, max 132; the current one is fine, this one sells it better):
+**Summary** (the store takes it from the manifest's `description`, which already has it; 132 characters, the maximum):
 
-> Canvas, Classroom-style: a class rail, Classwork, one To-do list, files that open in place, an AI that knows your classes, and a pet.
+> Canvas, Classroom-style: a class rail, Classwork, one To-do list, files that open in place, an AI that knows your classes and a pet.
 
 **Category:** Education
 
@@ -51,7 +51,7 @@ AI REPLIES IN THE INBOX
 Start a reply and gray text suggests the rest, in your voice. Tab takes it, Ctrl + → takes one word, Esc hides it.
 
 A PET
-Pick one of 3,600+ pixel pets from codex-pets.net, or import your own. It wanders along the bottom of the page, naps with little z's, runs alongside the AI while it thinks, and can be picked up and thrown. Soft sound effects if you want them.
+Turn one on in settings: pick one of 3,600+ pixel pets from codex-pets.net, or import your own. It wanders along the bottom of the page, naps with little z's, runs alongside the AI while it thinks, and can be picked up and thrown. Soft sound effects if you want them.
 
 MAKE IT YOURS
 • Themes, or your school's own colors and logo
@@ -67,7 +67,7 @@ GOOD TO KNOW
 • Works on Canvas sites at *.instructure.com.
 • Built to run alongside BetterCampus (free on the Chrome Web Store), which supplies the to-do sidebar, dark mode and themes. Canvas Classroom works without it, but is best with it.
 • The AI features use your own OpenAI key (add it in the extension's options). Everything else works without one.
-• No account, no tracking, no server: your Canvas data stays in your browser. Privacy policy: https://github.com/SaifSyed08/canvas-classroom/blob/main/docs/privacy.md
+• No account, no tracking, no developer server. Canvas data is cached in your browser; the AI features send what they need to OpenAI with your key. Privacy policy: https://github.com/SaifSyed08/canvas-classroom/blob/main/docs/privacy.md
 
 Not affiliated with Instructure, Google or BetterCampus.
 ```
@@ -89,7 +89,8 @@ and Inbox suggestions; they'd be the strongest two.
 
 > Redesigns Canvas (the learning management system) into a Google Classroom-style layout, with tools for
 > getting around and keeping up with your classes: search, a to-do list, an in-place file viewer, an
-> assistant that answers questions about your courses, and an optional pet companion.
+> assistant that answers questions about your courses, AI reply suggestions in the Canvas Inbox, class
+> cover images (drawn or AI-made), and an optional animated companion on Canvas pages.
 
 **Permission justifications:**
 
@@ -98,7 +99,7 @@ and Inbox suggestions; they'd be the strongest two.
 | `storage` | Saves the user's settings, their OpenAI key, and cached copies of their Canvas pages so pages open instantly. |
 | `unlimitedStorage` | The cache of Canvas data (courses, assignments, files lists) and the user's chosen pet images and class cover images can exceed the default 10 MB quota. |
 | `https://*.instructure.com/*` | The extension's whole job: it changes Canvas pages and reads the user's own Canvas data through Canvas's API with their session. |
-| `https://*.inscloudgate.net/*`, `https://*.amazonaws.com/*` | Canvas serves course files from these hosts (Canvas redirects file downloads there). Used to show PDFs in the in-place viewer and to let the assistant read a course file the user asks about. |
+| `https://*.inscloudgate.net/*`, `https://*.amazonaws.com/*` | Canvas serves course files from these hosts (Canvas redirects file downloads to Instructure's file proxy and to S3 buckets, whose names and regions vary by school). Used to show PDFs in the in-place viewer, to let the assistant read a course file the user asks about, and to upload files the user turns in. Requests go only to file URLs Canvas itself returns. |
 | `https://api.openai.com/*` | The AI features (Ask anything, Inbox suggestions, AI class covers) call OpenAI with the user's own API key. |
 | `https://codex-pets.net/*` | Lists the pet library and downloads the pet the user picks. The site sends no CORS headers, so the requests are made from the service worker. |
 
@@ -107,8 +108,11 @@ or evaluated from the network.)
 
 **Data usage** (tick these):
 
-- Personally identifiable information (names and emails of instructors and classmates shown from Canvas)
-- Personal communications (Inbox messages, when writing a reply with suggestions on)
+- Personally identifiable information (the user's name, and names and emails of instructors and classmates
+  shown from Canvas)
+- Authentication information (the user's own OpenAI API key, stored locally and sent only to OpenAI)
+- Personal communications (Canvas Inbox messages: read by the assistant when asked, and sent for reply
+  suggestions)
 - Website content (Canvas course content, grades and files)
 
 And certify all three: not sold to third parties, not used for purposes unrelated to the single purpose, not

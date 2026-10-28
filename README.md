@@ -148,7 +148,8 @@ words. The conversation and your draft go to OpenAI to write it; turn it off in 
 
 ## Pets
 
-A pixel pet lives along the bottom of every Canvas page and keeps its spot from page to page.
+Turn on a pet in settings and it lives along the bottom of every Canvas page, keeping its spot from page
+to page.
 
 - **3,600+ to pick from**, searchable, from [codex-pets.net](https://codex-pets.net), most popular first.
 - **Bring your own**: Import a codex-pets.net `.zip`, a `pet.json` with its spritesheet, a bare
@@ -235,13 +236,15 @@ which is used when no key is saved:
 ### Bundling your own pets
 
 Pets listed in a git-ignored `pets.local/index.json` (an array of folder names, each with a `pet.json` and
-its spritesheet) are imported on first run, so they're there after a fresh Load unpacked.
+its spritesheet) are imported the first time the pet picker opens, so they're there after a fresh Load
+unpacked.
 
 ## Notes
 
-- Everything runs as content scripts on `*.instructure.com` and uses Canvas's own API with your session.
-  Questions you ask (and the Canvas data the assistant looks up to answer them) and Inbox threads you reply
-  to go to OpenAI. Pet browsing talks to codex-pets.net.
+- It runs on `*.instructure.com` pages and uses Canvas's own API with your session; the extension's
+  background worker makes the calls to OpenAI, codex-pets.net and Canvas's file storage. Questions you ask
+  (with your course list and the Canvas data the assistant looks up), Inbox messages you write with
+  suggestions on, and AI cover requests go to OpenAI. See the [privacy policy](docs/privacy.md).
 - Assignments, Classwork, files and announcements are cached in the extension's storage, per Canvas site
   and per user, and dropped after 30 days without a refresh. Pages draw the cached copy at once, refresh in
   the background (Classwork and To-do show "Updating" while they do), and redraw only if something changed.
