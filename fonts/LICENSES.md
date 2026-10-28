@@ -7,3 +7,4 @@ All are under the SIL Open Font License 1.1 (full text in `OFL.txt`), from Fonts
 - Playfair Display: Copyright 2017 The Playfair Display Project Authors (Reserved Font Name "Playfair Display")
 - Caveat: Copyright 2014 The Caveat Project Authors
 - Space Grotesk: Copyright 2020 The Space Grotesk Project Authors
+- Pixelify Sans: Copyright 2021 The Pixelify Sans Project Authors

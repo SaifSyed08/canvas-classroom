@@ -64,7 +64,7 @@
 
   // ---------------------------------------------------------------- prefs
   const PREFS_KEY = 'gcx:pets';
-  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, walk: 1, sound: false, volume: 1 };
+  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, walk: 1, remind: true, sound: false, volume: 1 };
   const readPrefs = () => {
     let p;
     try {
@@ -226,6 +226,22 @@
     ng.gain.value = 0.035;
     src.connect(f).connect(ng).connect(out);
     src.start(t);
+  }
+  // A talking blip, one per couple of letters while a reminder types out: a tiny square-wave beep.
+  function blip() {
+    const ctx = audio();
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.003;
+    const o = ctx.createOscillator();
+    o.type = 'square';
+    o.frequency.setValueAtTime(620 + Math.random() * 140, t);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.016, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.06);
   }
   // A snore: a quiet, fluttering breath in, matching the slow breathing in pets.css.
   function snore() {
@@ -541,6 +557,7 @@
     ui.shadow.style.opacity = m.held ? '0' : String(1 - lift);
     ui.shadow.style.transform = `translateY(${groundY() - m.y}px) scale(${1 - lift * 0.5})`;
     ui.pet.classList.toggle('gcx-pet-held', m.held);
+    placeSay();
   }
 
   // Sprite frames run on their own clock, at the state's rate.
@@ -629,8 +646,19 @@
       const floor = groundY();
       const b = body();
       const flying = m.leap && m.leap.phase === 'fly' ? m.leap : null;
-      if (m.y >= floor && flying && m.perch) {
-        // Landed the leap: no bounce, a skid that stops before the far edge.
+      if (m.y >= floor && flying && m.perch && m.perch.el === flying.card && flying.i < flying.hops.length - 1) {
+        // Down on a card on the way: straight on to the next at the same speed.
+        m.y = floor;
+        m.vy = 0;
+        squash(0.1, 'bottom');
+        thud(0.12);
+        flying.i++;
+        flying.perch = m.perch.el;
+        flying.card = flying.hops[flying.i];
+        flying.v = flying.speed;
+        flying.phase = 'run';
+      } else if (m.y >= floor && flying && m.perch) {
+        // The last one: no bounce, a skid that stops before the far edge.
         m.y = floor;
         m.vy = 0;
         squash(0.2, 'bottom');
@@ -664,7 +692,8 @@
     const L = m.leap;
     if (L && L.phase === 'run') {
       const p = m.perch;
-      if (airborne || !p || p.el !== L.perch || !L.card.isConnected) m.leap = null;
+      // (Not the frame's `airborne`: he may have just landed on the previous card this frame.)
+      if (m.vy !== 0 || !p || m.y < p.top - 0.5 || p.el !== L.perch || !L.card.isConnected) m.leap = null;
       else if (m.working || !prefs.roam || calm()) {
         // Called off mid-run (the AI started, roaming or animations off): he brakes to a stop
         // before the edge, quietly; with animations off, at once.
@@ -680,11 +709,11 @@
         if (L.dir > 0 ? m.x + m.vx * dt >= edge : m.x + m.vx * dt <= edge) {
           // Off the edge at full speed, aimed to come down on the card he picked; the same speed
           // carries him across.
-          const top = L.card.getBoundingClientRect().top;
-          const T = Math.abs(L.land - (edge + b.w / 2)) / L.speed;
+          const r = L.card.getBoundingClientRect();
+          const T = Math.max(0.12, Math.abs(leapLand(r, L.dir, b) - (edge + b.w / 2)) / L.speed);
           m.vx = L.dir * L.speed;
           m.x = edge - m.vx * dt;
-          m.vy = (top - p.top - (GRAVITY * T * T) / 2) / T;
+          m.vy = (r.top - p.top - (GRAVITY * T * T) / 2) / T;
           m.perch = null;
           L.phase = 'fly';
           squash(0.12, 'bottom');
@@ -773,10 +802,191 @@
     return best;
   }
 
+  // ---------------------------------------------------------------- reminders
+  // Now and then he says something useful in a little pixel speech bubble: work due soon, luck on
+  // an exam, a cheer for a grade, a teacher's comment, unread messages or announcements. Clicking
+  // the bubble opens what it's about. The news is classroom.js's (one fetch shared by every tab).
+  const SAID_KEY = 'gcx:pet:said'; // what he has said (by key) and when, so nothing repeats for a week
+  const SAY_GAP = 4 * 6e4; // at least this long between two, across pages
+  const URGENT_GAP = 6e4;
+  const EXAM = /\b(exams?|midterms?|mid-terms?|finals?|tests?|quiz(?:zes)?)\b/i;
+  let nextSay = 0;
+  let saying = null;
+  const clip = (t, n = 32) => {
+    t = String(t || '').trim();
+    return t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t;
+  };
+  const num = (x) => String(Math.round(x * 100) / 100);
+  const DAY_MS = 864e5;
+  const dayOf = (t) => {
+    const a = new Date(t);
+    const b = new Date();
+    a.setHours(0, 0, 0, 0);
+    b.setHours(0, 0, 0, 0);
+    return Math.round((a - b) / DAY_MS);
+  };
+  const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/:00(?=\s|$)/, '');
+  const weekday = (t) => new Date(t).toLocaleDateString(undefined, { weekday: 'long' });
+  // Everything he could say right now, most important first. Parts: plain text, or [text] for a name.
+  function sayings(n) {
+    const now = Date.now();
+    const list = [];
+    const add = (key, pri, parts, url) => list.push({ key, pri, parts, url });
+    for (const d of n.due || []) {
+      const left = d.due - now;
+      if (left <= 0) continue;
+      const T = [clip(d.title)];
+      const day = dayOf(d.due);
+      const exam = EXAM.test(d.title) && d.type !== 'discussion_topic';
+      if (left < 3 * 36e5)
+        add(`due:${d.key}:soon`, 100, left < 36e5 ? [T, ` is due in ${Math.max(1, Math.round(left / 6e4))} min!`] : [T, ` is due at ${clock(d.due)}!`], d.url);
+      else if (exam && day === 0) add(`exam:${d.key}:0`, 90, ['Good luck on ', T, ' today! You got this.'], d.url);
+      else if (exam && day === 1) add(`exam:${d.key}:1`, 70, [T, ' is tomorrow. Good luck!'], d.url);
+      else if (day === 0) add(`due:${d.key}:0`, 80, ["Don't forget: ", T, ` is due today at ${clock(d.due)}.`], d.url);
+      else if (day === 1) add(`due:${d.key}:1`, 60, ["Don't forget about ", T, '! It\u2019s due tomorrow.'], d.url);
+      else if (day <= 3) add(`due:${d.key}:${day}`, 35, [T, ` is due ${weekday(d.due)}.`], d.url);
+    }
+    for (const g of n.grades || []) {
+      if (now - g.at > 3 * DAY_MS) continue;
+      const T = [clip(g.title)];
+      if (g.comment && now - g.comment.at < 3 * DAY_MS) add(`cmt:${g.id}:${g.comment.at}`, 72, [[clip(g.comment.who, 22)], ' left a comment on ', T, '.'], g.url);
+      if (!g.graded) continue;
+      const pct = g.pts > 0 && g.score != null ? g.score / g.pts : null;
+      const sc = pct != null ? ` ${num(g.score)}/${num(g.pts)}` : '';
+      if (pct != null && pct >= 0.9) add(`grade:${g.id}`, 75, ['Nice work on ', T, `!${sc}`], g.url);
+      else if (pct != null && pct >= 0.75) add(`grade:${g.id}`, 70, [T, ` got graded:${sc}. Nice!`], g.url);
+      else add(`grade:${g.id}`, 66, [T, ' was graded. Take a look?'], g.url);
+    }
+    if (n.unread > 0) {
+      const m0 = (n.msgs || [])[0];
+      add(
+        `msg:${n.unread}:${m0 ? m0.at : 0}`,
+        65,
+        n.unread === 1 && m0 && m0.from ? ['New message from ', [clip(m0.from, 24)], '!'] : [`You have ${n.unread} unread message${n.unread === 1 ? '' : 's'}.`],
+        '/conversations',
+      );
+    }
+    for (const a of n.anns || [])
+      add(`ann:${a.id}`, 55, a.course ? ['New announcement in ', [clip(a.course, 24)], ': ', [clip(a.title, 30)]] : ['New announcement: ', [clip(a.title)]], a.url);
+    for (const x of n.missing || []) add(`miss:${x.key}`, 45, [[clip(x.title)], ' is marked missing. Still time to turn it in?'], x.url);
+    const today = new Date().toDateString();
+    const h = new Date().getHours();
+    if (h < 5) add(`late:${today}`, 12, ["It's late! Don't forget to sleep."], null);
+    if (!list.some((x) => /^(due|exam):/.test(x.key))) add(`clear:${today}`, 6, ['All caught up! Nothing due in the next few days.'], null);
+    return list.sort((a, b) => b.pri - a.pri);
+  }
+  function readSaid() {
+    try {
+      return JSON.parse(localStorage.getItem(SAID_KEY) || '{}') || {};
+    } catch {
+      return {};
+    }
+  }
+  async function maybeSay() {
+    const g = window.gcx;
+    if (!g || !g.news || !prefs.remind) return;
+    const n = await g.news().catch(() => null);
+    if (!n || !ui || saying || m.held || m.leap || m.sleeping) return;
+    const said = readSaid();
+    const now = Date.now();
+    for (const k of Object.keys(said)) if (now - said[k] > 7 * DAY_MS) delete said[k];
+    const last = said._last || 0;
+    const pick = sayings(n).find((x) => !said[x.key] && now - last > (x.pri >= 90 ? URGENT_GAP : SAY_GAP));
+    // The little extras only some of the time.
+    if (!pick || (pick.pri < 30 && Math.random() < 0.6)) return;
+    said[pick.key] = now;
+    said._last = now;
+    try {
+      localStorage.setItem(SAID_KEY, JSON.stringify(said));
+    } catch {}
+    say(pick);
+  }
+  // The bubble: white, pixel-bordered, the words typing out a letter at a time.
+  function say(item) {
+    if (!ui) return;
+    unsay(true);
+    const box = document.createElement('div');
+    box.className = 'gcx-pet-say' + (item.url ? ' gcx-pet-say-link' : '');
+    box.setAttribute('role', 'status');
+    if (item.url) box.title = 'Open';
+    const chars = [];
+    for (const part of item.parts) {
+      const name = Array.isArray(part);
+      const wrap = document.createElement(name ? 'b' : 'span');
+      for (const ch of name ? part[0] : part) {
+        const c = document.createElement('i');
+        c.textContent = ch;
+        wrap.append(c);
+        chars.push(c);
+      }
+      box.append(wrap);
+    }
+    const tail = document.createElement('span');
+    tail.className = 'gcx-pet-say-tail';
+    box.append(tail);
+    ui.layer.append(box);
+    const me = { box, w: box.offsetWidth, h: box.offsetHeight, timer: 0, typing: 0 };
+    saying = me;
+    placeSay();
+    gesture('waving', 1200);
+    const hold = 3500 + chars.length * 45;
+    const done = () => {
+      box.classList.add('gcx-done');
+      me.timer = setTimeout(() => saying === me && unsay(), hold);
+    };
+    if (calm()) {
+      chars.forEach((c) => c.classList.add('on'));
+      done();
+    } else {
+      let i = 0;
+      const next = () => {
+        if (saying !== me) return;
+        const c = chars[i++];
+        if (!c) return done();
+        c.classList.add('on');
+        if (i % 2 && c.textContent.trim()) blip();
+        me.typing = setTimeout(next, /[.!?,:]/.test(c.textContent) ? 140 : 32);
+      };
+      me.typing = setTimeout(next, 180);
+    }
+    box.addEventListener('mouseenter', () => clearTimeout(me.timer));
+    box.addEventListener('mouseleave', () => {
+      if (!box.classList.contains('gcx-done')) return;
+      clearTimeout(me.timer);
+      me.timer = setTimeout(() => saying === me && unsay(), 1500);
+    });
+    box.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (item.url) location.href = item.url;
+      else unsay();
+    });
+  }
+  function unsay(now) {
+    const me = saying;
+    if (!me) return;
+    saying = null;
+    clearTimeout(me.timer);
+    clearTimeout(me.typing);
+    if (now || calm()) return me.box.remove();
+    me.box.classList.add('gcx-out');
+    setTimeout(() => me.box.remove(), 300);
+  }
+  // Above his head, inside the screen, the tail pointing at him.
+  function placeSay() {
+    if (!saying) return;
+    const b = body();
+    const { box, w, h } = saying;
+    const cx = m.x + b.w / 2;
+    const left = clamp(cx - w / 2, 6, Math.max(6, vw() - w - 6));
+    const top = Math.max(6, m.y - b.h - h - 16);
+    box.style.transform = `translate3d(${Math.round(left)}px, ${Math.round(top)}px, 0)`;
+    box.style.setProperty('--tx', Math.round(clamp(cx - left, 12, w - 12)) + 'px');
+  }
+
   // ---------------------------------------------------------------- the leap
   // Now and then on a class card he walks to its edge, thinks it over, backs up for a run-up,
-  // sprints and jumps across to one of the next cards in the row (the nearest more often), keeping
-  // his speed through the air, and skids to a stop where he lands.
+  // sprints and hops across the next cards in the row one at a time (one card more often than
+  // several), keeping the same speed on the cards and through the air, then skids to a stop.
   function leapCards(dir) {
     const p = m.perch;
     if (!p || !p.el.matches(LEAP_SEL)) return [];
@@ -790,6 +1000,13 @@
       list.push({ el, left: r.left, right: r.right });
     }
     return list.sort((a, c) => dir * (a.left - c.left));
+  }
+  // Where on a card he aims to come down (his middle): a little way in from the near edge, so there
+  // is room to run on to the next one, or to brake.
+  function leapLand(c, dir, b) {
+    const w = c.right - c.left;
+    const into = clamp(w * 0.25, b.w / 2 + 24, w / 2);
+    return dir > 0 ? c.left + into : c.right - into;
   }
   // The walking parts, 4 times a second from think(); the run and the flight are physics'. True
   // while the leap is on (nothing else interrupts it).
@@ -818,14 +1035,12 @@
       // Picks the card and how fast he has to go: a higher, faster jump the further it is.
       const cards = leapCards(L.dir);
       if (!cards.length) return stop();
-      const c = cards[Math.floor(Math.random() ** 1.5 * cards.length)];
-      const w = c.right - c.left;
-      const into = clamp(w * 0.3, b.w / 2 + 28, w / 2);
-      L.card = c.el;
-      L.land = L.dir > 0 ? c.left + into : c.right - into;
-      const D = Math.abs(L.land - (edge + b.w / 2));
+      L.hops = cards.slice(0, 1 + Math.floor(Math.random() ** 1.4 * cards.length)).map((c) => c.el);
+      L.i = 0;
+      L.card = L.hops[0];
+      const D = Math.abs(leapLand(cards[0], L.dir, b) - (edge + b.w / 2));
       const room = p.top - b.h - 20;
-      const apex = Math.min(50 + D * 0.12, 190, room);
+      const apex = Math.min(48 + D * 0.1, 140, room);
       if (apex < 30) return stop();
       L.speed = Math.min(1700, D / Math.sqrt((8 * apex) / GRAVITY));
       // At the speed cap the arc is higher than planned: too high for the screen, no leap.
@@ -922,7 +1137,11 @@
     const drowsy = idleFor > drowsyMs();
     if (drowsy && !m.drowsy) fx('gcx-pet-dots', '…');
     m.drowsy = drowsy;
-    const busy = m.gesture || t < typingUntil || m.hovered || near || m.working;
+    const busy = m.gesture || t < typingUntil || m.hovered || near || m.working || !!saying;
+    if (prefs.remind && !busy && !m.leap && t > nextSay) {
+      nextSay = t + rand(25e3, 45e3);
+      maybeSay();
+    }
     // Wander (5-12 s apart, a bit livelier than TAILS' 7-16 s; at least 40 px, within 80% of the width).
     const roams = prefs.roam && !calm() && !drowsy;
     if (roams && !busy && m.target === null && t > nextWander) {
@@ -1271,9 +1490,11 @@
       m.vy = calm() ? 0 : 1;
     }
     nextWander = Date.now() + rand(3000, WANDER_MIN);
+    nextSay = Date.now() + rand(5000, 9000);
     nextGlance = Date.now() + rand(GLANCE_MIN, GLANCE_MAX);
   }
   function teardown() {
+    unsay(true);
     if (ui) ui.layer.remove();
     ui = null;
     clearTimeout(ticker);
@@ -1292,6 +1513,7 @@
       return;
     }
     if (ui && calm()) m.target = null;
+    if (!prefs.remind) unsay();
     if (applied === prefs.id) {
       // Still loading this pet, or it failed and apply() reset `applied`.
       if (!sheet || sheet.id !== prefs.id || !ui) return;
@@ -1487,7 +1709,8 @@
         <div class="gcx-set-lbl">How much it walks <span class="gcx-set-val">${Math.round(energy() * 100)}%</span></div>
         <input type="range" class="gcx-set-range" data-prange="walk" min="25" max="300" step="25" value="${Math.round(energy() * 100)}" aria-label="How much the pet walks">
       </div>
-      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A thud when it lands, soft footsteps, a whoosh when you throw it, a chirp when you pat it, and a quiet snore when it dozes off</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Reminders</b><small>Now and then it pipes up in a little speech bubble: what's due soon, good luck on an exam, a cheer for a new grade, a teacher's comment, unread messages and announcements. Click the bubble to open it</small></span><input type="checkbox" class="gcx-switch" data-pk="remind" ${p.remind ? 'checked' : ''}></label>
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A thud when it lands, soft footsteps, a whoosh when you throw it, a chirp when you pat it, little blips when it talks, and a quiet snore when it dozes off</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>
       <div class="gcx-set-sub gcx-pets-dep gcx-pets-vol">
         <div class="gcx-set-lbl">Volume <span class="gcx-set-val">${Math.round(volume() * 100)}%</span></div>
         <input type="range" class="gcx-set-range" data-prange="volume" min="0" max="200" step="5" value="${Math.round(volume() * 100)}" aria-label="Pet volume">
