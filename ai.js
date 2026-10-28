@@ -789,6 +789,18 @@
     if (last && last.role !== 'user') saveLast();
   };
   let hist = loadHist();
+  // A page built ahead of time (prerendered) read a copy of the tab's chat back then; the tab's own
+  // takes over when he arrives.
+  if (document.prerendering)
+    document.addEventListener(
+      'prerenderingchange',
+      () => {
+        if (asking) return;
+        hist = loadHist();
+        if (mounted && mounted.isConnected && mounted.gcxRefresh) mounted.gcxRefresh();
+      },
+      { once: true },
+    );
 
   // The latest chat from any tab, kept in the extension's own storage (not the page's) so
   // Ctrl+Shift+Space can bring it back on another page or in a new tab. Bounded: the newest

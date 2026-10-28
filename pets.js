@@ -1107,6 +1107,7 @@
   }
   let applied = '';
   async function apply() {
+    if (document.prerendering) return; // built ahead: the pet comes when he arrives
     const want = prefs.on && prefs.id && prefs.sheet;
     if (!want) {
       applied = '';

@@ -567,15 +567,27 @@
         const g = got[c.id] || {};
         // Fewest points on the left to most on the right (Canvas lists them the other way), each
         // with its full description.
-        const levels = (c.ratings || [])
+        // With ranges, a level covers everything above the next one down up to its own points.
+        const sorted = (c.ratings || [])
           .map((r, i) => ({ r, i }))
           .sort((x, y) => (+x.r.points || 0) - (+y.r.points || 0) || y.i - x.i)
-          .map(({ r }) => {
-            const on = graded && (g.rating_id ? g.rating_id === r.id : g.points != null && +g.points === +r.points);
+          .map(({ r }, k, all) => ({ r, lo: c.criterion_use_range && k ? +all[k - 1].r.points || 0 : null }));
+        // The one level he got: by id, else the level his points land in.
+        const hit = !graded
+          ? null
+          : (g.rating_id && sorted.find((x) => x.r.id === g.rating_id)) ||
+            (g.points != null &&
+              (c.criterion_use_range
+                ? sorted.find((x) => +g.points <= (+x.r.points || 0) && (x.lo == null || +g.points > x.lo))
+                : sorted.find((x) => +g.points === +x.r.points))) ||
+            null;
+        const levels = sorted
+          .map((x) => {
+            const { r, lo } = x;
             const long = plainText(r.long_description || '');
-            return `<div class="gcx-rb-lv${on ? ' on' : ''}"><div class="gcx-rb-lv-h">${hidePts ? '' : `<b>${esc(fmtNum(+r.points || 0))}</b>`}<span>${esc(r.description || '')}</span></div>${
-              long ? `<p>${esc(long)}</p>` : ''
-            }</div>`;
+            const p = esc(fmtNum(+r.points || 0));
+            const pts = hidePts ? '' : `<b>${lo != null && lo !== +r.points ? `${p} to &gt;${esc(fmtNum(lo))}` : p}</b>`;
+            return `<div class="gcx-rb-lv${x === hit ? ' on' : ''}"><div class="gcx-rb-lv-h">${pts}<span>${esc(r.description || '')}</span></div>${long ? `<p>${esc(long)}</p>` : ''}</div>`;
           })
           .join('');
         const score = hidePts ? '' : graded && g.points != null ? `${esc(fmtNum(+g.points))} / ${esc(pts(+c.points || 0))}` : esc(pts(+c.points || 0));

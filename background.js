@@ -869,9 +869,21 @@ function genMask(px, w, h) {
   let best = 0;
   let bk = 0;
   for (const [k, c] of bins) if (c > best) (best = c), (bk = k);
-  const br = ((bk >> 8) << 4) + 8;
-  const bg = (((bk >> 4) & 15) << 4) + 8;
-  const bb = ((bk & 15) << 4) + 8;
+  // the average of the border pixels in that bin (the bin's middle can be off by ~20)
+  let br = 0;
+  let bg = 0;
+  let bb = 0;
+  let cnt = 0;
+  for (const i of edge) {
+    if ((((px[i * 4] >> 4) << 8) | ((px[i * 4 + 1] >> 4) << 4) | (px[i * 4 + 2] >> 4)) !== bk) continue;
+    br += px[i * 4];
+    bg += px[i * 4 + 1];
+    bb += px[i * 4 + 2];
+    cnt++;
+  }
+  br /= cnt;
+  bg /= cnt;
+  bb /= cnt;
   // The background is what the border reaches through pixels near that color. Pixels next to it
   // that are part way there (the blended edge) keep part of their alpha. Pockets inside the
   // character (between legs, inside an arm) go only if they're almost exactly the key color and
@@ -896,12 +908,13 @@ function genMask(px, w, h) {
   a.fill(255);
   flood(edge, (i) => dist(i) < 110);
   for (let i = 0; i < n; i++) {
-    if (a[i] !== 255 || dist(i) >= 40) continue;
-    const pocket = flood([i], (j) => dist(j) < 40);
-    if (pocket.length < 48) for (const j of pocket) a[j] = 255;
-    else for (const j of pocket) a[j] = 1; // marked: cleared below with the rest
+    if (a[i] !== 255 || dist(i) >= 60) continue;
+    const pocket = flood([i], (j) => dist(j) < 60);
+    const mark = pocket.length < 48 ? 2 : 1; // 2: a speck, kept; 1: a pocket, cleared below
+    for (const j of pocket) a[j] = mark;
   }
   for (let i = 0; i < n; i++) if (a[i] === 1) a[i] = 0;
+  else if (a[i] === 2) a[i] = 255;
   // soften the rim: opaque pixels touching the background, by how close they are to the key
   const rim = [];
   for (let i = 0; i < n; i++) {
