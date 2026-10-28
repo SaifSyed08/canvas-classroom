@@ -460,9 +460,9 @@
     const p0 = person();
     const isMe = uid === ME;
     const pop = el(`<div class="gcx-pop-panel gcx-pp-card" role="dialog" aria-label="${esc(p0.name)}">
-      <div class="gcx-pp-card-top"></div>
       <button type="button" class="gcx-pp-x" aria-label="Close">${svg('close', 18)}</button>
       <div class="gcx-pp-card-body">
+        <div class="gcx-pp-card-top"></div>
         <div class="gcx-pp-card-who"></div>
         <div class="gcx-pp-bio-wrap" hidden><div class="gcx-pp-bio"></div><button type="button" class="gcx-pp-bio-more" hidden>more</button></div>
         <div class="gcx-pp-mail"></div>

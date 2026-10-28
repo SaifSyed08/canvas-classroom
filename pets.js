@@ -1436,6 +1436,7 @@
 
     // A pet drawn by AI from his description (background.js makes the sheet).
     const drawing = () => {
+      if (pick.hidden) open(true);
       go.disabled = true;
       genBox.hidden = false;
       q('.gcx-pets-make').setAttribute('aria-expanded', 'true');
@@ -1482,7 +1483,9 @@
         (e) => {
           if (!host.isConnected) return;
           go.disabled = false;
-          genStatus.textContent = `Couldn't make it (${e.message}).`;
+          genStatus.textContent = /no openai key/i.test(e.message)
+            ? 'Add your OpenAI key first (the key button in Ask anything, or the extension’s options).'
+            : `Couldn't make it (${e.message}).`;
         },
       );
     }
