@@ -27,6 +27,7 @@
 
   // ---------------------------------------------------------------- helpers
   const ICONS = {
+    help: 'M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z',
     image: 'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
     upload: 'M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z',
     menu: 'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
@@ -590,6 +591,19 @@
   const rail = document.getElementById('gcx-rail') || document.body.appendChild(el('<nav id="gcx-rail" aria-label="Main"></nav>'));
   delete rail.dataset.early;
   let me = store.get('me', null);
+  // The groups he's in: [{ id, name, courseId }], checked again every half hour.
+  let myGroups = store.get('groups', null);
+  if (!myGroups || Date.now() - store.get('groupsAt', 0) > 30 * 6e4)
+    api('/users/self/groups?per_page=100', true)
+      .then((list) => {
+        const gs = (list || []).filter((g) => g.context_type === 'Course' && g.course_id).map((g) => ({ id: g.id, name: g.name, courseId: g.course_id }));
+        store.set('groupsAt', Date.now());
+        if (JSON.stringify(gs) === JSON.stringify(myGroups)) return;
+        myGroups = gs;
+        store.set('groups', gs);
+        queueRail();
+      })
+      .catch(() => {});
 
   function railActive() {
     const p = location.pathname;
@@ -615,6 +629,17 @@
           <button type="button" class="gcx-ri-dots" title="Customize icon" aria-label="Customize icon for ${esc(prettyName(c))}" aria-haspopup="dialog">${svg('more', 20)}</button></a>`;
       })
       .join('');
+    const ids = new Set((courses || []).map((c) => c.id));
+    const groupItems = (myGroups || [])
+      .filter((g) => ids.has(g.courseId))
+      .map((g) => {
+        const c = courses.find((x) => x.id === g.courseId);
+        const on = new RegExp(`^/groups/${g.id}(/|$)`).test(location.pathname);
+        return `<a class="gcx-ri${on ? ' on' : ''}" href="/groups/${g.id}" title="${esc(g.name)}"><span class="gcx-ri-ic">${svg('people')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">${esc(
+          g.name,
+        )}</span><span class="gcx-ri-sub">${esc((c && c.code) || '')}</span></span></a>`;
+      })
+      .join('');
     const avatarUrl = me && me.avatar_url && !/avatar-50\.png/.test(me.avatar_url) ? me.avatar_url : '';
     rail.innerHTML = `
       <div class="gcx-rail-top">
@@ -628,10 +653,12 @@
         <div class="gcx-rail-label">Enrolled</div>
         ${courseItems}
         ${item('all', '/courses', 'list', 'All courses')}
+        ${groupItems ? `<div class="gcx-rail-sep"></div><div class="gcx-rail-label">Groups</div>${groupItems}` : ''}
       </div>
       <div class="gcx-rail-bottom">
         ${item('calendar', '/calendar', 'calendar', 'Calendar')}
         ${item('inbox', '/conversations', 'inbox', 'Inbox', `<span class="gcx-badge" ${unread ? '' : 'hidden'}>${unread}</span>`)}
+        <button class="gcx-ri gcx-help" type="button" title="Help"><span class="gcx-ri-ic">${svg('help')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">Help</span><span class="gcx-ri-sub">Ask your instructor, report a problem</span></span></button>
         <button class="gcx-ri gcx-account" type="button" title="Account">
           <span class="gcx-me">${avatarUrl ? '' : esc(firstChar(me && me.name).toUpperCase())}</span>
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc((me && me.name) || 'Account')}</span><span class="gcx-ri-sub">Account &amp; settings</span></span>
@@ -732,6 +759,11 @@
       store.set('pinned', on);
       renderRail(COURSES);
       toast(on ? 'Menu pinned open' : 'Menu collapses again');
+    } else if (e.target.closest('.gcx-help')) {
+      // Canvas's help tray (ask your instructor, report a problem, the school's help links).
+      const link = document.getElementById('global_nav_help_link');
+      if (link) link.click();
+      else toast("Canvas's help menu isn't on this page");
     } else if (e.target.closest('.gcx-account')) {
       // Canvas's own account tray (profile, settings, log out) still works with its nav hidden.
       const link = document.getElementById('global_nav_profile_link');
@@ -1385,8 +1417,11 @@
     const input = panel.querySelector('input');
     const list = panel.querySelector('.gcx-more-list');
     const extras = [
+      ...(myGroups || []).filter((g) => g.courseId === id).map((g) => ({ label: `Your group: ${g.name}`, href: `/groups/${g.id}`, icon: 'people' })),
       { label: 'Canvas home page', href: `${base}?gcx-original=1`, icon: 'home' },
       ...(hasModules ? [{ label: 'Canvas modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' }] : []),
+      { label: 'Canvas people page', href: `${base}/users?gcx-original=1`, icon: 'people' },
+      { label: 'Groups (join or leave)', href: `${base}/groups`, icon: 'people' },
     ];
     let sel = 0;
     let index = null;
@@ -5292,6 +5327,8 @@
   addEventListener('keydown', (e) => e.key === 'Escape' && (escBusy = escOpen()), true);
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || escBusy || e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    // Only on pages we draw: on Canvas's own (a quiz, a reply half written) Esc is Canvas's.
+    if (!VIEW && !html.classList.contains('gcx-asg')) return;
     const t = document.activeElement;
     // Typing, inside a frame, or in another extension's panel (a custom element's shadow root).
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|IFRAME|EMBED|OBJECT)$/.test(t.tagName) || t.tagName.includes('-'))) return;

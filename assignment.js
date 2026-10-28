@@ -1013,6 +1013,8 @@
       renderComments();
       const p = new URLSearchParams({ 'comment[text_comment]': text });
       if (attempt) p.set('comment[attempt]', String(attempt));
+      // A group assignment graded as one: the comment goes to his whole group, as in Canvas.
+      if (S.a.group_category_id && !S.a.grade_group_students_individually) p.set('comment[group_comment]', 'true');
       try {
         const r = await send('PUT', SUB_PATH, p);
         S.pending = S.pending.filter((x) => x !== tmp);
