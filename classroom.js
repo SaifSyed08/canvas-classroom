@@ -51,6 +51,8 @@
     list: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
     gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
     sync: 'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46A7.93 7.93 0 0 0 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74A7.93 7.93 0 0 0 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z',
+    hide: 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46A11.8 11.8 0 0 0 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z',
+    show: 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z',
     more: 'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
     add: 'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
     close: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
@@ -1775,12 +1777,7 @@
       if (e.target.closest('.gcx-links-add')) openPicker(e.target.closest('.gcx-links-add'));
     });
 
-    let closePicker = null;
     function openPicker(btn) {
-      if (closePicker) {
-        closePicker();
-        return;
-      }
       const base = `/courses/${id}`;
       const pinned = new Set(links().map((l) => l.href));
       const options = [
@@ -1788,89 +1785,107 @@
         { label: 'Original Canvas home page', href: `${base}?gcx-original=1`, icon: 'home' },
         ...(hasTab(/\/modules\/?$/) ? [{ label: 'Original modules page', href: `${base}/modules?gcx-original=1`, icon: 'page' }] : []),
       ].filter((o) => o.href && o.label && !pinned.has(o.href));
-      const pop = el(`<div class="gcx-picker gcx-pop-panel" role="dialog" aria-label="Pin a link">
+      openLinkPicker(btn, options, 'Pin link', (o) => {
+        const l = links();
+        if (l.some((x) => x.href === o.href)) return toast(`${o.label} is already pinned`);
+        l.push({ label: o.label, href: o.href, icon: o.icon });
+        store.set(key, l);
+        draw(l.length - 1);
+        toast(`Pinned ${o.label}`);
+      });
+    }
+  }
+
+  // A searchable list of a course's tools and pages, plus "any link"; used to pin links on a
+  // class's Home and to add shortcuts to its dashboard card. One open at a time.
+  let closeLinkPicker = null;
+  function openLinkPicker(btn, options, verb, onAdd) {
+    if (closeLinkPicker) {
+      closeLinkPicker();
+      return;
+    }
+    const pop = el(`<div class="gcx-picker gcx-pop-panel" role="dialog" aria-label="${esc(verb)}">
         <div class="gcx-more-search">${svg('search', 20)}<input type="text" placeholder="Search course tools" aria-label="Search course tools" autocomplete="off"></div>
         <div class="gcx-more-list"></div>
         <form class="gcx-picker-custom">
           <div class="gcx-more-h">Or any link</div>
           <input type="text" name="label" placeholder="Name" aria-label="Link name" required>
           <input type="text" name="href" placeholder="https://… or /courses/…" aria-label="Link address" required>
-          <button type="submit">Pin link</button>
+          <button type="submit">${esc(verb)}</button>
         </form>
       </div>`);
-      document.body.append(pop);
-      const r = btn.getBoundingClientRect();
-      pop.style.left = Math.min(r.left, window.innerWidth - 356) + 'px';
-      pop.style.top = Math.max(12, Math.min(r.bottom + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
-      btn.setAttribute('aria-expanded', 'true');
-      const input = pop.querySelector('input');
-      const list = pop.querySelector('.gcx-more-list');
-      const drawList = () => {
-        const q = input.value.trim().toLowerCase();
-        const hits = options.filter((o) => !q || o.label.toLowerCase().includes(q));
-        list.innerHTML = hits.length
-          ? hits.map((o, i) => `<button type="button" class="gcx-more-item${i === 0 ? ' sel' : ''}" data-i="${options.indexOf(o)}">${svg(o.icon || tabIcon(o.href), 20)}<span>${esc(o.label)}</span></button>`).join('')
-          : `<div class="gcx-more-empty">Nothing matches "${esc(input.value)}"</div>`;
-      };
-      drawList();
-      input.focus();
-      const add = (o) => {
-        const l = links();
-        if (l.some((x) => x.href === o.href)) {
-          close();
-          toast(`${o.label} is already pinned`);
-          return;
-        }
-        l.push({ label: o.label, href: o.href, icon: o.icon });
-        store.set(key, l);
-        close();
-        draw(l.length - 1);
-        toast(`Pinned ${o.label}`);
-      };
-      const close = () => {
-        closePicker = null;
-        pop.classList.add('gcx-out');
-        btn.setAttribute('aria-expanded', 'false');
-        setTimeout(() => pop.remove(), 160);
-        document.removeEventListener('mousedown', outside, true);
-      };
-      closePicker = close;
-      const outside = (e) => {
-        if (!pop.contains(e.target) && !btn.contains(e.target)) close();
-      };
-      document.addEventListener('mousedown', outside, true);
-      input.addEventListener('input', drawList);
-      input.addEventListener('keydown', (e) => {
-        const items = [...list.querySelectorAll('.gcx-more-item')];
-        let sel = items.findIndex((n) => n.classList.contains('sel'));
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          e.preventDefault();
-          sel = Math.max(0, Math.min(items.length - 1, sel + (e.key === 'ArrowDown' ? 1 : -1)));
-          items.forEach((n, i) => n.classList.toggle('sel', i === sel));
-          items[sel]?.scrollIntoView({ block: 'nearest' });
-        } else if (e.key === 'Enter' && items[sel]) {
-          e.preventDefault();
-          add(options[Number(items[sel].dataset.i)]);
-        }
-      });
-      pop.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
-          close();
-          btn.focus();
-        }
-      });
-      list.addEventListener('click', (e) => {
-        const b = e.target.closest('.gcx-more-item');
-        if (b) add(options[Number(b.dataset.i)]);
-      });
-      pop.querySelector('form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const f = e.target;
-        let href = f.elements.href.value.trim();
-        if (!/^(https?:\/\/|\/)/i.test(href)) href = 'https://' + href;
-        add({ label: f.elements.label.value.trim() || href, href });
+    document.body.append(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(12, Math.min(r.left, window.innerWidth - 356)) + 'px';
+    pop.style.top = Math.max(12, Math.min(r.bottom + 8, window.innerHeight - pop.offsetHeight - 12)) + 'px';
+    btn.setAttribute('aria-expanded', 'true');
+    const input = pop.querySelector('input');
+    const list = pop.querySelector('.gcx-more-list');
+    const drawList = () => {
+      const q = input.value.trim().toLowerCase();
+      const hits = options.filter((o) => !q || o.label.toLowerCase().includes(q));
+      list.innerHTML = hits.length
+        ? hits.map((o, i) => `<button type="button" class="gcx-more-item${i === 0 ? ' sel' : ''}" data-i="${options.indexOf(o)}">${svg(o.icon || tabIcon(o.href), 20)}<span>${esc(o.label)}</span></button>`).join('')
+        : `<div class="gcx-more-empty">${options.length ? `Nothing matches "${esc(input.value)}"` : 'Loading this class’s pages…'}</div>`;
+    };
+    // Options can arrive late (fetched): the caller may hand a promise.
+    if (options && typeof options.then === 'function') {
+      const p = options;
+      options = [];
+      p.then((o) => {
+        options = o;
+        if (pop.isConnected) drawList();
       });
     }
+    drawList();
+    input.focus();
+    const add = (o) => {
+      close();
+      onAdd(o);
+    };
+    const close = () => {
+      closeLinkPicker = null;
+      pop.classList.add('gcx-out');
+      btn.setAttribute('aria-expanded', 'false');
+      setTimeout(() => pop.remove(), 160);
+      document.removeEventListener('mousedown', outside, true);
+    };
+    closeLinkPicker = close;
+    const outside = (e) => {
+      if (!pop.contains(e.target) && !btn.contains(e.target)) close();
+    };
+    document.addEventListener('mousedown', outside, true);
+    input.addEventListener('input', drawList);
+    input.addEventListener('keydown', (e) => {
+      const items = [...list.querySelectorAll('.gcx-more-item')];
+      let sel = items.findIndex((n) => n.classList.contains('sel'));
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        sel = Math.max(0, Math.min(items.length - 1, sel + (e.key === 'ArrowDown' ? 1 : -1)));
+        items.forEach((n, i) => n.classList.toggle('sel', i === sel));
+        items[sel]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && items[sel]) {
+        e.preventDefault();
+        add(options[Number(items[sel].dataset.i)]);
+      }
+    });
+    pop.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        close();
+        btn.focus();
+      }
+    });
+    list.addEventListener('click', (e) => {
+      const b = e.target.closest('.gcx-more-item');
+      if (b) add(options[Number(b.dataset.i)]);
+    });
+    pop.querySelector('form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const f = e.target;
+      let href = f.elements.href.value.trim();
+      if (!/^(https?:\/\/|\/)/i.test(href)) href = 'https://' + href;
+      add({ label: f.elements.label.value.trim() || href, href });
+    });
   }
 
 
@@ -2877,6 +2892,7 @@
     }
     // Canvas may render an empty card box (no favorites); that also ends the stand-ins.
     maybeReleaseGhosts();
+    if (cards.length && !document.querySelector('.gcx-hidden-note') && store.get(HIDDEN_KEY(), []).length) paintHidden();
   }
   async function fillCard(card, id) {
     const c = (COURSES || []).find((x) => x.id === id) || (await coursesReady).find((x) => x.id === id) || (await courseById(id));
@@ -2889,12 +2905,193 @@
     if (c.name) ov.querySelector('.gcx-card-title').textContent = prettyName(c);
     ov.querySelector('.gcx-card-teacher').textContent = teacherLine(c);
     const foot = body.querySelector('.gcx-card-foot');
-    if (c.teachers.length && !foot.querySelector('.gcx-iconbtn')) {
-      const who = c.teachers.length <= 2 ? c.teachers[0].name : 'the instructors';
-      foot.append(el(`<a class="gcx-iconbtn" href="${esc(emailHref(c))}" title="Email ${esc(who)}" aria-label="Email ${esc(who)}">${svg('mail', 22)}</a>`));
+    // Shortcuts he added, the email button, and ⋮ (Add shortcut / Hide), right-aligned together.
+    let acts = foot.querySelector('.gcx-card-acts');
+    if (!acts) {
+      acts = el(`<div class="gcx-card-acts"><span class="gcx-card-links"></span><button type="button" class="gcx-iconbtn gcx-card-more" aria-haspopup="menu" aria-expanded="false" title="More" aria-label="More options for ${esc(prettyName(c))}">${svg('more', 22)}</button></div>`);
+      foot.append(acts);
+      acts.querySelector('.gcx-card-more').addEventListener('click', (e) => openCardMenu(e.currentTarget, c));
     }
+    if (c.teachers.length && !acts.querySelector('.gcx-card-mail')) {
+      const who = c.teachers.length <= 2 ? c.teachers[0].name : 'the instructors';
+      acts.querySelector('.gcx-card-more').before(el(`<a class="gcx-iconbtn gcx-card-mail" href="${esc(emailHref(c))}" title="Email ${esc(who)}" aria-label="Email ${esc(who)}">${svg('mail', 22)}</a>`));
+    }
+    drawCardLinks(acts, id);
     if (dashItems) fillCardDue(body);
     maybeReleaseGhosts();
+  }
+  // ----- a card's own shortcuts (⋮ › Add shortcut): straight to one of the class's pages
+  const cardLinksKey = (id) => `cardlinks:${PAGE_USER || 'anon'}:${id}`;
+  function drawCardLinks(acts, id) {
+    const box = acts.querySelector('.gcx-card-links');
+    const list = store.get(cardLinksKey(id), []);
+    const markup = list
+      .map((l) => `<a class="gcx-iconbtn gcx-card-link" href="${esc(l.href)}" title="${esc(l.label)}" aria-label="${esc(l.label)}">${svg(l.icon || tabIcon(l.href), 20)}</a>`)
+      .join('');
+    if (box.dataset.markup !== markup) {
+      box.dataset.markup = markup;
+      box.innerHTML = markup;
+    }
+  }
+  // The class's pages, from its course tabs (saved when he was last in the class, else asked for).
+  async function courseOptions(id) {
+    let tabs = store.get('tabs:' + id, []);
+    if (!tabs.length) {
+      try {
+        tabs = (await api(`/courses/${id}/tabs`))
+          .filter((t) => !t.hidden && t.html_url)
+          .map((t) => ({ label: t.label, href: t.html_url.replace(/^https?:\/\/[^/]+/, '') }));
+        store.set('tabs:' + id, tabs);
+      } catch {
+        tabs = [];
+      }
+    }
+    return [...tabs, { label: 'Original Canvas home page', href: `/courses/${id}?gcx-original=1`, icon: 'home' }];
+  }
+  // ----- hiding a card (on this dashboard only; Canvas's own list is left alone)
+  const HIDDEN_KEY = () => 'hiddenCards:' + (PAGE_USER || 'anon');
+  const hiddenStyle = document.createElement('style');
+  hiddenStyle.id = 'gcx-hidden-cards';
+  (document.head || html).append(hiddenStyle);
+  function paintHidden() {
+    const ids = store.get(HIDDEN_KEY(), []);
+    hiddenStyle.textContent = ids
+      .filter((x) => /^\d+$/.test(String(x)))
+      .map((x) => `.ic-DashboardCard:has(a.gcx-card-ov[href="/courses/${x}"]) { display: none !important; }`)
+      .join('\n');
+    const container = document.getElementById('DashboardCard_Container');
+    let note = document.querySelector('.gcx-hidden-note');
+    if (!container || !html.classList.contains('gcx-dash')) return;
+    if (!ids.length) return note?.remove();
+    if (!note) {
+      note = el('<button type="button" class="gcx-hidden-note" aria-haspopup="menu"></button>');
+      note.addEventListener('click', () => openHiddenMenu(note));
+      container.after(note);
+    }
+    note.textContent = `${ids.length} hidden ${ids.length === 1 ? 'class' : 'classes'}`;
+  }
+  const setCardHidden = (id, on) => {
+    const ids = store.get(HIDDEN_KEY(), []).filter((x) => String(x) !== String(id));
+    if (on) ids.push(id);
+    store.set(HIDDEN_KEY(), ids);
+    paintHidden();
+  };
+  // A small menu by a button: [{label, icon, run, danger}] items, closes on pick, outside click, Esc.
+  let closeMiniMenu = null;
+  function miniMenu(btn, items, heading = '') {
+    if (closeMiniMenu) {
+      const same = btn.getAttribute('aria-expanded') === 'true';
+      closeMiniMenu();
+      if (same) return;
+    }
+    const pop = el(`<div class="gcx-mini gcx-pop-panel" role="menu">${heading ? `<div class="gcx-mini-h">${esc(heading)}</div>` : ''}${items
+      .map((it, i) =>
+        it.sep
+          ? '<div class="gcx-mini-sep"></div>'
+          : `<div class="gcx-mini-row"><button type="button" role="menuitem" class="gcx-mini-item${it.danger ? ' danger' : ''}" data-i="${i}">${svg(it.icon, 18)}<span>${esc(it.label)}</span></button>${
+              it.remove ? `<button type="button" class="gcx-mini-x" data-x="${i}" title="Remove" aria-label="Remove ${esc(it.label)}">${svg('close', 16)}</button>` : ''
+            }</div>`,
+      )
+      .join('')}</div>`);
+    document.body.append(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 12)) + 'px';
+    const below = r.bottom + 6 + pop.offsetHeight < innerHeight - 12;
+    pop.style.top = (below ? r.bottom + 6 : Math.max(12, r.top - pop.offsetHeight - 6)) + 'px';
+    pop.style.transformOrigin = below ? 'top right' : 'bottom right';
+    btn.setAttribute('aria-expanded', 'true');
+    const close = () => {
+      if (closeMiniMenu === close) closeMiniMenu = null;
+      pop.classList.add('gcx-out');
+      btn.setAttribute('aria-expanded', 'false');
+      setTimeout(() => pop.remove(), 160);
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    closeMiniMenu = close;
+    const outside = (e) => !pop.contains(e.target) && !btn.contains(e.target) && close();
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        close();
+        btn.focus();
+      }
+    };
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+    pop.addEventListener('click', (e) => {
+      const x = e.target.closest('[data-x]');
+      const b = e.target.closest('[data-i]');
+      if (x) {
+        close();
+        items[Number(x.dataset.x)].remove();
+      } else if (b) {
+        close();
+        items[Number(b.dataset.i)].run();
+      }
+    });
+    pop.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
+  }
+  function openCardMenu(btn, c) {
+    const id = c.id;
+    const acts = btn.closest('.gcx-card-acts');
+    const list = store.get(cardLinksKey(id), []);
+    const items = [
+      {
+        label: 'Add shortcut',
+        icon: 'add',
+        run: () =>
+          openLinkPicker(
+            btn,
+            courseOptions(id).then((o) => o.filter((x) => !store.get(cardLinksKey(id), []).some((l) => l.href === x.href))),
+            'Add shortcut',
+            (o) => {
+              const l = store.get(cardLinksKey(id), []);
+              if (l.some((x) => x.href === o.href)) return toast(`${o.label} is already a shortcut`);
+              l.push({ label: o.label, href: o.href, icon: o.icon });
+              store.set(cardLinksKey(id), l.slice(-4));
+              drawCardLinks(acts, id);
+              saveSnapshot();
+              toast(`Added ${o.label} to ${prettyName(c)}`);
+            },
+          ),
+      },
+      ...list.map((l) => ({
+        label: l.label,
+        icon: l.icon || tabIcon(l.href),
+        run: () => (location.href = l.href),
+        remove: () => {
+          store.set(
+            cardLinksKey(id),
+            store.get(cardLinksKey(id), []).filter((x) => x.href !== l.href),
+          );
+          drawCardLinks(acts, id);
+          saveSnapshot();
+          toast(`Removed ${l.label}`);
+        },
+      })),
+      { sep: true },
+      {
+        label: 'Hide from dashboard',
+        icon: 'hide',
+        run: () => {
+          setCardHidden(id, true);
+          toast(`Hid ${prettyName(c)}`, 'Undo', () => setCardHidden(id, false));
+        },
+      },
+    ];
+    miniMenu(btn, items, list.length ? '' : '');
+  }
+  function openHiddenMenu(btn) {
+    const ids = store.get(HIDDEN_KEY(), []);
+    const name = (x) => {
+      const c = (COURSES || []).find((k) => String(k.id) === String(x));
+      return c ? prettyName(c) : `Class ${x}`;
+    };
+    miniMenu(
+      btn,
+      ids.map((x) => ({ label: `Show ${name(x)}`, icon: 'show', run: () => setCardHidden(x, false) })),
+      'Hidden from your dashboard',
+    );
   }
   const CARD_LIMIT = 3;
   function fillCardDue(body) {
@@ -4346,6 +4543,7 @@
   // Elements ease in one by one after a page change; stop once the page has settled so later
   // refreshes and redraws don't replay it.
   setTimeout(() => html.classList.remove('gcx-enter'), 1600);
+  paintHidden();
   if (html.classList.contains('gcx-dash')) {
     mountWelcome();
     mountGhosts();
