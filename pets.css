@@ -8,7 +8,10 @@
 .gcx-pet-layer[hidden], html.gcx-fv-open .gcx-pet-layer { display: none !important; }
 @media print { .gcx-pet-layer { display: none !important; } }
 
-.gcx-pet { position: absolute; left: 0; top: 0; will-change: transform; pointer-events: none; }
+.gcx-pet { position: absolute; left: 0; top: 0; will-change: transform; pointer-events: none; opacity: 0; }
+/* Fades in on each page, once his first frame is drawn (the old page already fades him out). */
+.gcx-pet.gcx-pet-in { opacity: 1; animation: gcx-pet-in .35s ease-out; }
+@keyframes gcx-pet-in { from { opacity: 0; } }
 .gcx-pet-body { position: absolute; inset: 0; will-change: transform; }
 .gcx-pet-sprite {
   position: absolute; inset: 0; background-repeat: no-repeat; image-rendering: auto;
@@ -38,12 +41,12 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
 .gcx-pet-fx > .gcx-pet-sweat { font-size: 13px; }
 /* Dust kicked up by each footstep; stays where it was kicked up. */
 .gcx-pet-dust {
-  position: absolute; width: 9px; height: 5px; margin: -4px 0 0 -4px; border-radius: 50%; background: rgba(120, 113, 108, .38);
-  pointer-events: none; animation: gcx-pet-dust .5s ease-out forwards;
+  position: absolute; width: 12px; height: 6px; margin: -5px 0 0 -6px; border-radius: 50%; background: rgba(120, 113, 108, .55);
+  pointer-events: none; animation: gcx-pet-dust .6s ease-out forwards;
 }
 @keyframes gcx-pet-dust {
-  from { opacity: .9; transform: scale(.5); }
-  to { opacity: 0; transform: translate(var(--dx, 0px), -7px) scale(1.7); }
+  from { opacity: 1; transform: scale(.6); }
+  to { opacity: 0; transform: translate(var(--dx, 0px), -9px) scale(2); }
 }
 @keyframes gcx-pet-float {
   0% { opacity: 0; transform: translate(-50%, 6px) scale(.6); }
@@ -59,4 +62,5 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
   .gcx-pet-fx > span { animation-duration: .01s; }
   .gcx-pet-dust { display: none; }
   .gcx-pet.gcx-pet-asleep .gcx-pet-sprite { animation: none; }
+  .gcx-pet.gcx-pet-in { animation: none; }
 }

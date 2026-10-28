@@ -44,8 +44,10 @@
   const REST_SPEED = 12;
   const MAX_STEP = 0.05;
   const MAX_THROW = 2400;
-  const WANDER_MIN = 5000;
-  const WANDER_MAX = 12000;
+  const WANDER_MIN = 3500;
+  const WANDER_MAX = 9000;
+  const LEAP_CHANCE = 0.35; // on a class card, how often a walk is to its edge for a leap
+  const LEAP_SEL = '.ic-DashboardCard';
   const GLANCE_MIN = 4000;
   const GLANCE_MAX = 11000;
   const GLANCE_MS = 1100;
@@ -62,7 +64,7 @@
 
   // ---------------------------------------------------------------- prefs
   const PREFS_KEY = 'gcx:pets';
-  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, sound: false, volume: 1 };
+  const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, walk: 1, sound: false, volume: 1 };
   const readPrefs = () => {
     let p;
     try {
@@ -116,6 +118,11 @@
   let actx = null;
   let out = null; // every sound goes here: his volume, then a limiter so a hard landing never clips
   const volume = () => Math.max(0, Math.min(2, Number(prefs.volume) >= 0 ? Number(prefs.volume) : 1));
+  // How much he walks (the slider): walks come this many times as often and go a bit further, and he
+  // stays up longer before getting drowsy.
+  const energy = () => Math.max(0.25, Math.min(3, Number(prefs.walk) || 1));
+  const drowsyMs = () => DROWSY_MS * Math.max(1, energy());
+  const sleepMs = () => SLEEP_MS * Math.max(1, energy());
   let hush = 0;
   let suspending = false;
   // For a sound: the context if a click or key has made one. Sounds scheduled while it is still
@@ -445,6 +452,7 @@
     m.vy = -vy * Math.sqrt(clamp(prefs.size, 0.4, 1.6));
     if (vx) m.vx = vx;
     m.target = null;
+    m.leap = null;
     wake();
   }
 
@@ -467,7 +475,7 @@
     if (m.hovered) return 'waving';
     if (m.sleeping) return 'sleep';
     // Nobody has touched anything for a minute: he waits, then (above) dozes off.
-    if (t - lastActive > DROWSY_MS) return 'waiting';
+    if (t - lastActive > drowsyMs()) return 'waiting';
     return 'idle';
   }
 
@@ -479,6 +487,8 @@
       playing = st;
       frame = 0;
       restartTicker();
+      // Landed sliding (thrown, or a leap): the first step at once, not a frame later.
+      if ((st === 'running-left' || st === 'running-right') && m.target === null && onGround()) footstep();
     }
     const rowName = st === 'sleep' ? 'idle' : st;
     const [row, count0] = ROWS[rowName] && ROWS[rowName][0] < sheet.rows ? ROWS[rowName] : ROWS.idle;
@@ -538,11 +548,15 @@
   function restartTicker() {
     clearTimeout(ticker);
     if (!ui || document.hidden) return;
-    const r = RATE[playing === 'waiting' && m.held ? 'held' : playing] || ACTIVE_RATE;
+    const running = playing === 'running-left' || playing === 'running-right';
+    let r = RATE[playing === 'waiting' && m.held ? 'held' : playing] || ACTIVE_RATE;
+    // Faster legs the faster he goes (a slide, the leap's run-up).
+    if (running && !m.held) r *= clamp(Math.abs(m.vx) / (WALK * 2), 1, 2.6);
     ticker = setTimeout(() => {
       frame++;
       render();
-      if ((playing === 'running-left' || playing === 'running-right') && frame % 2 === 1 && onGround()) footstep();
+      // A step every other frame on a walk; every frame while sliding or sprinting (short, quick).
+      if (running && (m.target === null || frame % 2 === 1) && onGround()) footstep();
       restartTicker();
     }, FRAME_MS / r);
   }
@@ -581,7 +595,7 @@
   function physics(dt) {
     if (m.held) {
       // The dangle: a damped pendulum pushed by how fast the hand moves sideways.
-      const want = calm() ? 0 : clamp(-m.vx * 0.018, -28, 28);
+      const want = calm() ? 0 : clamp(-m.vx * 0.03, -40, 40);
       m.swingV += ((want - m.swing) * 60 - m.swingV * 9) * dt;
       m.swing += m.swingV * dt;
       m.vx *= Math.max(0, 1 - 10 * dt);
@@ -608,7 +622,18 @@
       }
       const floor = groundY();
       const b = body();
-      if (m.y >= floor) {
+      const flying = m.leap && m.leap.phase === 'fly' ? m.leap : null;
+      if (m.y >= floor && flying && m.perch) {
+        // Landed the leap: no bounce, a skid that stops before the far edge.
+        m.y = floor;
+        m.vy = 0;
+        squash(0.2, 'bottom');
+        thud(0.3);
+        const room = flying.dir > 0 ? m.perch.right - b.w - m.x : m.x - m.perch.left;
+        flying.k = clamp(Math.abs(m.vx) / (0.7 * Math.max(room, 16)), GROUND_DRAG, 40);
+        flying.phase = 'brake';
+      } else if (m.y >= floor) {
+        if (flying) m.leap = null; // came down short: an ordinary fall
         const impact = m.vy;
         m.y = floor;
         if (impact > 700 && !calm()) m.vy = -impact * 0.3; // one little bounce
@@ -630,6 +655,30 @@
         m.vy = Math.abs(m.vy) * BOUNCE;
       }
     }
+    const L = m.leap;
+    if (L && L.phase === 'run') {
+      const p = m.perch;
+      if (airborne || !p || p.el !== L.perch || !L.card.isConnected) m.leap = null;
+      else {
+        const b = body();
+        const edge = L.dir > 0 ? p.right - b.w : p.left;
+        L.v = Math.min(L.speed, L.v + L.acc * dt);
+        m.vx = L.dir * Math.max(L.v, REST_SPEED + 1);
+        if (L.dir > 0 ? m.x + m.vx * dt >= edge : m.x + m.vx * dt <= edge) {
+          // Off the edge at full speed, aimed to come down on the card he picked; the same speed
+          // carries him across.
+          const top = L.card.getBoundingClientRect().top;
+          const T = Math.abs(L.land - (edge + b.w / 2)) / L.speed;
+          m.vx = L.dir * L.speed;
+          m.x = edge - m.vx * dt;
+          m.vy = (top - p.top - (GRAVITY * T * T) / 2) / T;
+          m.perch = null;
+          L.phase = 'fly';
+          squash(0.12, 'bottom');
+          whoosh(0.3);
+        }
+      }
+    }
     if (m.vx !== 0) {
       m.x += m.vx * dt;
       const mx = m.perch ? m.perch.right - body().w : maxX();
@@ -638,6 +687,7 @@
         if (m.perch && !airborne) {
           // Skidded off the edge of the card.
           m.perch = null;
+          m.leap = null;
         } else {
           const side = m.x <= mn ? 'left' : 'right';
           m.x = clamp(m.x, mn, mx);
@@ -647,8 +697,20 @@
           m.vx = (side === 'left' ? 1 : -1) * Math.abs(m.vx) * BOUNCE;
         }
       }
-      m.vx *= Math.max(0, 1 - (airborne ? AIR_DRAG : GROUND_DRAG) * dt);
+      // Mid-leap he keeps his speed (run-up and flight), then brakes to a stop on the card.
+      const lp = m.leap && m.leap.phase;
+      const drag = lp === 'run' || lp === 'fly' ? 0 : lp === 'brake' && !airborne ? m.leap.k : airborne ? AIR_DRAG : GROUND_DRAG;
+      m.vx *= Math.max(0, 1 - drag * dt);
       if (Math.abs(m.vx) < REST_SPEED) m.vx = 0;
+      if (!m.vx && lp === 'brake') {
+        // Made it: stars.
+        m.leap = null;
+        nextWander = Date.now() + rand(2500, 5000);
+        fx('gcx-pet-star', '✦', -18);
+        setTimeout(() => fx('gcx-pet-star', '★', 0), 110);
+        setTimeout(() => fx('gcx-pet-star', '✦', 18), 220);
+        if (Math.random() < 0.5) setTimeout(() => fx('gcx-pet-note', '♪', rand(-10, 10)), 500);
+      }
       if (m.vx) m.facing = m.vx > 0 ? 'right' : 'left';
       m.target = null;
     }
@@ -665,6 +727,9 @@
           thud(0.15);
           gesture('failed', 600);
           fx('gcx-pet-q', Math.random() < 0.5 ? '!' : '?');
+        } else if (!m.leap && Math.random() < Math.min(0.75, 0.35 * energy())) {
+          // Not done yet: another stretch after a short pause.
+          nextWander = Date.now() + rand(250, 900);
         }
         m.bonk = false;
       } else m.x = next;
@@ -692,6 +757,87 @@
     return best;
   }
 
+  // ---------------------------------------------------------------- the leap
+  // Now and then on a class card he walks to its edge, thinks it over, backs up for a run-up,
+  // sprints and jumps across to one of the next cards in the row (the nearest more often), keeping
+  // his speed through the air, and skids to a stop where he lands.
+  function leapCards(dir) {
+    const p = m.perch;
+    if (!p || !p.el.matches(LEAP_SEL)) return [];
+    const b = body();
+    const list = [];
+    for (const el of document.querySelectorAll(LEAP_SEL)) {
+      if (el === p.el) continue;
+      const r = el.getBoundingClientRect();
+      if (Math.abs(r.top - p.top) > 4 || r.width < b.w * 1.2 || r.left < 0 || r.right > vw()) continue;
+      if (dir > 0 ? r.left < p.right - 1 : r.right > p.left + 1) continue;
+      list.push({ el, left: r.left, right: r.right });
+    }
+    return list.sort((a, c) => dir * (a.left - c.left));
+  }
+  // The walking parts, 4 times a second from think(); the run and the flight are physics'. True
+  // while the leap is on (nothing else interrupts it).
+  function leapStep(t) {
+    const L = m.leap;
+    if (L.phase === 'run' || L.phase === 'fly' || L.phase === 'brake') return true;
+    const p = m.perch;
+    const stop = () => ((m.leap = null), false);
+    if (!p || p.el !== L.perch || !prefs.roam || calm() || m.working) return stop();
+    if (m.target !== null) return true; // still walking there
+    const b = body();
+    const edge = L.dir > 0 ? p.right - b.w : p.left;
+    const face = L.dir > 0 ? 'right' : 'left';
+    if (L.phase === 'go') {
+      // At the edge: he stops and thinks about it.
+      if (Math.abs(m.x - edge) > 2) return stop();
+      L.phase = 'think';
+      L.until = t + rand(1100, 1700);
+      m.facing = face;
+      gesture('review', L.until - t);
+      setTimeout(() => m.leap === L && fx('gcx-pet-q', Math.random() < 0.5 ? '?' : '…'), 450);
+      return true;
+    }
+    if (t < L.until) return true;
+    if (L.phase === 'think') {
+      // Picks the card and how fast he has to go: a higher, faster jump the further it is.
+      const cards = leapCards(L.dir);
+      if (!cards.length) return stop();
+      const c = cards[Math.floor(Math.random() ** 1.5 * cards.length)];
+      const w = c.right - c.left;
+      const into = clamp(w * 0.3, b.w / 2 + 28, w / 2);
+      L.card = c.el;
+      L.land = L.dir > 0 ? c.left + into : c.right - into;
+      const D = Math.abs(L.land - (edge + b.w / 2));
+      const apex = Math.min(50 + D * 0.12, 190, p.top - b.h - 20);
+      if (apex < 30) return stop();
+      L.speed = Math.min(1700, D / Math.sqrt((8 * apex) / GRAVITY));
+      const most = p.right - p.left - b.w - 2;
+      L.run = clamp(L.speed * 0.3, Math.min(b.w, most), most);
+      if (L.run < 20) return stop();
+      L.phase = 'back';
+      m.target = edge - L.dir * L.run;
+      wake();
+      return true;
+    }
+    if (L.phase === 'back') {
+      // Backed up: turns to face the edge.
+      if (Math.abs(m.x - (edge - L.dir * L.run)) > 2) return stop();
+      L.phase = 'ready';
+      L.until = t + 380;
+      m.facing = face;
+      gesture(`look-${face}-side`, 380);
+      return true;
+    }
+    // Go.
+    L.phase = 'run';
+    L.v = 0;
+    L.acc = (L.speed * L.speed) / (2 * L.run);
+    m.gesture = null;
+    fx('gcx-pet-q', '!');
+    wake();
+    return true;
+  }
+
   // ---------------------------------------------------------------- the brain (4 times a second)
   let brain = 0;
   function think() {
@@ -716,7 +862,7 @@
     }
     m.wasAsking = asking;
     if (working && Math.random() < 0.05) fx('gcx-pet-dots', '…', rand(-8, 8));
-    if (!m.sleeping && Date.now() - lastActive > SLEEP_MS && onGround() && !m.held && !m.working && !m.hovered) {
+    if (!m.sleeping && Date.now() - lastActive > sleepMs() && onGround() && !m.held && !m.working && !m.hovered) {
       m.snores = 0;
       m.sleeping = true;
       m.target = null;
@@ -742,6 +888,7 @@
     m.heldSince = 0;
     if (!onGround() || m.vx) return;
     if (m.gesture && t > m.gestureUntil) m.gesture = null;
+    if (m.leap && leapStep(t)) return;
     // The cursor comes close: a wave, facing it.
     const b = body();
     const cx = m.x + b.w / 2;
@@ -753,17 +900,26 @@
       gesture('waving', 1500);
       if (Math.random() < 0.4) fx('gcx-pet-note', '♪', rand(-8, 8));
     }
-    const drowsy = idleFor > DROWSY_MS;
+    const drowsy = idleFor > drowsyMs();
     if (drowsy && !m.drowsy) fx('gcx-pet-dots', '…');
     m.drowsy = drowsy;
     const busy = m.gesture || t < typingUntil || m.hovered || near || m.working;
     // Wander (5-12 s apart, a bit livelier than TAILS' 7-16 s; at least 40 px, within 80% of the width).
     const roams = prefs.roam && !calm() && !drowsy;
     if (roams && !busy && m.target === null && t > nextWander) {
-      nextWander = t + rand(WANDER_MIN, WANDER_MAX);
+      nextWander = t + rand(WANDER_MIN, WANDER_MAX) / energy();
       const mn = m.perch ? m.perch.left : 0;
       const mx = m.perch ? m.perch.right - b.w : maxX();
-      if (mx - mn > 60) {
+      // On a class card with more cards beside it: now and then to its edge, for a leap.
+      const dirs = m.perch && Math.random() < LEAP_CHANCE ? [1, -1].filter((d) => leapCards(d).length) : [];
+      if (dirs.length) {
+        const dir = dirs[Math.floor(Math.random() * dirs.length)];
+        m.leap = { phase: 'go', dir, perch: m.perch.el };
+        m.bonk = false;
+        const edge = dir > 0 ? mx : mn;
+        m.target = Math.abs(edge - m.x) >= 1 ? edge : null;
+        wake();
+      } else if (mx - mn > 60) {
         let target;
         if (!m.perch && Math.random() < 0.2) {
           target = Math.random() < 0.5 ? mn : mx; // all the way to the edge, and bonk
@@ -771,7 +927,7 @@
         } else {
           m.bonk = false;
           const span = (mx - mn) * 0.8;
-          const reach = Math.min(span / 2, 420 * clamp(prefs.size, 0.6, 1.4));
+          const reach = Math.min(span / 2, 520 * clamp(prefs.size, 0.6, 1.4) * Math.sqrt(energy()));
           for (let i = 0; i < 6; i++) {
             target = clamp(m.x + rand(-reach, reach), mn, mx);
             if (Math.abs(target - m.x) >= 40) break;
@@ -901,6 +1057,7 @@
       rescaleTimer = setTimeout(rescale, 220);
     }
     m.perch = null;
+    m.leap = null;
     m.x = clamp(m.x, 0, maxX());
     if (m.y > vh()) m.y = vh();
     m.vy = m.vy || (m.y < vh() - 0.5 ? 1 : 0);
@@ -984,6 +1141,7 @@
         m.sleeping = false;
         m.target = null;
         m.perch = null;
+        m.leap = null;
         m.vy = 0;
         m.gesture = null;
         // Where he was grabbed, relative to his body's left edge and his feet (also the swing's pivot).
@@ -1148,6 +1306,7 @@
     await rescale();
     if (!ui || sheet !== s) return;
     render();
+    ui.pet.classList.add('gcx-pet-in');
     restartTicker();
     if (!brain) brain = setInterval(think, 250);
     wake();
@@ -1304,7 +1463,11 @@
         <div class="gcx-set-lbl">Size <span class="gcx-set-val">${Math.round(p.size * 100)}%</span></div>
         <input type="range" class="gcx-set-range" data-prange="size" min="40" max="160" step="5" value="${Math.round(p.size * 100)}" aria-label="Pet size">
       </div>
-      <label class="gcx-set-row gcx-pets-dep"><span><b>Roams around</b><small>Walks along the bottom on its own. Off, it stays where you put it. Always off when page animations are off</small></span><input type="checkbox" class="gcx-switch" data-pk="roam" ${p.roam ? 'checked' : ''}></label>
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Roams around</b><small>Walks along the bottom on its own, and now and then leaps across your class cards when it's on one. Off, it stays where you put it. Always off when page animations are off</small></span><input type="checkbox" class="gcx-switch" data-pk="roam" ${p.roam ? 'checked' : ''}></label>
+      <div class="gcx-set-sub gcx-pets-dep gcx-pets-walk">
+        <div class="gcx-set-lbl">How much it walks <span class="gcx-set-val">${Math.round(energy() * 100)}%</span></div>
+        <input type="range" class="gcx-set-range" data-prange="walk" min="25" max="300" step="25" value="${Math.round(energy() * 100)}" aria-label="How much the pet walks">
+      </div>
       <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A thud when it lands, soft footsteps, a whoosh when you throw it, a chirp when you pat it, and a quiet snore when it dozes off</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>
       <div class="gcx-set-sub gcx-pets-dep gcx-pets-vol">
         <div class="gcx-set-lbl">Volume <span class="gcx-set-val">${Math.round(volume() * 100)}%</span></div>
@@ -1329,7 +1492,7 @@
     const sync = () => {
       const on = prefs.on;
       q('.gcx-pets-main').classList.toggle('gcx-pets-dis', !on);
-      host.querySelectorAll('.gcx-pets-dep').forEach((n) => n.classList.toggle('gcx-pets-dis', !on || !prefs.id || (n.classList.contains('gcx-pets-vol') && !prefs.sound)));
+      host.querySelectorAll('.gcx-pets-dep').forEach((n) => n.classList.toggle('gcx-pets-dis', !on || !prefs.id || (n.classList.contains('gcx-pets-vol') && !prefs.sound) || (n.classList.contains('gcx-pets-walk') && !prefs.roam)));
       cur.innerHTML = prefs.id
         ? `<img alt="" src="${esc(prefs.thumb)}"><div><b>${esc(prefs.name)}</b><small>${esc(prefs.desc)}</small></div><button type="button" class="gcx-pets-btn gcx-pets-change">${pick.hidden ? 'Change' : 'Done'}</button>`
         : `<span class="gcx-pets-none"></span><div><b>No pet yet</b><small>Pick one below from codex-pets.net (the art belongs to each pet's maker), or import your own.</small></div>`;
@@ -1532,6 +1695,12 @@
         const v = Number(e.target.value);
         e.target.parentElement.querySelector('.gcx-set-val').textContent = v + '%';
         savePrefs({ size: v / 100 });
+      } else if (e.target.dataset && e.target.dataset.prange === 'walk') {
+        e.stopPropagation();
+        const v = Number(e.target.value);
+        e.target.parentElement.querySelector('.gcx-set-val').textContent = v + '%';
+        savePrefs({ walk: v / 100 });
+        nextWander = Math.min(nextWander, Date.now() + rand(WANDER_MIN, WANDER_MAX) / energy());
       } else if (e.target.dataset && e.target.dataset.prange === 'volume') {
         e.stopPropagation();
         const v = Number(e.target.value);
