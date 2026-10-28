@@ -881,8 +881,14 @@
         );
       })
       .join('\n');
+    // The instant copy (localStorage) skips uploaded/generated pictures: they're hundreds of KB each.
+    // Those arrive a beat later from extension storage.
     const k = 'coverCss:' + (PAGE_USER || 'anon');
-    if (coverStyle.textContent.length < 400000 && store.get(k, '') !== coverStyle.textContent) store.set(k, coverStyle.textContent);
+    const quick = coverStyle.textContent
+      .split('\n')
+      .filter((line) => !line.includes('data:image/'))
+      .join('\n');
+    if (store.get(k, '') !== quick) store.set(k, quick.length < 200000 ? quick : '');
     markCoverless();
   }
   const saveCover = (id, v) => {
@@ -2776,6 +2782,7 @@
     container.before(ghosts);
     setTimeout(releaseGhosts, 10000); // never block the real cards for long
   }
+  let ghostCheck = 0;
   // Card pictures, loaded before the real cards show (so they don't blink to a plain color).
   const loadedPics = new Set();
   function cardPicturesReady(cards) {
@@ -2818,7 +2825,10 @@
     const wantsBc = ghosts && ghosts.querySelector('[class*="custom-card-"]');
     const styled = late || !ghosts || ((!ghosts.querySelector('#gcx-ghost-css') || document.querySelector(BC_CARD_STYLE)) && (!wantsBc || cards.every((c) => /\bcustom-card-/.test(c.className))));
     const pics = late || cardPicturesReady(cards);
-    if (!styled || !pics) setTimeout(maybeReleaseGhosts, 120);
+    if (!styled || !pics) {
+      clearTimeout(ghostCheck);
+      ghostCheck = setTimeout(maybeReleaseGhosts, 120);
+    }
     if (filled && styled && pics && (!dashItems || cards.every((c) => c.querySelector('.gcx-card-due-wrap[data-markup]')))) {
       releaseGhosts();
       if (dashItems) saveSnapshot();
@@ -2838,7 +2848,8 @@
     // BetterCampus styles each card from a stylesheet it adds a moment after load; the stand-ins
     // need it from the first frame, or they start in Canvas's look and size and then reshape.
     const css = bcCardCss();
-    if (css && css.length < 200000 && store.get(snapKey() + ':css', '') !== css) store.set(snapKey() + ':css', css);
+    const keep = css && css.length < 200000 ? css : '';
+    if (store.get(snapKey() + ':css', '') !== keep) store.set(snapKey() + ':css', keep);
   }, 800);
   const BC_CARD_STYLE = ':is(style[id*="card" i], style[id*="dashboard" i]):is([id^="bettercampus"], [id^="bettercanvas"])';
   const bcCardCss = () => [...document.querySelectorAll(BC_CARD_STYLE)].map((n) => n.textContent).join('\n');
