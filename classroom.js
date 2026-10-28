@@ -2192,10 +2192,29 @@
     }
   }
 
-  // Pressing on a class (rail, class card, course tabs) starts fetching the page before the click
-  // completes. Not on hover: Canvas would log a visit to every class he passed over.
+  // Pressing on a class (rail, class card) starts building its page before the click completes,
+  // and the class he was in just before this one is built ahead of time outright, so going back
+  // and forth between two classes is instant. Not on hover: Canvas would log a visit to every
+  // class he passed over.
+  const RECENT_CLASSES = 'recentCourses';
+  const AHEAD_MS = 5 * 60 * 1000; // a page built ahead goes stale; after this it waits for a press
+  function buildBackAhead() {
+    const recent = (store.get(RECENT_CLASSES, []) || []).filter((x) => Number.isInteger(x));
+    if (COURSE_ID) store.set(RECENT_CLASSES, [COURSE_ID, ...recent.filter((x) => x !== COURSE_ID)].slice(0, 4));
+    const back = recent.find((x) => x !== COURSE_ID);
+    if (!back || !(COURSES || []).some((c) => c.id === back)) return;
+    const ahead = document.createElement('script');
+    ahead.type = 'speculationrules';
+    ahead.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [`/courses/${back}`], eagerness: 'immediate' }] });
+    document.head.append(ahead);
+    setTimeout(() => ahead.remove(), AHEAD_MS);
+  }
   function prefetchCoursePages() {
     if (!HTMLScriptElement.supports || !HTMLScriptElement.supports('speculationrules')) return;
+    // A page that is itself being built ahead counts as visited (and builds its own) only once he
+    // actually arrives on it.
+    if (document.prerendering) document.addEventListener('prerenderingchange', buildBackAhead, { once: true });
+    else buildBackAhead();
     const s = document.createElement('script');
     s.type = 'speculationrules';
     s.textContent = JSON.stringify({
@@ -2218,12 +2237,24 @@
         },
       ],
       // This class's own tabs load in full while the pointer rests on them, so switching tabs
-      // starts sliding the moment he clicks, with the real page (not one still loading).
+      // starts sliding the moment he clicks, with the real page (not one still loading). Another
+      // class starts building in full as soon as he presses on it.
       prerender: [
         {
           source: 'document',
           where: { and: [{ href_matches: '/courses/*' }, { selector_matches: '#gcx-cbar a.gcx-tab:not(.on)' }] },
           eagerness: 'moderate',
+        },
+        {
+          source: 'document',
+          where: {
+            and: [
+              { href_matches: '/courses/*' },
+              { selector_matches: '#gcx-rail a.gcx-ri-course:not(.on), .ic-DashboardCard__link, .ic-DashboardCard a.gcx-card-ov' },
+              { not: { href_matches: '/courses/*/*' } },
+            ],
+          },
+          eagerness: 'conservative',
         },
       ],
     });
