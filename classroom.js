@@ -3438,15 +3438,17 @@
   // rgb(...) (whose last number can be 0 too). `partly`: any alpha under 1 counts.
   function seeThrough(c, partly = false) {
     const t = String(c).trim();
-    const m = t.match(/^(?:rgba\(.*,|color\(.*\/)\s*([\d.]+)\)$/);
+    const m = t.match(/^(?:rgba\(.*,|[a-z-]+\([^,]*\/)\s*([\d.]+(?:e[+-]?\d+)?)\)$/i);
     return t === 'transparent' || (!!m && (partly ? +m[1] < 1 : +m[1] === 0));
   }
   function rgbLuminance(rgb) {
     const s = String(rgb);
-    const m = s.match(/(\d+(?:\.\d+)?)/g);
+    // rgb() is 0-255, color(srgb 0.9 0.9 0.9) is 0-1; other color spaces aren't read (taken as light).
+    const srgb = /^color\(srgb\s/.test(s);
+    if (!srgb && !/^rgba?\(/.test(s)) return 1;
+    const m = s.match(/-?\d*\.?\d+(?:e[+-]?\d+)?/gi);
     if (!m || m.length < 3) return 1;
-    // color(srgb 0.9 0.9 0.9) is 0-1, rgb() is 0-255.
-    const k = /^color\(srgb/.test(s) ? 255 : 1;
+    const k = srgb ? 255 : 1;
     const hex = '#' + m.slice(0, 3).map((v) => Math.max(0, Math.min(255, Math.round(+v * k))).toString(16).padStart(2, '0')).join('');
     return luminance(hex);
   }
