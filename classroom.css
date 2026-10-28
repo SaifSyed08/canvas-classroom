@@ -147,11 +147,12 @@ html.gcx-course #main { margin-left: 0 !important; }
 }
 #gcx-cbar .gcx-tabs-ink.still { transition: none; }
 #gcx-cbar .gcx-cbar-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; position: relative; }
+/* a quiet icon: no outline or fill until hovered */
 #gcx-cbar .gcx-cbar-set {
-  width: 40px; height: 40px; flex: none; display: grid; place-items: center; border: 1px solid var(--gcx-border); border-radius: 50%;
-  background: var(--gcx-bg); color: var(--gcx-text); cursor: pointer; transition: background-color 0.15s ease;
+  width: 36px; height: 36px; flex: none; display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: transparent; color: var(--gcx-muted); opacity: 0.75; cursor: pointer; transition: background-color 0.15s ease, opacity 0.15s ease, color 0.15s ease;
 }
-#gcx-cbar .gcx-cbar-set:hover { background: var(--gcx-bg2); }
+#gcx-cbar .gcx-cbar-set:hover, #gcx-cbar .gcx-cbar-set[aria-expanded='true'] { background: color-mix(in srgb, var(--gcx-text) 8%, transparent); color: var(--gcx-text); opacity: 1; }
 #gcx-cbar .gcx-cbar-set .gcx-svg { fill: currentColor; }
 #gcx-cbar .gcx-more-btn {
   display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px 0 12px; border-radius: 20px;
@@ -753,7 +754,7 @@ html.gcx-school #gcx-rail .gcx-ri-dots { color: var(--gcx-school-fg); }
 .gcx-school-mark img { max-width: 100%; max-height: 64px; object-fit: contain; }
 
 /* settings panel when BetterCampus isn't there to host the Classroom tab */
-.gcx-fallback-panel { width: 400px; max-height: min(680px, 88vh); overflow-y: auto; padding: 8px 12px 14px; box-sizing: border-box; transform-origin: bottom left; }
+.gcx-fallback-panel { width: 400px; max-height: min(620px, 80vh); overflow-y: auto; padding: 8px 12px 14px; box-sizing: border-box; transform-origin: bottom left; }
 
 /* ---------- loading bar: across the page (not the rail), grey track filled in the course color */
 .gcx-progress {
