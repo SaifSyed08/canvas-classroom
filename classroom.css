@@ -333,7 +333,7 @@ html.gcx-imgbg :is(body, #application.ic-app) { background-size: cover !importan
    it. Both layers are opaque and identical wherever they're drawn, so it doesn't matter which of
    these is the one showing. */
 html.gcx.gcx-art body {
-  --gcx-veil: color-mix(in srgb, var(--bcbackground-0-ungradient, var(--gcx-bg)) calc(100% - var(--gcx-art-amt, 18%)), transparent);
+  --gcx-veil: color-mix(in srgb, var(--bcbackground-0-ungradient, var(--bcbackground-1, #fff)) calc(100% - var(--gcx-art-amt, 18%)), transparent);
 }
 html.gcx.gcx-art :is(body, #application.ic-app) {
   background: linear-gradient(var(--gcx-veil), var(--gcx-veil)) fixed, var(--gcx-art) var(--gcx-art-pos, center) / cover no-repeat fixed, var(--gcx-bg) !important;
@@ -490,7 +490,7 @@ html.gcx[data-gcx-ui="nunito"] { --gcx-uifont: 'GCX Nunito', 'Lato Extended', sa
 html.gcx[data-gcx-ui="lexend"] { --gcx-uifont: 'GCX Lexend', 'Lato Extended', sans-serif; }
 html.gcx[data-gcx-ui="lora"] { --gcx-uifont: 'GCX Lora', Georgia, serif; }
 /* Not icons (icon fonts), code, math, the greeting (its own font) or the pet's pixel bubble. */
-html.gcx[data-gcx-ui] :where(body, body *:not(i, code, code *, pre, pre *, kbd, kbd *, samp, samp *, tt, tt *, [style*="font-family" i], [style*="font-family" i] *, .CodeMirror *, .cm-editor *, [class*="icon"], .fa, [class*="fa-"], [class*="material-"], [class*="glyphicon"], .gcx-hello, .gcx-hello *, .gcx-pet-say, .gcx-pet-say *, [class^="gcx-font-"], .gcx-ask-ai, .gcx-ftype, mjx-container, mjx-container *, .MathJax, .MathJax *, .katex, .katex *)) {
+html.gcx[data-gcx-ui] :where(body, body *:not(i, code, code *, pre, pre *, kbd, kbd *, samp, samp *, tt, tt *, [style*="font-family" i], [style*="font-family" i] *, .CodeMirror, .CodeMirror *, .cm-editor, .cm-editor *, [class*="icon"], .fa, [class*="fa-"], [class*="material-"], [class*="glyphicon"], .gcx-hello, .gcx-hello *, .gcx-pet-say, .gcx-pet-say *, [class^="gcx-font-"], .gcx-ask-ai, .gcx-ftype, mjx-container, mjx-container *, .MathJax, .MathJax *, .katex, .katex *)) {
   font-family: var(--gcx-uifont) !important;
 }
 html.gcx-cards #dashboard_header_container { display: none !important; }
