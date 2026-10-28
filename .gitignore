@@ -1,3 +1,4 @@
 node_modules/
 *.zip
 config.local.json
+pets.local/

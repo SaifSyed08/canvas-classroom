@@ -1,0 +1,16 @@
+/* Inbox suggestions (suggest.js): a see-through copy of Canvas's message box laid exactly over it,
+   showing only the gray suggested text (and, when there's text after the cursor, all of it). */
+#gcx-sg {
+  position: fixed; z-index: 2147483000; pointer-events: none; overflow: hidden; box-sizing: border-box;
+  margin: 0; border: 0; background: transparent; white-space: pre-wrap; color: transparent;
+}
+#gcx-sg .gcx-sg-pre, #gcx-sg .gcx-sg-post { color: transparent; }
+#gcx-sg.full .gcx-sg-pre, #gcx-sg.full .gcx-sg-post { color: var(--sg-ink); }
+#gcx-sg .gcx-sg-ghost { color: var(--sg-ink); opacity: 0.45; }
+#gcx-sg .gcx-sg-wait { color: var(--sg-ink); opacity: 0.4; font-style: italic; animation: gcx-sg-pulse 1.2s ease-in-out infinite; }
+#gcx-sg .gcx-sg-key {
+  display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid currentColor; border-radius: 4px;
+  font: 600 10px/14px system-ui, sans-serif; letter-spacing: 0.02em; vertical-align: 1px; color: var(--sg-ink); opacity: 0.4;
+}
+@keyframes gcx-sg-pulse { 50% { opacity: 0.2; } }
+@media (prefers-reduced-motion: reduce) { #gcx-sg .gcx-sg-wait { animation: none; } }
