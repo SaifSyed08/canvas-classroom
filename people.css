@@ -87,24 +87,31 @@ html.gcx-enter .gcx-pp-bar { animation: gcx-rise 0.5s cubic-bezier(.16,.84,.3,1)
 html.gcx-enter .gcx-pp-sec { animation: gcx-rise 0.5s calc(70ms + var(--s, 0) * 70ms) cubic-bezier(.16,.84,.3,1) both; }
 .gcx-pp-groups:not([hidden]) { animation: gcx-fade-in 0.35s cubic-bezier(.2,.7,.2,1) both; }
 
-/* ---------- the person card: header row, bio, email, shared classes (which scroll inside the cap) */
+/* ---------- the person card: a band in the class color with the picture over its edge, then the
+   name, bio, email and shared classes (which scroll inside the cap) */
 .gcx-pp-card {
-  width: 340px; max-width: calc(100vw - 24px); max-height: min(440px, calc(100vh - 24px)); box-sizing: border-box;
+  width: 380px; max-width: calc(100vw - 24px); max-height: min(520px, calc(100vh - 24px)); box-sizing: border-box;
   display: flex; flex-direction: column; overflow: hidden;
 }
-.gcx-pp-card-top { flex: none; height: 4px; background: var(--c, var(--gcx-link)); }
+.gcx-pp-card-top {
+  flex: none; height: 76px;
+  background: linear-gradient(135deg, var(--c, var(--gcx-link)), color-mix(in srgb, var(--c, var(--gcx-link)) 55%, #000));
+}
 .gcx-pp-x {
-  position: absolute; top: 10px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 50%; padding: 0; cursor: pointer;
-  display: grid; place-items: center; background: none; color: var(--gcx-muted);
+  position: absolute; top: 10px; right: 10px; z-index: 2; width: 30px; height: 30px; border: 0; border-radius: 50%; padding: 0; cursor: pointer;
+  display: grid; place-items: center; background: rgba(0, 0, 0, 0.28); color: #fff;
 }
-.gcx-pp-x:hover { background: var(--gcx-bg2); color: var(--gcx-text); }
+.gcx-pp-x:hover { background: rgba(0, 0, 0, 0.45); }
 .gcx-pp-card-body {
-  display: flex; flex-direction: column; gap: 8px; min-height: 0; flex: 1 1 auto;
-  padding: 12px 14px 12px; overflow: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1 1 auto; margin-top: -38px;
+  padding: 0 18px 16px; overflow: auto; overscroll-behavior: contain;
 }
-.gcx-pp-card-who { display: flex; align-items: center; gap: 12px; padding-right: 26px; flex: none; }
+.gcx-pp-card-who { display: flex; align-items: flex-start; gap: 14px; flex: none; }
+/* the name starts just under the band, beside the picture */
+.gcx-pp-card-who .gcx-pp-card-id { padding-top: 42px; }
+.gcx-pp-card .gcx-pp-av.xl { width: 76px; height: 76px; font-size: 32px; border: 4px solid var(--gcx-card); box-sizing: border-box; flex: none; }
 .gcx-pp-card-id { flex: 1; min-width: 0; }
-.gcx-pp-card-name { display: flex; align-items: center; flex-wrap: wrap; column-gap: 6px; row-gap: 2px; font-size: 16px; font-weight: 600; line-height: 1.25; }
+.gcx-pp-card-name { display: flex; align-items: center; flex-wrap: wrap; column-gap: 6px; row-gap: 2px; font-size: 18px; font-weight: 600; line-height: 1.25; }
 .gcx-pp-card-n { overflow-wrap: anywhere; min-width: 0; }
 .gcx-pp-pro { font-size: 12px; font-weight: 400; color: var(--gcx-muted); }
 .gcx-pp-card-name .gcx-pp-tag { padding: 1px 8px; font-size: 11px; }
