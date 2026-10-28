@@ -64,11 +64,16 @@
   const PREFS_KEY = 'gcx:pets';
   const DEFAULTS = { on: false, id: null, name: '', sheet: '', thumb: '', ver: 1, desc: '', size: 1, roam: true, sound: false };
   const readPrefs = () => {
+    let p;
     try {
-      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
+      p = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') };
     } catch {
       return { ...DEFAULTS };
     }
+    // A pet from the old openpets.dev library can't be fetched any more: pick again.
+    if (p.sheet && p.sheet !== 'mine' && !p.sheet.startsWith('https://codex-pets.net/'))
+      Object.assign(p, { on: false, id: null, name: '', sheet: '', thumb: '', desc: '' });
+    return p;
   };
   let prefs = readPrefs();
   const savePrefs = (patch) => {
