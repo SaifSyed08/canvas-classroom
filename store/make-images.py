@@ -159,8 +159,9 @@ def slide_pet(at=None):
         return None
     bg = gradient(1280, 800).convert('RGBA')
     heading(bg, 'A pettable companion', 'that keeps you on track', 26, 44, 22)
-    sw, sh = 1100, 602
-    x, y = (1280 - sw) // 2, 150
+    # Close to a browser window's shape, so little of the page is cut off.
+    sw, sh = 1180, 560
+    x, y = (1280 - sw) // 2, 166
     paste_shadowed(bg, cover(shot, sw, sh), (x, y), 14, 12)
     if at:
         # A closer look at the pet and its bubble: a circle at the bottom right, 2.4x the slide's scale.
