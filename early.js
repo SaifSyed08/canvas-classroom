@@ -18,7 +18,7 @@
         .join(';');
       const st = document.createElement('style');
       st.id = 'gcx-theme-early';
-      st.textContent = `:root{${decl}}body{background:var(--bcbackground-image,var(--bcbackground-0)) center/cover fixed;color:var(--bctext-0)}`;
+      st.textContent = `:root{${decl}}body{background:var(--bcbackground-image,var(--bcbackground-0)) center/cover fixed;color:var(--bctext-0)}html::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--bcbackground-image-layer,none) center/cover no-repeat;filter:var(--bcbackground-image-filter,none)}`;
       html.append(st);
     }
   } catch {}

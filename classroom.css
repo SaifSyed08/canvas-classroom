@@ -1019,7 +1019,7 @@ html.gcx.gcx-themed {
   --gcx-border: color-mix(in srgb, var(--bcborders, #dadce0) 75%, var(--gcx-accent));
 }
 html.gcx.gcx-themed.gcx-flat2 { --gcx-bg2: color-mix(in srgb, var(--bcbackground-1, #f1f3f4) 80%, var(--gcx-accent)); }
-html.gcx.gcx-themed #application.ic-app { background-color: color-mix(in srgb, var(--bcbackground-0, #fff) 94%, var(--gcx-accent)) !important; }
+html.gcx.gcx-themed:not(.gcx-bcpic) #application.ic-app { background-color: color-mix(in srgb, var(--bcbackground-0, #fff) 94%, var(--gcx-accent)) !important; }
 html.gcx-uniform [style*="--c:"] { --c: var(--gcx-accent) !important; }
 html.gcx-uniform #gcx-rail .gcx-ri-course { --av: var(--gcx-accent) !important; }
 html.gcx-uniform .ic-DashboardCard__header_hero { background-color: var(--gcx-accent) !important; }
