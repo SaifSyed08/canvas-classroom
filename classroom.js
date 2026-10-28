@@ -1,4 +1,4 @@
-// Canvas Classroom: Google Classroom-style layout on top of Canvas + BetterCampus.
+// Even Better Canvas: Google Classroom-style layout on top of Canvas + BetterCampus.
 //   - left rail (Classes, To-do, each course) that expands on hover and can be pinned
 //   - course pages get a top tab bar (Home, Classwork, People) plus a searchable panel of every other tool
 //   - Home / Classwork / To-do are rebuilt from the Canvas API (see early.js for which URLs)

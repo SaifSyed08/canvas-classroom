@@ -1,11 +1,11 @@
 # Privacy policy
 
-Canvas Classroom is a browser extension that changes how Canvas looks and adds an AI assistant and a pet.
-This page says what it reads, where that goes, and what it keeps. Last updated October 28, 2026.
+Even Better Canvas is a browser extension that changes how Canvas looks and adds an AI assistant and a pet.
+This page says what it reads, where that goes, and what it keeps. Last updated October 29, 2026.
 
 ## The short version
 
-- There is no Canvas Classroom server. The developer never receives your data, and there is no analytics,
+- There is no Even Better Canvas server. The developer never receives your data, and there is no analytics,
   tracking or advertising.
 - The extension reads your Canvas through your own signed-in session, and keeps what it reads in your
   browser.

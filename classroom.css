@@ -1,4 +1,4 @@
-/* Canvas Classroom. Every rule is scoped under html.gcx (set by early.js), so the
+/* Even Better Canvas. Every rule is scoped under html.gcx (set by early.js), so the
    extension is inert on pages where classroom.js turns it off. Colors read the
    BetterCampus theme variables when they exist. */
 
