@@ -44,8 +44,8 @@
   const REST_SPEED = 12;
   const MAX_STEP = 0.05;
   const MAX_THROW = 2400;
-  const WANDER_MIN = 7000;
-  const WANDER_MAX = 16000;
+  const WANDER_MIN = 5000;
+  const WANDER_MAX = 12000;
   const GLANCE_MIN = 4000;
   const GLANCE_MAX = 11000;
   const GLANCE_MS = 1100;
@@ -109,23 +109,29 @@
   // made (or woken) on the first click or key, not when he first lands, which is usually unprompted.
   let actx = null;
   let out = null; // a limiter in front of the speakers, so a hard landing never clips
+  let hush = 0;
+  // For a sound: the context if a click or key has made one. Sounds scheduled while it is still
+  // waking up play the moment it does. It goes back to sleep 3 s after the last sound.
   const audio = () => {
-    if (!prefs.sound) return null;
+    if (!prefs.sound || !actx || document.hidden) return null;
+    if (actx.state === 'suspended') actx.resume().catch(() => {});
+    clearTimeout(hush);
+    hush = setTimeout(() => actx && actx.state === 'running' && actx.suspend().catch(() => {}), 3000);
+    return actx;
+  };
+  const unlock = () => {
+    if (!prefs.sound || actx) return;
     try {
-      if (!actx) {
-        actx = new AudioContext();
-        out = actx.createDynamicsCompressor();
-        out.threshold.value = -10;
-        out.ratio.value = 8;
-        out.connect(actx.destination);
-      }
-      if (actx.state === 'suspended') actx.resume().catch(() => {});
-      return actx;
+      actx = new AudioContext();
+      out = actx.createDynamicsCompressor();
+      out.threshold.value = -10;
+      out.ratio.value = 8;
+      out.connect(actx.destination);
+      audio();
     } catch {
-      return null;
+      actx = null;
     }
   };
-  const unlock = () => prefs.sound && audio();
   window.addEventListener('pointerdown', unlock, true);
   window.addEventListener('keydown', unlock, true);
   // A knock you can hear on laptop speakers (which play little below ~200 Hz): a short pitch drop
@@ -134,7 +140,7 @@
   function thud(force) {
     const ctx = audio();
     const s = clamp(force, 0, 1);
-    if (!ctx || ctx.state !== 'running' || s < 0.06) return;
+    if (!ctx || s < 0.06) return;
     const t = ctx.currentTime;
     const d = 0.16;
     const o = ctx.createOscillator();
@@ -143,7 +149,7 @@
     o.frequency.exponentialRampToValueAtTime(70, t + d);
     const og = ctx.createGain();
     og.gain.setValueAtTime(0, t);
-    og.gain.linearRampToValueAtTime(0.28 + s * 0.42, t + 0.005);
+    og.gain.linearRampToValueAtTime(0.22 + s * 0.34, t + 0.005);
     og.gain.exponentialRampToValueAtTime(0.0001, t + d);
     o.connect(og).connect(out);
     o.start(t);
@@ -159,44 +165,47 @@
     f.frequency.value = 900 + s * 900;
     f.Q.value = 0.9;
     const ng = ctx.createGain();
-    ng.gain.value = 0.12 + s * 0.3;
+    ng.gain.value = 0.1 + s * 0.24;
     src.connect(f).connect(ng).connect(out);
     src.start(t);
   }
-  // A footstep: a soft tap, alternating feet a little in pitch.
+  // A footstep: a soft padded pat, low in volume. A round sine "pum" (pitched high enough for
+  // laptop speakers) with a gentle attack, plus a whisper of muffled noise for the scuff; the two
+  // feet a little apart in pitch so a walk sounds like left, right, left.
   function stepSound(side) {
     const ctx = audio();
-    if (!ctx || ctx.state !== 'running') return;
-    const t = ctx.currentTime;
+    if (!ctx) return;
+    const t = ctx.currentTime + 0.005;
     const o = ctx.createOscillator();
-    o.frequency.setValueAtTime(side ? 210 : 180, t);
-    o.frequency.exponentialRampToValueAtTime(90, t + 0.05);
+    o.type = 'sine';
+    o.frequency.setValueAtTime(side ? 520 : 460, t);
+    o.frequency.exponentialRampToValueAtTime(side ? 260 : 230, t + 0.07);
     const og = ctx.createGain();
     og.gain.setValueAtTime(0, t);
-    og.gain.linearRampToValueAtTime(0.09, t + 0.003);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    og.gain.linearRampToValueAtTime(0.05, t + 0.008);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
     o.connect(og).connect(out);
     o.start(t);
-    o.stop(t + 0.07);
-    const n = Math.ceil(ctx.sampleRate * 0.025);
+    o.stop(t + 0.1);
+    const n = Math.ceil(ctx.sampleRate * 0.05);
     const buf = ctx.createBuffer(1, n, ctx.sampleRate);
     const ch = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
+    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * Math.sin((Math.PI * i) / n) * (1 - i / n);
     const src = ctx.createBufferSource();
     src.buffer = buf;
     const f = ctx.createBiquadFilter();
-    f.type = 'bandpass';
-    f.frequency.value = side ? 1900 : 1600;
-    f.Q.value = 1.2;
+    f.type = 'lowpass';
+    f.frequency.value = 1100;
+    f.Q.value = 0.5;
     const ng = ctx.createGain();
-    ng.gain.value = 0.07;
+    ng.gain.value = 0.035;
     src.connect(f).connect(ng).connect(out);
     src.start(t);
   }
   // A snore: a quiet, fluttering breath in, matching the slow breathing in pets.css.
   function snore() {
     const ctx = audio();
-    if (!ctx || ctx.state !== 'running') return;
+    if (!ctx) return;
     const t = ctx.currentTime;
     const d = 1.2;
     const n = Math.ceil(ctx.sampleRate * d);
@@ -212,6 +221,31 @@
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.05, t + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    src.connect(f).connect(g).connect(out);
+    src.start(t);
+  }
+  // Thrown: a breathy whoosh, falling in pitch, louder and longer the harder the throw.
+  function whoosh(force) {
+    const ctx = audio();
+    const s = clamp(force, 0, 1);
+    if (!ctx || s < 0.2) return;
+    const t = ctx.currentTime;
+    const d = 0.22 + s * 0.18;
+    const n = Math.ceil(ctx.sampleRate * d);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.6;
+    f.frequency.setValueAtTime(900 + s * 900, t);
+    f.frequency.exponentialRampToValueAtTime(380, t + d);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.05 + s * 0.09, t + d * 0.3);
     g.gain.exponentialRampToValueAtTime(0.0001, t + d);
     src.connect(f).connect(g).connect(out);
     src.start(t);
@@ -300,16 +334,24 @@
     const w = devW() * COLS;
     const h = cellPx * s.rows;
     let url = '';
+    // The sharp shrink (background.js); the browser's own if that isn't available (growing past
+    // the sheet's size, or the extension just reloaded).
     try {
-      const c = new OffscreenCanvas(w, h);
-      const x = c.getContext('2d');
-      x.imageSmoothingQuality = 'high';
-      x.drawImage(s.bitmap, 0, 0, w, h);
-      url = URL.createObjectURL(await c.convertToBlob({ type: 'image/png' }));
-    } catch {
-      return;
-    }
-    if (sheet !== s) return URL.revokeObjectURL(url);
+      const r = await ask({ op: 'scaled', id: s.id, w, h });
+      if (r.data) url = URL.createObjectURL(await (await fetch(r.data)).blob());
+    } catch {}
+    if (sheet !== s || devH() !== cellPx) return url && URL.revokeObjectURL(url);
+    if (!url)
+      try {
+        const c = new OffscreenCanvas(w, h);
+        const x = c.getContext('2d');
+        x.imageSmoothingQuality = 'high';
+        x.drawImage(s.bitmap, 0, 0, w, h);
+        url = URL.createObjectURL(await c.convertToBlob({ type: 'image/png' }));
+      } catch {
+        return;
+      }
+    if (sheet !== s || devH() !== cellPx) return URL.revokeObjectURL(url);
     if (s.url) URL.revokeObjectURL(s.url);
     s.url = url;
     s.scaledFor = cellPx;
@@ -483,7 +525,7 @@
     ticker = setTimeout(() => {
       frame++;
       render();
-      if ((playing === 'running-left' || playing === 'running-right') && frame % 4 === 0 && onGround()) footstep();
+      if ((playing === 'running-left' || playing === 'running-right') && frame % 2 === 1 && onGround()) footstep();
       restartTicker();
     }, FRAME_MS / r);
   }
@@ -601,7 +643,7 @@
         m.x = m.target;
         m.target = null;
         // Walked into the edge of the screen on purpose: a small bonk.
-        if (m.bonk) {
+        if (m.bonk && (m.x <= 1 || m.x >= maxX() - 1)) {
           squash(0.16, m.x <= 1 ? 'left' : 'right');
           thud(0.15);
           gesture('failed', 600);
@@ -639,22 +681,6 @@
     if (!ui || !sheet || document.hidden) return;
     const t = Date.now();
     const idleFor = t - lastActive;
-    if (!m.sleeping && idleFor > SLEEP_MS && onGround() && !m.held) {
-      m.sleeping = true;
-      m.target = null;
-      nextSnore = t + 1600;
-      fx('gcx-pet-dots', '…');
-    }
-    if (m.sleeping) {
-      if (t > nextSnore) {
-        nextSnore = t + 3400;
-        snore();
-        fx('gcx-pet-z', 'z', rand(-6, 4));
-        setTimeout(() => m.sleeping && fx('gcx-pet-z gcx-pet-Z', 'Z', rand(-2, 12)), 650);
-      }
-      render();
-      return;
-    }
     // At work while the AI writes (Ask, Inbox suggestions) or a page loads; a cheer when the AI is done.
     const asking = !!document.querySelector('.gcx-ask.busy, #gcx-sg .gcx-sg-wait');
     const working = asking || !!document.querySelector('.gcx-progress.on:not(.done)');
@@ -669,6 +695,23 @@
     }
     m.wasAsking = asking;
     if (working && Math.random() < 0.05) fx('gcx-pet-dots', '…', rand(-8, 8));
+    if (!m.sleeping && idleFor > SLEEP_MS && onGround() && !m.held && !m.working && !m.hovered) {
+      m.snores = 0;
+      m.sleeping = true;
+      m.target = null;
+      nextSnore = t + 1600;
+      fx('gcx-pet-dots', '…');
+    }
+    if (m.sleeping) {
+      if (t > nextSnore) {
+        nextSnore = t + 3400;
+        if (m.snores++ < 20) snore();
+        fx('gcx-pet-z', 'z', rand(-6, 4));
+        setTimeout(() => m.sleeping && fx('gcx-pet-z gcx-pet-Z', 'Z', rand(-2, 12)), 650);
+      }
+      render();
+      return;
+    }
     // Dangling from the pointer for a while: puzzled.
     if (m.held) {
       m.heldSince = m.heldSince || t;
@@ -693,7 +736,7 @@
     if (drowsy && !m.drowsy) fx('gcx-pet-dots', '…');
     m.drowsy = drowsy;
     const busy = m.gesture || t < typingUntil || m.hovered || near || m.working;
-    // Wander (TAILS: 7-16 s apart, at least 40 px, within 80% of the width).
+    // Wander (5-12 s apart, a bit livelier than TAILS' 7-16 s; at least 40 px, within 80% of the width).
     const roams = prefs.roam && !calm() && !drowsy;
     if (roams && !busy && m.target === null && t > nextWander) {
       nextWander = t + rand(WANDER_MIN, WANDER_MAX);
@@ -705,6 +748,7 @@
           target = Math.random() < 0.5 ? mn : mx; // all the way to the edge, and bonk
           m.bonk = true;
         } else {
+          m.bonk = false;
           const span = (mx - mn) * 0.8;
           const reach = Math.min(span / 2, 420 * clamp(prefs.size, 0.6, 1.4));
           for (let i = 0; i < 6; i++) {
@@ -971,6 +1015,7 @@
         if (Math.abs(m.vx) < REST_SPEED) m.vx = 0;
         if (m.vy === 0 && m.y < vh() - 0.5) m.vy = 1;
         if (Math.hypot(m.vx, m.vy) > 1200) fx('gcx-pet-q', Math.random() < 0.5 ? '!' : '?!');
+        whoosh(Math.hypot(m.vx, m.vy) / MAX_THROW);
       }
       nextWander = Date.now() + rand(WANDER_MIN, WANDER_MAX);
       wake();
@@ -1176,7 +1221,7 @@
         <input type="range" class="gcx-set-range" data-prange="size" min="40" max="160" step="5" value="${Math.round(p.size * 100)}" aria-label="Pet size">
       </div>
       <label class="gcx-set-row gcx-pets-dep"><span><b>Roams around</b><small>Walks along the bottom on its own. Off, it stays where you put it. Always off when page animations are off</small></span><input type="checkbox" class="gcx-switch" data-pk="roam" ${p.roam ? 'checked' : ''}></label>
-      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A soft thud when it lands, a chirp when you pat it</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>`;
+      <label class="gcx-set-row gcx-pets-dep"><span><b>Pet sounds</b><small>A thud when it lands, soft footsteps, a whoosh when you throw it, a chirp when you pat it, and a quiet snore when it dozes off</small></span><input type="checkbox" class="gcx-switch" data-pk="sound" ${p.sound ? 'checked' : ''}></label>`;
     const q = (s) => host.querySelector(s);
     const cur = q('.gcx-pets-cur');
     const pick = q('.gcx-pets-pick');
@@ -1265,6 +1310,23 @@
       if (t) t.classList.remove('gcx-busy');
       sync();
     }
+    // A dropped folder is opened up: its pet.json and images (or a .zip inside it).
+    async function dropped(dt) {
+      const entries = [...(dt.items || [])].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+      if (!entries.some((en) => en.isDirectory)) return [...dt.files];
+      const files = [];
+      const fileOf = (en) => new Promise((res, rej) => en.file(res, rej));
+      for (const en of entries) {
+        if (en.isFile) files.push(await fileOf(en));
+        else {
+          const kids = await new Promise((res, rej) => en.createReader().readEntries(res, rej));
+          for (const k of kids) if (k.isFile && /\.(json|webp|png|zip)$/i.test(k.name)) files.push(await fileOf(k));
+        }
+      }
+      // pet.json first, then the sheet (named spritesheet.* if there's a choice)
+      files.sort((x, y) => (/\.json$/i.test(y.name) - /\.json$/i.test(x.name)) || (/^spritesheet\./i.test(y.name) - /^spritesheet\./i.test(x.name)));
+      return files;
+    }
     async function importFiles(list) {
       const picked = [...list].slice(0, 4);
       if (!picked.length) return;
@@ -1293,8 +1355,8 @@
       savePrefs({ [k]: e.target.checked });
       if (k === 'on' && e.target.checked && !prefs.id) open(true);
       if (k === 'sound' && e.target.checked) {
-        const ctx = audio();
-        if (ctx) (ctx.state === 'running' ? Promise.resolve() : ctx.resume()).then(() => thud(0.6), () => {});
+        unlock();
+        thud(0.6);
       }
       sync();
     });
@@ -1322,10 +1384,17 @@
     host.addEventListener('drop', (e) => {
       if (!hasFiles(e)) return;
       e.preventDefault();
+      e.stopPropagation();
       grid.classList.remove('gcx-drop');
       if (pick.hidden) open(true);
-      importFiles(e.dataTransfer.files);
+      dropped(e.dataTransfer).then(importFiles, (err) => (status.textContent = `Couldn't import that (${err.message}).`));
     });
+    // Anywhere else in the settings: still not opened by the browser.
+    const panel = box.getRootNode() instanceof ShadowRoot ? box.getRootNode().host : box;
+    const near = (e) => host.isConnected && e.composedPath().includes(panel);
+    const stray = (e) => hasFiles(e) && near(e) && e.preventDefault();
+    window.addEventListener('dragover', stray);
+    window.addEventListener('drop', stray);
     host.addEventListener('click', async (e) => {
       if (e.target.closest('.gcx-pets-change')) return open(pick.hidden);
       if (e.target.closest('.gcx-pets-more')) return browse(true);

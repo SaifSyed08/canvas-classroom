@@ -181,11 +181,12 @@
     if (!ta || !ta.isConnected || document.activeElement !== ta) return hide();
     if (ta.value !== base || ta.selectionStart !== at || ta.selectionEnd !== at) {
       // Changed without typing (Canvas adding the signature, say): ask again for the new text.
+      const changed = ta.value !== base;
       seq++;
       hide();
       if (ta.selectionStart === ta.selectionEnd) {
-        asked = '';
-        schedule(WAIT_FOCUS);
+        if (changed) asked = '';
+        schedule(changed ? WAIT_FOCUS : WAIT_TYPING);
       }
       return;
     }
