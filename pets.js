@@ -556,7 +556,7 @@
       frame++;
       render();
       // A step every other frame on a walk; every frame while sliding or sprinting (short, quick).
-      if (running && (m.target === null || frame % 2 === 1) && onGround()) footstep();
+      if ((playing === 'running-left' || playing === 'running-right') && (m.target === null || frame % 2 === 1) && onGround()) footstep();
       restartTicker();
     }, FRAME_MS / r);
   }
@@ -610,8 +610,14 @@
     const airborne = m.y < g - 0.5 || m.vy !== 0;
     if (airborne) {
       const prev = m.y;
-      m.vy += GRAVITY * dt;
-      m.y += m.vy * dt;
+      if (m.leap && m.leap.phase === 'fly') {
+        // Exact, so a leap lands where it was aimed even at a low frame rate.
+        m.y += m.vy * dt + 0.5 * GRAVITY * dt * dt;
+        m.vy += GRAVITY * dt;
+      } else {
+        m.vy += GRAVITY * dt;
+        m.y += m.vy * dt;
+      }
       // Falling past the top of a card: he lands on it.
       if (m.vy > 0 && !m.perch) {
         const p = findPerch(prev, m.y);
@@ -658,7 +664,7 @@
     const L = m.leap;
     if (L && L.phase === 'run') {
       const p = m.perch;
-      if (airborne || !p || p.el !== L.perch || !L.card.isConnected) m.leap = null;
+      if (airborne || !p || p.el !== L.perch || !L.card.isConnected || m.working || !prefs.roam || calm()) m.leap = null;
       else {
         const b = body();
         const edge = L.dir > 0 ? p.right - b.w : p.left;
@@ -808,9 +814,12 @@
       L.card = c.el;
       L.land = L.dir > 0 ? c.left + into : c.right - into;
       const D = Math.abs(L.land - (edge + b.w / 2));
-      const apex = Math.min(50 + D * 0.12, 190, p.top - b.h - 20);
+      const room = p.top - b.h - 20;
+      const apex = Math.min(50 + D * 0.12, 190, room);
       if (apex < 30) return stop();
       L.speed = Math.min(1700, D / Math.sqrt((8 * apex) / GRAVITY));
+      // At the speed cap the arc is higher than planned: too high for the screen, no leap.
+      if ((GRAVITY * (D / L.speed) ** 2) / 8 > room) return stop();
       const most = p.right - p.left - b.w - 2;
       L.run = clamp(L.speed * 0.3, Math.min(b.w, most), most);
       if (L.run < 20) return stop();
