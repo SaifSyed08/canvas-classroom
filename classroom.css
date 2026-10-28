@@ -430,14 +430,13 @@ html.gcx[data-gcx-shade="1"] .ic-DashboardCard__header a.gcx-card-ov {
   color: var(--gcx-muted) !important; text-decoration: none !important;
 }
 .gcx-iconbtn:hover { background: var(--gcx-bg2); color: var(--gcx-text) !important; }
-/* card footer: shortcuts, email and ⋮ together on the right; ⋮ shows on hover */
+/* card footer: shortcuts, email and ⋮ together on the right; ⋮ always there, a little quieter */
 .gcx-card-acts { display: flex; align-items: center; margin-left: auto; }
 .gcx-card-acts .gcx-iconbtn { margin-left: 0; border: 0; background: none; cursor: pointer; padding: 0; }
 .gcx-card-links { display: flex; }
 .gcx-card-link { width: 36px !important; height: 36px !important; color: var(--c, var(--gcx-muted)) !important; }
-.gcx-card-more { width: 32px !important; opacity: 0; transition: opacity 0.15s ease, background-color 0.15s ease; }
-.ic-DashboardCard:hover .gcx-card-more, .gcx-card-more:focus-visible, .gcx-card-more[aria-expanded='true'] { opacity: 1; }
-@media (hover: none) { .gcx-card-more { opacity: 1; } }
+.gcx-card-more { width: 32px !important; opacity: 0.6; transition: opacity 0.15s ease, background-color 0.15s ease; }
+.gcx-card-more:hover, .gcx-card-more:focus-visible, .gcx-card-more[aria-expanded='true'] { opacity: 1; }
 /* small menus (card ⋮, hidden classes) */
 .gcx-mini { min-width: 210px; max-width: 300px; padding: 6px; box-sizing: border-box; transform-origin: top right; }
 .gcx-mini-h { font-size: 12px; font-weight: 600; color: var(--gcx-muted); padding: 6px 10px 4px; }
