@@ -768,6 +768,8 @@ html.gcx-bc-wait bettercampus-todo-list { position: absolute !important; visibil
 /* ---------- dashboard while loading: last visit's cards (or placeholders) stand in */
 html.gcx-dash-wait :is(#DashboardCard_Container, #dashboard_header_container) { display: none !important; }
 html.gcx-swapped.gcx-dash .ic-DashboardCard { animation: none !important; }
+/* the stand-ins are a still picture of last visit: nothing in them animates in */
+.gcx-ghosts *, .gcx-ghosts *::before, .gcx-ghosts *::after { animation: none !important; transition: none !important; }
 .gcx-skelcard .ic-DashboardCard__header { background: var(--gcx-bg2); animation: gcx-ghost-pulse 1.4s ease-in-out infinite; }
 .gcx-skelcard .gcx-card-body { padding: 18px 18px 22px; min-height: 120px; }
 .gcx-skelcard .gcx-skel { height: 16px; margin: 0 0 14px; }

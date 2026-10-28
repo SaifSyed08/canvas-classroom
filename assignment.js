@@ -513,6 +513,17 @@
   }
 
   // Show (or tuck away again) Canvas's own block under ours.
+  // Canvas's block, opened for something only it can do, gets a close button of ours.
+  function closeBar() {
+    const box = document.querySelector('.gcx-asg-canvas');
+    if (!box || box.querySelector(':scope > .gcx-asg-canvas-bar')) return;
+    const bar = el(`<div class="gcx-asg-canvas-bar"><span>In Canvas</span><button type="button" class="gcx-asg-canvas-x" aria-label="Close" title="Close">${svg('close', 18)}</button></div>`);
+    bar.querySelector('button').addEventListener('click', () => {
+      reveal(false);
+      view.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    });
+    box.prepend(bar);
+  }
   function reveal(on) {
     // Turned in from our card since the page loaded: Canvas's block still shows the old state (and
     // its Submit could spend another attempt), so show it fresh.
@@ -521,6 +532,7 @@
       return;
     }
     html.classList.toggle('gcx-asg-reveal', on);
+    if (on) closeBar();
     const b = view.querySelector('.gcx-asg-rubric');
     b.textContent = on ? 'Hide rubric' : 'Rubric';
     b.setAttribute('aria-expanded', String(on));
