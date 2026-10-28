@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Even Better Canvas",
   "version": "0.2.0",
-  "description": "BETTER CANVAS MUST BE INSTALLED! A Google Classroom-inspired interface for BetterCanvas: assignments, file viewer, AI help and more.",
+  "description": "A Google Classroom-inspired interface for Canvas: assignments, file viewer, AI help and more. Requires the BetterCanvas extension.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
