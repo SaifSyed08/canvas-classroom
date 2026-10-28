@@ -664,8 +664,15 @@
     const L = m.leap;
     if (L && L.phase === 'run') {
       const p = m.perch;
-      if (airborne || !p || p.el !== L.perch || !L.card.isConnected || m.working || !prefs.roam || calm()) m.leap = null;
-      else {
+      if (airborne || !p || p.el !== L.perch || !L.card.isConnected) m.leap = null;
+      else if (m.working || !prefs.roam || calm()) {
+        // Called off mid-run (the AI started, roaming or animations off): he brakes to a stop
+        // before the edge, quietly; with animations off, at once.
+        const room = L.dir > 0 ? p.right - body().w - m.x : m.x - p.left;
+        L.k = calm() ? 1e3 : clamp(Math.abs(m.vx) / (0.7 * Math.max(room, 4)), GROUND_DRAG, 1e3);
+        L.phase = 'brake';
+        L.quiet = true;
+      } else {
         const b = body();
         const edge = L.dir > 0 ? p.right - b.w : p.left;
         L.v = Math.min(L.speed, L.v + L.acc * dt);
@@ -709,13 +716,16 @@
       m.vx *= Math.max(0, 1 - drag * dt);
       if (Math.abs(m.vx) < REST_SPEED) m.vx = 0;
       if (!m.vx && lp === 'brake') {
-        // Made it: stars.
+        const quiet = m.leap.quiet;
         m.leap = null;
-        nextWander = Date.now() + rand(2500, 5000);
-        fx('gcx-pet-star', '✦', -18);
-        setTimeout(() => fx('gcx-pet-star', '★', 0), 110);
-        setTimeout(() => fx('gcx-pet-star', '✦', 18), 220);
-        if (Math.random() < 0.5) setTimeout(() => fx('gcx-pet-note', '♪', rand(-10, 10)), 500);
+        if (!quiet) {
+          // Made it: stars.
+          nextWander = Date.now() + rand(2500, 5000);
+          fx('gcx-pet-star', '✦', -18);
+          setTimeout(() => fx('gcx-pet-star', '★', 0), 110);
+          setTimeout(() => fx('gcx-pet-star', '✦', 18), 220);
+          if (Math.random() < 0.5) setTimeout(() => fx('gcx-pet-note', '♪', rand(-10, 10)), 500);
+        }
       }
       if (m.vx) m.facing = m.vx > 0 ? 'right' : 'left';
       m.target = null;
