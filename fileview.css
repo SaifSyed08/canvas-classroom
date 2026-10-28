@@ -137,3 +137,28 @@ html.gcx #gcx-fv .gcx-fv-pg input[type="text"]:focus { border-color: #8ab4f8 !im
   #gcx-fv .gcx-fv-stage, #gcx-fv .gcx-fv-top { transform: none !important; }
   #gcx-fv .gcx-fv-pill { transform: translate(-50%, 0) !important; }
 }
+
+/* details side panel (the ⓘ button) */
+#gcx-fv .gcx-fv-stage { transition: opacity 0.26s ease, transform 0.32s var(--fv-ease), margin-right 0.24s var(--fv-ease); }
+#gcx-fv.info .gcx-fv-stage { margin-right: 336px; }
+#gcx-fv .gcx-fv-side {
+  position: absolute; z-index: 3; top: 64px; right: 12px; bottom: 12px; width: 312px; overflow-y: auto;
+  border-radius: 16px; background: rgba(40, 42, 46, 0.96); box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  opacity: 0; transform: translateX(24px); transition: opacity 0.2s ease, transform 0.24s var(--fv-ease);
+}
+#gcx-fv.info .gcx-fv-side { opacity: 1; transform: none; }
+#gcx-fv .gcx-fv-side[hidden] { display: none; }
+#gcx-fv .gcx-fv-side-in { padding: 16px 18px 18px; }
+#gcx-fv .gcx-fv-side-h { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #9aa0a6; }
+#gcx-fv .gcx-fv-side-name { margin: 6px 0 14px; font-size: 16px; font-weight: 500; color: #fff; overflow-wrap: anywhere; }
+#gcx-fv .gcx-fv-kv { display: flex; flex-direction: column; gap: 2px; padding: 9px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+#gcx-fv .gcx-fv-kv span { font-size: 12px; color: #9aa0a6; }
+#gcx-fv .gcx-fv-kv b { font-weight: 500; color: #e8eaed; overflow-wrap: anywhere; }
+#gcx-fv .gcx-fv-who { display: inline-flex; align-items: center; gap: 8px; }
+#gcx-fv .gcx-fv-who img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+#gcx-fv .gcx-fv-dim { color: #9aa0a6; font-weight: 400; }
+#gcx-fv .gcx-fv-side-link { display: inline-block; margin-top: 14px; color: #8ab4f8 !important; font-weight: 600; text-decoration: none !important; }
+#gcx-fv .gcx-fv-side-link:hover { text-decoration: underline !important; }
+#gcx-fv .gcx-fv-btn[aria-expanded='true'] { background: rgba(138, 180, 248, 0.2); color: #8ab4f8 !important; }
+@media (max-width: 760px) { #gcx-fv.info .gcx-fv-stage { margin-right: 0; } #gcx-fv .gcx-fv-side { left: 12px; width: auto; } }
+@media (prefers-reduced-motion: reduce) { #gcx-fv .gcx-fv-side, #gcx-fv .gcx-fv-stage { transition: none !important; } }

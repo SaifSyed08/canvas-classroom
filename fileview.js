@@ -25,6 +25,7 @@
     audio: 'M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z',
     text: 'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
   };
+  P.info = 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z';
   const icon = (name, size = 24) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="${P[name]}"/></svg>`;
   const KIND = {
     pdf: { icon: 'pdf', color: '#ea4335' },
@@ -86,12 +87,14 @@
         <span class="gcx-fv-type">${icon('text', 22)}</span>
         <div class="gcx-fv-name" title="${esc(name)}">${esc(name || 'Loading…')}</div>
         <div class="gcx-fv-actions">
+          <button type="button" class="gcx-fv-btn gcx-fv-info" title="Details" aria-label="File details" aria-expanded="false" disabled>${icon('info')}</button>
           <button type="button" class="gcx-fv-btn gcx-fv-dl" title="Download" aria-label="Download" disabled>${icon('download')}</button>
           <button type="button" class="gcx-fv-btn gcx-fv-share" title="Copy link" aria-label="Copy link to this file" disabled>${icon('share')}</button>
           <button type="button" class="gcx-fv-btn gcx-fv-fit" title="Fit to width" aria-label="Fit to width" hidden>${icon('zoomIn')}</button>
         </div>
       </header>
       <main class="gcx-fv-stage"></main>
+      <aside class="gcx-fv-side" aria-label="File details" hidden><div class="gcx-fv-side-in"></div></aside>
       <div class="gcx-fv-loading"><div class="gcx-fv-spin"></div><div class="gcx-fv-bar"><i></i></div></div>
       <div class="gcx-fv-pill" hidden>
         <button type="button" class="gcx-fv-pb gcx-fv-zout" title="Zoom out (Ctrl -)" aria-label="Zoom out">${icon('minus', 18)}</button>
@@ -154,6 +157,7 @@
     } catch {}
     state.meta = meta;
     state.kind = kindOf(meta);
+    ov.querySelector('.gcx-fv-info').disabled = false;
     const k = state.kind === 'office' ? officeIcon(meta) : KIND[state.kind];
     const type = ov.querySelector('.gcx-fv-type');
     type.innerHTML = icon(k.icon, 22);
@@ -415,10 +419,71 @@
     toast('Downloading…');
   }
 
+  // ---------------------------------------------------------------- details side panel
+  // Who put the file up, when, how big, and where it lives: from the file's metadata, plus its
+  // uploader and folder (asked for only when the panel is opened).
+  const fmtWhen = (t) => (t ? new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
+  function toggleInfo() {
+    if (!ov || !state || !state.meta) return;
+    const side = ov.querySelector('.gcx-fv-side');
+    const open = !ov.classList.contains('info');
+    const btn = ov.querySelector('.gcx-fv-info');
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) {
+      side.hidden = false;
+      void side.offsetWidth;
+      ov.classList.add('info');
+      fillInfo(side.querySelector('.gcx-fv-side-in'));
+    } else {
+      ov.classList.remove('info');
+      setTimeout(() => !ov?.classList.contains('info') && (side.hidden = true), 220);
+    }
+    // (the page view inside re-fits on its own when the stage narrows)
+  }
+  async function fillInfo(box) {
+    const me = state;
+    const m = me.meta;
+    const row = (label, value) => (value ? `<div class="gcx-fv-kv"><span>${esc(label)}</span><b>${value}</b></div>` : '');
+    const draw = (extra = {}) => {
+      const who = extra.user
+        ? `<span class="gcx-fv-who">${extra.user.avatar_image_url && !/avatar-50\.png/.test(extra.user.avatar_image_url) ? `<img alt="" src="${esc(extra.user.avatar_image_url)}">` : ''}${esc(extra.user.display_name || '')}</span>`
+        : extra.loading
+          ? '<span class="gcx-fv-dim">Looking up…</span>'
+          : '';
+      box.innerHTML = `
+        <div class="gcx-fv-side-h">Details</div>
+        <div class="gcx-fv-side-name">${esc(m.display_name || m.filename || '')}</div>
+        ${row('Uploaded by', who)}
+        ${row('Added', esc(fmtWhen(m.created_at)))}
+        ${row('Modified', m.modified_at && m.modified_at !== m.created_at ? esc(fmtWhen(m.modified_at)) : '')}
+        ${row('Size', esc(fmtSize(m.size)))}
+        ${row('Type', esc((m.mime_class && m.mime_class !== 'file' ? m.mime_class.toUpperCase() + ' · ' : '') + (m['content-type'] || m.content_type || '')))}
+        ${row('Folder', extra.folder ? esc(extra.folder) : '')}
+        ${row('Class', extra.course ? esc(extra.course) : '')}
+        ${row('Available from', m.unlock_at ? esc(fmtWhen(m.unlock_at)) : '')}
+        ${row('Available until', m.lock_at ? esc(fmtWhen(m.lock_at)) : '')}
+        <a class="gcx-fv-side-link" href="${esc(`${me.cid ? `/courses/${me.cid}` : ''}/files/${me.fid}`)}" target="_blank" rel="noopener">Open in Canvas</a>`;
+    };
+    draw({ loading: true });
+    const [full, folder, courses] = await Promise.all([
+      api(`/files/${me.fid}?include[]=user${me.ver || ''}`).catch(() => null),
+      m.folder_id ? api(`/folders/${m.folder_id}`).catch(() => null) : null,
+      gcx.coursesReady ? gcx.coursesReady.catch(() => []) : [],
+    ]);
+    if (state !== me || !ov) return;
+    const c = (courses || []).find((x) => String(x.id) === String(me.cid));
+    draw({
+      user: full && full.user,
+      folder: folder && folder.full_name ? folder.full_name.replace(/^course files\/?/i, '') || 'Course files' : '',
+      course: c ? (gcx.prettyName ? gcx.prettyName(c) : c.name) : '',
+    });
+  }
+
   function wire(root) {
     root.querySelector('.gcx-fv-close').addEventListener('click', () => close());
     root.querySelector('.gcx-fv-scrim').addEventListener('click', () => close());
     root.querySelector('.gcx-fv-dl').addEventListener('click', download);
+    root.querySelector('.gcx-fv-info').addEventListener('click', toggleInfo);
     root.querySelector('.gcx-fv-share').addEventListener('click', shareLink);
     root.querySelector('.gcx-fv-fit').addEventListener('click', toggleFit);
     root.querySelector('.gcx-fv-zin').addEventListener('click', () => zoomBy(1));
