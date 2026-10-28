@@ -3124,7 +3124,7 @@
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
-    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true,
+    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -3135,6 +3135,13 @@
     ['Strong', 2],
     ['Max', 3],
   ];
+  // Room between the rail and the dashboard (early.js sets it too, before first paint).
+  const DASH_GAP_MAX = 320;
+  const applyLayoutPref = () => {
+    const g = Math.max(0, Math.min(DASH_GAP_MAX, Number(prefs().dashGap) || 0));
+    if (g) html.style.setProperty('--gcx-dash-gap', `${g}px`);
+    else html.style.removeProperty('--gcx-dash-gap');
+  };
   const applyShadePref = () => {
     const p = prefs();
     html.dataset.gcxShade = String(p.shade);
@@ -3465,6 +3472,10 @@
             ([k, label]) => `<button type="button" role="radio" data-font="${k}" aria-checked="${p.font === k}"><span class="gcx-font-${k}">Aa</span><small>${label}</small></button>`,
           ).join('')}</div>
         </div>
+        <div class="gcx-set-sub gcx-set-gap">
+          <div class="gcx-set-lbl">Space between the menu rail and your classes <span class="gcx-set-val">${p.dashGap}px</span></div>
+          <input type="range" class="gcx-set-range" data-range="dashGap" data-unit="px" min="0" max="${DASH_GAP_MAX}" step="8" value="${p.dashGap}" aria-label="Space between the menu rail and your classes">
+        </div>
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden. Ctrl + Shift + Space brings back your last chat')}
         ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
@@ -3519,6 +3530,7 @@
       applyWelcomePrefs();
       applyFontPref();
       applyShadePref();
+      applyLayoutPref();
       if ('school' in patch || 'uniform' in patch) applySchoolPref();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
@@ -3537,7 +3549,7 @@
       if (!k) return;
       save({ [k]: Number(e.target.value) });
       const val = e.target.parentElement.querySelector('.gcx-set-val');
-      if (val) val.textContent = `${e.target.value}%`;
+      if (val) val.textContent = `${e.target.value}${e.target.dataset.unit || '%'}`;
     });
     box.addEventListener('click', (e) => {
       const t = e.target.closest('[data-tone]');
@@ -3565,16 +3577,26 @@
   }
 
   // BetterCampus renders its settings panel in the shadow root of <test-element>. We add a
-  // "Classroom" tab to its tab strip; picking it hides BetterCampus's content and shows ours.
-  const bc = { sr: null, active: false, panel: null, hidden: null, dimmed: [] };
+  // "Classroom" tab to its tab strip; picking it puts ours in BetterCampus's settings column
+  // (its live dashboard preview stays on the left, like its own tabs), or, if that column can't be
+  // found, in place of its whole content.
+  const bc = { sr: null, active: false, panel: null, hidden: [], slot: null, dimmed: [] };
+  const bcHide = (nodes) => {
+    for (const n of nodes) {
+      if (n === bc.panel || bc.hidden.includes(n)) continue;
+      n.style.display = 'none';
+      bc.hidden.push(n);
+    }
+  };
   const bcBar = () => bc.sr && bc.sr.querySelector('[data-tab-id="popup:themes"]')?.parentElement;
   function bcDeactivate() {
     if (!bc.active) return;
     bc.active = false;
     bc.panel?.remove();
     bc.panel = null;
-    if (bc.hidden) bc.hidden.style.display = '';
-    bc.hidden = null;
+    bc.hidden.forEach((n) => (n.style.display = ''));
+    bc.hidden = [];
+    bc.slot = null;
     bc.dimmed.forEach((n) => (n.style.opacity = ''));
     bc.dimmed = [];
     const mine = bc.sr && bc.sr.querySelector('[data-gcx-tab]');
@@ -3592,15 +3614,19 @@
     // BetterCampus's own active tab and its underline step back while ours is showing.
     bc.dimmed = [...bar.querySelectorAll('[data-tab-id]'), ...[...(bar.parentElement.children[1]?.children || [])]];
     bc.dimmed.forEach((n) => (n.style.opacity = n.hasAttribute('data-tab-id') ? '0.6' : '0'));
+    const slot = content.querySelector('[data-tour="edit-canvas-panel"]');
     if (!bc.panel || !bc.panel.isConnected) {
+      bc.hidden.forEach((n) => (n.style.display = ''));
+      bc.hidden = [];
       bc.panel = document.createElement('div');
-      bc.panel.className = 'gcx-bc-panel';
+      bc.panel.className = 'gcx-bc-panel' + (slot ? ' gcx-in-col' : '');
       bc.panel.innerHTML = `<div class="gcx-bc-panel-in">${settingsHtml()}</div>`;
       bindSettings(bc.panel);
-      content.after(bc.panel);
+      if (slot) slot.append(bc.panel);
+      else content.after(bc.panel);
     }
-    bc.hidden = content;
-    content.style.display = 'none';
+    bc.slot = slot;
+    bcHide(slot ? slot.children : [content]);
   }
   // The settings tab he used last ('classroom' for ours, else BetterCampus's data-tab-id).
   const SET_TAB = 'setTab';
@@ -3657,12 +3683,12 @@
     if (bc.active && (!bc.panel || !bc.panel.isConnected)) bcActivate();
     else if (bc.active && bc.panel) {
       // BetterCampus may replace its page (data arriving) while ours is showing: keep it hidden.
-      const col = bc.panel.parentElement;
-      const header = bar.parentElement.parentElement;
-      const now = col && [...col.children].find((c) => c !== header && c !== bc.panel && !c.classList.contains('gcx-bc-panel') && c.style.display !== 'none');
-      if (now && now !== bc.hidden) {
-        bc.hidden = now;
-        now.style.display = 'none';
+      bc.hidden = bc.hidden.filter((n) => n.isConnected);
+      if (bc.slot) bcHide(bc.slot.children);
+      else {
+        const col = bc.panel.parentElement;
+        const header = bar.parentElement.parentElement;
+        if (col) bcHide([...col.children].filter((c) => c !== header && !c.classList.contains('gcx-bc-panel')));
       }
     }
     // The panel just opened: go to the tab he asked for (the palette button) or, instead of
@@ -3739,7 +3765,16 @@
   const SETTINGS_CSS = `
     /* BetterCampus wraps its panel in pointer-events: none and opts each control back in. */
     .gcx-bc-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0 24px; pointer-events: auto; animation: gcx-set-in .28s cubic-bezier(.16,.84,.3,1) both; }
-    .gcx-bc-panel-in { max-width: 640px; }
+    .gcx-bc-panel-in { max-width: 640px; container-type: inline-size; }
+    /* In BetterCampus's settings column, next to its dashboard preview */
+    .gcx-bc-panel.gcx-in-col { height: 100%; padding: 2px 4px 24px; overscroll-behavior: contain; }
+    .gcx-in-col .gcx-bc-panel-in { max-width: none; }
+    @container (max-width: 520px) {
+      .gcx-set-fonts { grid-template-columns: repeat(3, 1fr) !important; }
+      .gcx-set-themes { grid-template-columns: repeat(4, 1fr) !important; }
+      .gcx-set-row { padding: 12px 14px; }
+      .gcx-set-sub { padding: 4px 14px 14px; }
+    }
     @keyframes gcx-set-in { from { opacity: 0; transform: translateY(8px); } }
     .gcx-bc-tab { opacity: .6; position: relative; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
     .gcx-bc-tab:hover { opacity: 1; }
@@ -4559,6 +4594,7 @@
   }
   applyFontPref();
   applyShadePref();
+  applyLayoutPref();
   applySchoolPref();
   html.classList.toggle('gcx-still', !prefs().motion);
   // Elements ease in one by one after a page change; stop once the page has settled so later

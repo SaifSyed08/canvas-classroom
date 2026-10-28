@@ -23,7 +23,8 @@ so keep that installed: it still supplies its to-do sidebar, themes and dark mod
 - **Ask anything.** Press **Ctrl + Space** anywhere and ask about your grades, deadlines, files or feedback.
   It reads your Canvas to answer and links what it cites.
 - **AI replies in the Inbox.** Start a reply and gray text suggests the rest. Press **Tab** to take it.
-- **Pets.** Pick one of 3,600+ pixel pets from codex-pets.net, or import your own. It wanders the page,
+- **Pets.** Pick one of 3,600+ pixel pets from codex-pets.net, import your own, or have AI draw one
+  (your school's mascot, say). It wanders the page,
   naps, reacts to what you do, and can be picked up and thrown.
 - **Make it yours.** Themes and school colors, illustrated and moving class covers (or AI-made ones), card
   icons and colors, shortcuts, seasonal confetti when you turn something in.
@@ -152,6 +153,9 @@ Turn on a pet in settings and it lives along the bottom of every Canvas page, ke
 to page.
 
 - **3,600+ to pick from**, searchable, from [codex-pets.net](https://codex-pets.net), most popular first.
+- **Make your own with AI**: describe it ("a frog in a graduation cap") or tap **My school's mascot**,
+  and it draws the character in six poses and turns them into a full animated pet in about half a
+  minute (uses your OpenAI key).
 - **Bring your own**: Import a codex-pets.net `.zip`, a `pet.json` with its spritesheet, a bare
   spritesheet, or drop a whole pet folder (like the ones in `~/.codex/pets`) on the picker.
 - **It has a life**: it wanders, looks around, hops when it's happy, and gets curious ("?") when you type.
@@ -176,9 +180,10 @@ wordmark above the to-do list.
 ## Settings
 
 Settings are a **Classroom** tab inside BetterCampus's settings (its gear, top right of the to-do list), or
-open them from the palette button in any course's top bar:
+open them from the palette button in any course's top bar. Like BetterCampus's own tabs, it keeps the live
+dashboard preview beside it, so you see each change as you make it:
 
-- greeting on or off, tone and font
+- greeting on or off, tone and font, and how much room there is between the menu rail and your classes
 - the AI button and the Ctrl + Space shortcut, separately; the quick model for simple questions; Inbox
   suggestions
 - the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), a course-color wash over class
@@ -223,7 +228,7 @@ Canvas.
 
 ### OpenAI key for the AI features
 
-Ask anything, Inbox suggestions and AI covers need an OpenAI key. Click **Add key** in the chat (or Details →
+Ask anything, Inbox suggestions, AI covers and AI pets need an OpenAI key. Click **Add key** in the chat (or Details →
 Extension options on the extension's card) and paste it. It's kept in the extension's storage and only the
 extension's background worker sends it, to api.openai.com; it's never typed into or handed to the Canvas
 page. For development you can instead put it in a git-ignored `config.local.json` next to `manifest.json`,

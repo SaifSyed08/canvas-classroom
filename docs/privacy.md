@@ -29,6 +29,7 @@ as it would if you opened it yourself.
 | OpenAI (api.openai.com) | Your question and the conversation so far; your name, your school's Canvas address, your time zone, and your current courses with their instructors and your current grade in each; and whatever the assistant looks up to answer (which can include course content, grades, feedback, files, Inbox messages, and course rosters with the names and emails of instructors and classmates) | When you ask the AI something |
 | OpenAI | The Inbox conversation you're replying to, the compose window's text (course, recipients, subject), your name, and your draft | As soon as you open a reply (or after the first couple of words of a new message) in Canvas's Inbox, and again as you type, while "Suggestions in Inbox" is on (it's on by default once a key is set) |
 | OpenAI | The class name and your description of the cover | When you generate an AI class cover |
+| OpenAI | Your description of the pet; for "My school's mascot", your school's Canvas address | When you make a pet with AI |
 | codex-pets.net | Library page and search requests, the small preview images of the pets shown, and the pet you pick | When you browse or pick a pet |
 | Google's favicon service and YouTube's image server | The address of a web link in a course | When you hover that link to preview it |
 
@@ -38,7 +39,7 @@ your school's Canvas address (as the page they were loaded from).
 OpenAI's handling of these requests is covered by [OpenAI's policies](https://openai.com/policies) and your
 own OpenAI account's settings. Assistant conversations are kept by OpenAI so follow-up questions can
 continue them; Inbox suggestions are sent with storage turned off. Without a key nothing is sent to OpenAI.
-With one, the assistant and covers send only when you ask them something; turn off "Suggestions in Inbox" in
+With one, the assistant, covers and pets send only when you ask them something; turn off "Suggestions in Inbox" in
 settings to stop the Inbox ones.
 
 ## What it keeps

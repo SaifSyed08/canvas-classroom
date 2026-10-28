@@ -1190,6 +1190,20 @@
     .gcx-pets-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--gcx-muted, #71717a); }
     .gcx-pets-foot span { flex: 1; min-width: 0; }
     .gcx-pets-foot a { color: inherit; }
+    .gcx-pets-gen { margin-top: 10px; padding: 10px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 12px; }
+    .gcx-pets-gen[hidden] { display: none; }
+    .gcx-pets-desc { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 52px; padding: 8px 10px; border: 1px solid var(--gcx-border, #e4e4e7);
+      border-radius: 10px; background: var(--gcx-card, #fff); color: var(--gcx-text, #18181b); font: inherit; font-size: 13px; line-height: 1.4; }
+    .gcx-pets-desc:focus { outline: 2px solid var(--gcx-link, #4f46e5); outline-offset: -1px; }
+    .gcx-pets-ideas { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .gcx-pets-idea { height: 26px; padding: 0 10px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 13px; background: none; color: var(--gcx-text, #18181b);
+      font: inherit; font-size: 12px; cursor: pointer; }
+    .gcx-pets-idea:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-pets-idea:disabled, .gcx-pets-go:disabled { opacity: .5; cursor: progress; }
+    .gcx-pets-genfoot { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--gcx-muted, #71717a); }
+    .gcx-pets-genfoot span { flex: 1; min-width: 0; line-height: 1.35; }
+    .gcx-pets-go { background: var(--gcx-link, #4f46e5); border-color: transparent; color: #fff; }
+    .gcx-pets-go:hover { background: color-mix(in srgb, var(--gcx-link, #4f46e5) 88%, #000); }
   `;
   function injectCss(root) {
     const host = root instanceof ShadowRoot ? root : document.head || html;
@@ -1228,6 +1242,15 @@
   window.addEventListener('dragover', strayDrop);
   window.addEventListener('drop', strayDrop);
 
+  // Starting points for an AI-made pet ('mascot' asks which school this Canvas belongs to).
+  const IDEAS = [
+    ['🎓 My school’s mascot', 'mascot'],
+    ['🐱 Sleepy cat', 'a sleepy orange cat in a tiny hoodie'],
+    ['🐉 Tiny dragon', 'a tiny green dragon with little wings'],
+    ['🤖 Robot', 'a round little robot with one antenna'],
+    ['🐸 Grad frog', 'a frog wearing a graduation cap'],
+    ['🦉 Night owl', 'a sleepy owl holding a coffee cup'],
+  ];
   function fill(box) {
     const host = box && box.querySelector && box.querySelector('.gcx-set-pets');
     if (!host || host.dataset.gcxPetsBound) return;
@@ -1241,7 +1264,12 @@
         <div class="gcx-pets-pick" hidden>
           <input type="search" class="gcx-pets-search" placeholder="Search 3,600+ pets" aria-label="Search pets">
           <div class="gcx-pets-grid" role="list"></div>
-          <div class="gcx-pets-foot"><span class="gcx-pets-status"></span><button type="button" class="gcx-pets-btn gcx-pets-import" title="A pet .zip from codex-pets.net or Codex, a pet folder's pet.json and spritesheet, or just the spritesheet. You can also drop them on the pets">Import</button><button type="button" class="gcx-pets-btn gcx-pets-more" hidden>More</button></div>
+          <div class="gcx-pets-foot"><span class="gcx-pets-status"></span><button type="button" class="gcx-pets-btn gcx-pets-make" aria-expanded="false" title="Draw a new pet with AI">Make one</button><button type="button" class="gcx-pets-btn gcx-pets-import" title="A pet .zip from codex-pets.net or Codex, a pet folder's pet.json and spritesheet, or just the spritesheet. You can also drop them on the pets">Import</button><button type="button" class="gcx-pets-btn gcx-pets-more" hidden>More</button></div>
+          <div class="gcx-pets-gen" hidden>
+            <textarea class="gcx-pets-desc" rows="2" maxlength="400" placeholder="Describe your pet: a sleepy cat in a hoodie, a frog in a graduation cap…" aria-label="Describe your pet"></textarea>
+            <div class="gcx-pets-ideas">${IDEAS.map(([label, idea]) => `<button type="button" class="gcx-pets-idea" data-idea="${esc(idea)}">${esc(label)}</button>`).join('')}</div>
+            <div class="gcx-pets-genfoot"><span class="gcx-pets-genstatus">Drawn by OpenAI with your key, like AI class covers. Takes about half a minute.</span><button type="button" class="gcx-pets-btn gcx-pets-go">Make it</button></div>
+          </div>
           <input type="file" class="gcx-pets-file" accept=".zip,.webp,.png,.json,application/zip,image/webp,image/png,application/json" multiple hidden>
         </div>
         <div class="gcx-set-lbl">Size <span class="gcx-set-val">${Math.round(p.size * 100)}%</span></div>
@@ -1257,6 +1285,10 @@
     const more = q('.gcx-pets-more');
     const search = q('.gcx-pets-search');
     const file = q('.gcx-pets-file');
+    const genBox = q('.gcx-pets-gen');
+    const desc = q('.gcx-pets-desc');
+    const genStatus = q('.gcx-pets-genstatus');
+    const go = q('.gcx-pets-go');
     let shown = []; // entries in the grid, by id
     let nextPage = 1;
     let gen = 0;
@@ -1370,6 +1402,52 @@
       }
     }
 
+    // A pet drawn by AI from his description (background.js makes the sheet).
+    async function generate() {
+      const text = desc.value.trim();
+      if (text.length < 3) {
+        genStatus.textContent = 'Describe your pet first.';
+        return desc.focus();
+      }
+      go.disabled = true;
+      genStatus.textContent = 'Drawing your pet… (about half a minute)';
+      // A message now and then keeps the background worker awake while the picture is drawn.
+      const awake = setInterval(() => ask({ op: 'ping' }, 0).catch(() => {}), 15000);
+      try {
+        // No retry: a second try would draw (and pay for) a second picture.
+        const { pet } = await ask({ op: 'generate', desc: text }, 0);
+        search.value = '';
+        await browse(false);
+        await choose({ ...pet, mine: true });
+        genStatus.textContent = `Made ${pet.displayName}. Make another, or pick it above any time.`;
+      } catch (e) {
+        genStatus.textContent = /no openai key/i.test(e.message)
+          ? 'Add your OpenAI key first (the key button in Ask anything, or the extension’s options).'
+          : `Couldn't make it (${e.message}).`;
+      } finally {
+        clearInterval(awake);
+        go.disabled = false;
+      }
+    }
+    async function idea(b) {
+      if (b.dataset.idea !== 'mascot') {
+        desc.value = b.dataset.idea;
+        return desc.focus();
+      }
+      b.disabled = true;
+      genStatus.textContent = 'Looking up your school’s mascot…';
+      try {
+        const r = await ask({ op: 'mascot', host: location.host }, 0);
+        desc.value = r.desc;
+        genStatus.textContent = 'Change anything you like, then Make it.';
+        desc.focus();
+      } catch (e) {
+        genStatus.textContent = /no openai key/i.test(e.message) ? 'Add your OpenAI key first (the key button in Ask anything, or the extension’s options).' : `Couldn't find it (${e.message}).`;
+      } finally {
+        b.disabled = false;
+      }
+    }
+
     host.addEventListener('change', (e) => {
       if (e.target === file) {
         e.stopPropagation();
@@ -1421,6 +1499,16 @@
       if (e.target.closest('.gcx-pets-change')) return open(pick.hidden);
       if (e.target.closest('.gcx-pets-more')) return browse(true);
       if (e.target.closest('.gcx-pets-import')) return file.click();
+      const mk = e.target.closest('.gcx-pets-make');
+      if (mk) {
+        genBox.hidden = !genBox.hidden;
+        mk.setAttribute('aria-expanded', String(!genBox.hidden));
+        if (!genBox.hidden) desc.focus();
+        return;
+      }
+      if (e.target.closest('.gcx-pets-go')) return generate();
+      const ib = e.target.closest('.gcx-pets-idea');
+      if (ib) return idea(ib);
       const x = e.target.closest('.gcx-pets-x');
       if (x) {
         const id = x.dataset.forget;

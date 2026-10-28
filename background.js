@@ -200,24 +200,8 @@ async function stream(port, body, signal, tier) {
 // Newest first; an older one only if the key can't use it. (gpt-image-1 is listed but no longer served.)
 const IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1-mini'];
 async function genCover(prompt, course) {
-  const key = await getKey();
-  if (!key) throw new Error('No OpenAI key is set');
   const full = `Wide banner illustration for a college class${course ? ` called "${course}"` : ''}: ${prompt}. Rich, tasteful, no text, no letters, no logos, works behind white title text.`;
-  let last;
-  for (const model of IMAGE_MODELS) {
-    const body = { model, prompt: full, size: '1536x1024', quality: 'low', output_format: 'jpeg', output_compression: 80 };
-    const r = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify(body),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (r.ok && j.data && j.data[0] && j.data[0].b64_json) return `data:image/jpeg;base64,${j.data[0].b64_json}`;
-    last = new Error((j.error && j.error.message) || `HTTP ${r.status}`);
-    // Only a model this key can't use is worth trying the next one for.
-    if (!(r.status === 404 || r.status === 403 || (j.error && /model/i.test(j.error.message || '')))) break;
-  }
-  throw last;
+  return `data:image/jpeg;base64,${await openaiImage({ prompt: full, size: '1536x1024', quality: 'low', output_format: 'jpeg', output_compression: 80 })}`;
 }
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== 'genCover' || !sender.tab) return;
@@ -763,6 +747,318 @@ async function petForget(id) {
   });
 }
 
+// ----- AI-made pets. One image call draws the character in six poses (standing, two walking
+// steps, waving, jumping, sad); they're cut apart and turned into a full Codex sheet (8 columns x
+// 11 rows of 192x208) by moving, squashing, tilting and mirroring them, then kept like an
+// imported pet.
+const GEN_POSES = ['idle', 'stepA', 'stepB', 'wave', 'jump', 'sad'];
+const genPetPrompt = (desc, flat) =>
+  [
+    `Pixel-art game sprite sheet of one character: ${desc}.`,
+    'Six poses of the SAME character, drawn at the same size with the same colors, in a grid of 3 columns and 2 rows with wide empty gaps between them. Each pose is centered in its own cell, full body, feet at the bottom of the cell, facing right in a three-quarter view.',
+    'Top row, left to right: standing still; walking with the left foot forward; walking with the right foot forward.',
+    'Bottom row, left to right: waving one hand; jumping with both arms up; sad, slumped and looking down.',
+    'Chunky retro pixel art like a 64x64 game sprite: crisp square pixels, a clean dark outline, flat colors, cute and simple. No text, no ground, no shadow, nothing else in the picture.',
+    flat ? 'Plain flat solid magenta (#FF00FF) background.' : 'Transparent background.',
+  ].join(' ');
+
+// The image models newest first, as for covers; the last error if none of them works.
+async function openaiImage(body) {
+  const key = await getKey();
+  if (!key) throw new Error('No OpenAI key is set');
+  let last;
+  for (const model of IMAGE_MODELS) {
+    const r = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, ...body }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.data && j.data[0] && j.data[0].b64_json) return j.data[0].b64_json;
+    last = new Error((j.error && j.error.message) || `HTTP ${r.status}`);
+    // Only a model this key can't use is worth trying the next one for.
+    if (!(r.status === 404 || r.status === 403 || (j.error && /model/i.test(j.error.message || '')))) break;
+  }
+  throw last;
+}
+
+// Which pixels are the character: the image's own transparency, or else everything not joined
+// to the border by the background's color. Returns alpha 0..255 per pixel.
+function genMask(px, w, h) {
+  const n = w * h;
+  const a = new Uint8Array(n);
+  let clear = 0;
+  for (let i = 0; i < n; i++) if (px[i * 4 + 3] < 128) clear++;
+  if (clear > n * 0.05) {
+    for (let i = 0; i < n; i++) a[i] = px[i * 4 + 3] < 96 ? 0 : px[i * 4 + 3];
+    return a;
+  }
+  // Background color: the most common color around the border (coarsely binned).
+  const bins = new Map();
+  const edge = [];
+  for (let x = 0; x < w; x++) edge.push(x, (h - 1) * w + x);
+  for (let y = 1; y < h - 1; y++) edge.push(y * w, y * w + w - 1);
+  for (const i of edge) {
+    const k = ((px[i * 4] >> 4) << 8) | ((px[i * 4 + 1] >> 4) << 4) | (px[i * 4 + 2] >> 4);
+    bins.set(k, (bins.get(k) || 0) + 1);
+  }
+  let best = 0;
+  let bk = 0;
+  for (const [k, c] of bins) if (c > best) (best = c), (bk = k);
+  const br = ((bk >> 8) << 4) + 8;
+  const bg = (((bk >> 4) & 15) << 4) + 8;
+  const bb = ((bk & 15) << 4) + 8;
+  const near = (i) => Math.abs(px[i * 4] - br) + Math.abs(px[i * 4 + 1] - bg) + Math.abs(px[i * 4 + 2] - bb) < 110;
+  a.fill(255);
+  const stack = edge.filter(near);
+  for (const i of stack) a[i] = 0;
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % w;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+      if (j < 0 || j >= n || a[j] === 0 || !near(j)) continue;
+      a[j] = 0;
+      stack.push(j);
+    }
+  }
+  return a;
+}
+
+// Boxes around the character's parts: pixels joined (on a 4x coarser grid, so outlines with
+// gaps still hold together), then boxes that nearly touch merged.
+function genBlobs(a, w, h) {
+  const S = 4;
+  const cw = Math.ceil(w / S);
+  const ch = Math.ceil(h / S);
+  const on = new Uint8Array(cw * ch);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (a[y * w + x] > 128) on[((y / S) | 0) * cw + ((x / S) | 0)]++;
+  const seen = new Uint8Array(cw * ch);
+  let boxes = [];
+  for (let s = 0; s < on.length; s++) {
+    if (on[s] < 2 || seen[s]) continue;
+    const b = { x0: cw, y0: ch, x1: 0, y1: 0, n: 0 };
+    const st = [s];
+    seen[s] = 1;
+    while (st.length) {
+      const i = st.pop();
+      const x = i % cw;
+      const y = (i / cw) | 0;
+      b.x0 = Math.min(b.x0, x);
+      b.y0 = Math.min(b.y0, y);
+      b.x1 = Math.max(b.x1, x);
+      b.y1 = Math.max(b.y1, y);
+      b.n += on[i];
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= cw || yy >= ch) continue;
+          const j = yy * cw + xx;
+          if (on[j] >= 2 && !seen[j]) (seen[j] = 1), st.push(j);
+        }
+    }
+    boxes.push(b);
+  }
+  // merge boxes closer than 3 coarse pixels (a hand or a hat apart from the body)
+  for (let merged = true; merged; ) {
+    merged = false;
+    for (let i = 0; i < boxes.length && !merged; i++)
+      for (let j = i + 1; j < boxes.length && !merged; j++) {
+        const p = boxes[i];
+        const q = boxes[j];
+        if (p.x0 - 3 <= q.x1 && q.x0 - 3 <= p.x1 && p.y0 - 3 <= q.y1 && q.y0 - 3 <= p.y1) {
+          boxes[i] = { x0: Math.min(p.x0, q.x0), y0: Math.min(p.y0, q.y0), x1: Math.max(p.x1, q.x1), y1: Math.max(p.y1, q.y1), n: p.n + q.n };
+          boxes.splice(j, 1);
+          merged = true;
+        }
+      }
+  }
+  const big = Math.max(0, ...boxes.map((b) => b.n));
+  return boxes
+    .filter((b) => b.n > big * 0.12)
+    .map((b) => ({ x: b.x0 * S, y: b.y0 * S, w: Math.min(w, (b.x1 + 1) * S) - b.x0 * S, h: Math.min(h, (b.y1 + 1) * S) - b.y0 * S, n: b.n }));
+}
+
+// Six separate poses in reading order (two rows of three), or none.
+function genPoses(boxes, h) {
+  if (boxes.length === 6) {
+    const top = boxes.filter((b) => b.y + b.h / 2 < h / 2).sort((p, q) => p.x - q.x);
+    const bottom = boxes.filter((b) => b.y + b.h / 2 >= h / 2).sort((p, q) => p.x - q.x);
+    if (top.length === 3 && bottom.length === 3) return [...top, ...bottom];
+  }
+  return [];
+}
+// Or each cell of the 3x2 grid holds one pose (when poses touch, or a pose came apart).
+function genCells(a, w, h) {
+  const out = [];
+  for (let r = 0; r < 2; r++)
+    for (let c = 0; c < 3; c++) {
+      const X0 = Math.round((c * w) / 3);
+      const X1 = Math.round(((c + 1) * w) / 3);
+      const Y0 = Math.round((r * h) / 2);
+      const Y1 = Math.round(((r + 1) * h) / 2);
+      let x0 = X1;
+      let y0 = Y1;
+      let x1 = -1;
+      let y1 = -1;
+      let n = 0;
+      for (let y = Y0; y < Y1; y++)
+        for (let x = X0; x < X1; x++)
+          if (a[y * w + x] > 128) {
+            n++;
+            if (x < x0) x0 = x;
+            if (x > x1) x1 = x;
+            if (y < y0) y0 = y;
+            if (y > y1) y1 = y;
+          }
+      out.push({ x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, n });
+    }
+  const big = Math.max(...out.map((b) => b.n));
+  const cell = (w / 3) * (h / 2);
+  return out.every((b) => b.n > cell * 0.015 && b.n > big * 0.3) ? out : [];
+}
+function genFind(a, w, h) {
+  const boxes = genBlobs(a, w, h);
+  const six = genPoses(boxes, h);
+  if (six.length) return six;
+  const cells = genCells(a, w, h);
+  if (cells.length) return cells;
+  // Not the grid asked for: the biggest one stands in for every pose.
+  const big = boxes.slice().sort((p, q) => q.n - p.n)[0];
+  return big ? [big] : [];
+}
+
+// Frame recipes: pose, nudge (dx, dy in cell px), squash (sx, sy), tilt (rad), mirrored.
+function genFrames(has) {
+  const P = (name) => (has(name) ? name : 'idle');
+  const sin = (f, n) => Math.sin((2 * Math.PI * f) / n);
+  const walk = (n, lean, flip) =>
+    Array.from({ length: n }, (_, f) => {
+      const step = f % 4;
+      const pose = has('stepA') ? (step === 0 ? 'stepA' : step === 2 ? 'stepB' : 'idle') : 'idle';
+      return { pose, dy: step % 2 ? -5 : 0, sy: step % 2 ? 1.02 : 0.98, rot: lean + (has('stepA') ? 0 : step === 0 ? 0.06 : step === 2 ? -0.06 : 0), flip };
+    });
+  return [
+    Array.from({ length: 6 }, (_, f) => ({ pose: 'idle', sy: 1 + 0.025 * sin(f, 6), sx: 1 - 0.012 * sin(f, 6) })),
+    walk(8, 0.04, false),
+    walk(8, 0.04, true),
+    [0, 0.06, 0, -0.04].map((rot) => ({ pose: P('wave'), rot: has('wave') ? rot : rot * 1.6 })),
+    [
+      { pose: 'idle', sy: 0.88, sx: 1.1 },
+      { pose: P('jump'), dy: -14, sy: 1.06, sx: 0.96 },
+      { pose: P('jump'), dy: -22 },
+      { pose: P('jump'), dy: -12 },
+      { pose: 'idle', sy: 0.9, sx: 1.08 },
+    ],
+    Array.from({ length: 8 }, (_, f) => ({ pose: P('sad'), rot: -0.1 * Math.min(1, f / 3), sy: 1 - 0.06 * Math.min(1, f / 3) + (f > 3 ? 0.01 * sin(f, 4) : 0) })),
+    Array.from({ length: 6 }, (_, f) => ({ pose: 'idle', rot: 0.03 * sin(f, 6), dx: 1.5 * sin(f, 6) })),
+    walk(6, 0.08, false),
+    Array.from({ length: 6 }, (_, f) => ({ pose: 'idle', rot: 0.07 + 0.02 * sin(f, 6), dy: sin(f, 6) })),
+    Array.from({ length: 8 }, (_, f) => ({ pose: 'idle', dx: 3, sx: 0.97, rot: 0.03, dy: 0.6 * sin(f, 8) })),
+    Array.from({ length: 8 }, (_, f) => ({ pose: 'idle', dx: -3, sx: 0.97, rot: 0.03, dy: 0.6 * sin(f, 8), flip: true })),
+  ];
+}
+
+// The generated picture (PNG bytes) to a Codex v2 sheet (PNG bytes).
+async function genSheet(bytes) {
+  const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+  const w = bmp.width;
+  const h = bmp.height;
+  const src = new OffscreenCanvas(w, h);
+  const sx = src.getContext('2d');
+  sx.drawImage(bmp, 0, 0);
+  bmp.close();
+  const img = sx.getImageData(0, 0, w, h);
+  const mask = genMask(img.data, w, h);
+  for (let i = 0; i < mask.length; i++) img.data[i * 4 + 3] = Math.min(img.data[i * 4 + 3], mask[i]);
+  sx.putImageData(img, 0, 0);
+  const found = genFind(mask, w, h);
+  if (!found.length) throw new Error("couldn't find the character in the picture");
+  const poses = {};
+  found.forEach((b, i) => (poses[GEN_POSES[i]] = b));
+  const has = (name) => !!poses[name];
+  // One scale for every pose, so it stays the same size whatever it's doing.
+  const k = Math.min(150 / poses.idle.h, 176 / Math.max(...found.map((b) => b.w)), 178 / Math.max(...found.map((b) => b.h)));
+  const CW = 192;
+  const CH = 208;
+  const out = new OffscreenCanvas(CW * 8, CH * 11);
+  const ctx = out.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  genFrames(has).forEach((row, r) =>
+    row.forEach((f, c) => {
+      const b = poses[f.pose];
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(c * CW, r * CH, CW, CH);
+      ctx.clip();
+      ctx.translate(c * CW + CW / 2 + (f.dx || 0), r * CH + CH - 6 + (f.dy || 0));
+      ctx.rotate((f.flip ? -1 : 1) * (f.rot || 0));
+      ctx.scale((f.flip ? -1 : 1) * (f.sx || 1) * k, (f.sy || 1) * k);
+      ctx.drawImage(src, b.x, b.y, b.w, b.h, -b.w / 2, -b.h, b.w, b.h);
+      ctx.restore();
+    }),
+  );
+  return { bytes: new Uint8Array(await (await out.convertToBlob({ type: 'image/png' })).arrayBuffer()), poses: found.length };
+}
+
+// A short name from the description: "Bevo, the Texas longhorn" -> "Bevo"; "a tiny dragon" -> "Tiny dragon".
+function genName(desc) {
+  const s = String(desc).split(/[,.;:(\n]/)[0].replace(/^\s*(an?|the)\s+/i, '').trim().slice(0, 28) || 'My pet';
+  return s[0].toUpperCase() + s.slice(1);
+}
+
+async function petGenerate(desc) {
+  desc = String(desc || '').replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (desc.length < 3) throw new Error('describe your pet first');
+  const base = { size: '1536x1024', quality: 'medium', n: 1 };
+  let b64png;
+  try {
+    b64png = await openaiImage({ ...base, prompt: genPetPrompt(desc, false), background: 'transparent', output_format: 'png' });
+  } catch (e) {
+    // A model without transparent backgrounds: a flat color, taken out here instead.
+    if (!/background|transparen/i.test(e.message || '')) throw e;
+    b64png = await openaiImage({ ...base, prompt: genPetPrompt(desc, true), output_format: 'png' });
+  }
+  const sheet = await genSheet(fromDataUrl(`data:image/png;base64,${b64png}`));
+  const name = genName(desc);
+  const slug = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'pet';
+  const manifest = new TextEncoder().encode(JSON.stringify({ displayName: name, description: desc }));
+  return petAdopt([{ name: 'pet.json', bytes: manifest }, { name: `${slug}.png`, bytes: sheet.bytes }], 'ai');
+}
+
+// "Your school's mascot": who the school behind this Canvas is, and what its mascot looks like.
+async function petMascot(host) {
+  const key = await getKey();
+  if (!key) throw new Error('No OpenAI key is set');
+  host = String(host || '').toLowerCase().replace(/[^a-z0-9.-]/g, '').slice(0, 120);
+  const r = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: MODEL_FAST,
+      reasoning: { effort: 'none' },
+      store: false,
+      max_output_tokens: 120,
+      instructions:
+        "You are given the address of a school's Canvas LMS site. Name the school's mascot and describe how it looks, for an artist drawing it as a small cute character. Reply with one line only, like: \"Bevo, the University of Texas longhorn steer mascot, burnt orange and white, big curved horns\". If you don't know the school or its mascot, reply exactly: unknown",
+      input: host,
+    }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((j.error && j.error.message) || `HTTP ${r.status}`);
+  const text = (j.output || [])
+    .filter((o) => o.type === 'message')
+    .flatMap((o) => o.content || [])
+    .filter((c) => c.type === 'output_text')
+    .map((c) => c.text)
+    .join('')
+    .trim()
+    .replace(/^"|"$/g, '');
+  if (!text || /^unknown\b/i.test(text)) throw new Error("couldn't tell which school this is; describe the mascot instead");
+  return text.slice(0, 300);
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== 'gcxPets' || !sender.tab) return;
   const files = () => (Array.isArray(msg.files) ? msg.files.slice(0, 4) : []).map((f) => ({ name: String(f.name || '').slice(0, 200), bytes: fromDataUrl(f.dataUrl) }));
@@ -779,7 +1075,13 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
             ? Promise.resolve().then(() => petAdopt(files(), 'import')).then((pet) => ({ pet }))
             : msg.op === 'forget'
               ? petForget(String(msg.id || '')).then((pets) => ({ pets }))
-              : null;
+              : msg.op === 'generate'
+                ? petGenerate(msg.desc).then((pet) => ({ pet }))
+                : msg.op === 'mascot'
+                  ? petMascot(msg.host).then((desc) => ({ desc }))
+                  : msg.op === 'ping' // keeps the worker awake through a long generation
+                    ? Promise.resolve({ ok: true })
+                    : null;
   if (!job) return;
   job.then(reply, (e) => reply({ error: e.message || String(e) }));
   return true;
