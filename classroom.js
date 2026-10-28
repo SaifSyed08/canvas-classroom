@@ -1336,7 +1336,8 @@
       );
 
     const panel = bar.querySelector('.gcx-more');
-    bar.querySelector('.gcx-cbar-set').addEventListener('click', (e) => openSettings('classroom', e.currentTarget));
+    // Just the Classroom settings, in a small panel by the button (not BetterCampus's whole panel).
+    bar.querySelector('.gcx-cbar-set').addEventListener('click', (e) => openFallbackSettings(e.currentTarget));
     const btn = bar.querySelector('.gcx-more-btn');
     const input = panel.querySelector('input');
     const list = panel.querySelector('.gcx-more-list');
@@ -3395,7 +3396,7 @@
   }
   // The settings tab he used last ('classroom' for ours, else BetterCampus's data-tab-id).
   const SET_TAB = 'setTab';
-  let wantTab = null;
+  let wantTab = null; // a tab to open the next time the panel opens
   const activeBcTab = (bar) => {
     const on = [...bar.querySelectorAll('[data-tab-id]')].find((b) => /rounded-t-xl|text-theme-0|\bactive\b/.test(b.className) || b.getAttribute('aria-selected') === 'true');
     return (on && on.dataset.tabId) || '';
@@ -3405,22 +3406,6 @@
     if (!bar) return;
     if (tab === 'classroom') bcActivate();
     else bar.querySelector(`[data-tab-id="${CSS.escape(tab)}"]`)?.click();
-  }
-  // Opens BetterCampus's settings panel (by pressing its own sidebar button, hidden under our rail)
-  // on a given tab; without BetterCampus, our small settings panel instead.
-  function openSettings(tab, anchor) {
-    if (bcBar()) return goToSetTab(tab);
-    const host = [...document.querySelectorAll('*')].find((n) => n.shadowRoot && n.shadowRoot.querySelector('[data-sidebar-button]'));
-    const opener = host && host.shadowRoot.querySelector('[data-sidebar-button]').parentElement;
-    if (!opener) return openFallbackSettings(anchor);
-    wantTab = tab;
-    opener.click();
-    setTimeout(() => {
-      if (wantTab && !bcBar()) {
-        wantTab = null;
-        openFallbackSettings(anchor);
-      }
-    }, 1500);
   }
   function bcInject() {
     const bar = bcBar();
@@ -3495,8 +3480,8 @@
   }
   function openFallbackSettings(b) {
     {
-      const old = document.querySelector('.gcx-fallback-panel');
-      if (old) return old.remove();
+      const old = document.querySelector('.gcx-fallback-panel:not(.gcx-out)');
+      if (old) return old.gcxClose();
       const pop = el(`<div class="gcx-fallback-panel gcx-pop-panel" role="dialog" aria-label="Classroom settings">${settingsHtml()}</div>`);
       if (!document.getElementById('gcx-set-css')) {
         const st = document.createElement('style');
@@ -3512,14 +3497,25 @@
         pop.style.top = Math.max(12, innerHeight - pop.offsetHeight - 12) + 'px';
       } else {
         pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 12)) + 'px';
-        pop.style.top = Math.min(r.bottom + 8, innerHeight - pop.offsetHeight - 12) + 'px';
+        pop.style.top = Math.max(12, Math.min(r.bottom + 8, innerHeight - pop.offsetHeight - 12)) + 'px';
+        pop.style.transformOrigin = 'top right';
       }
+      if (b) b.setAttribute('aria-expanded', 'true');
+      const close = () => {
+        pop.classList.add('gcx-out');
+        setTimeout(() => pop.remove(), 170);
+        if (b) b.setAttribute('aria-expanded', 'false');
+        document.removeEventListener('mousedown', outside, true);
+        document.removeEventListener('keydown', onKey, true);
+      };
+      pop.gcxClose = close;
       const outside = (e) => {
         if (pop.contains(e.target) || (b && b.contains(e.target))) return;
-        pop.remove();
-        document.removeEventListener('mousedown', outside, true);
+        close();
       };
+      const onKey = (e) => e.key === 'Escape' && close();
       document.addEventListener('mousedown', outside, true);
+      document.addEventListener('keydown', onKey, true);
     }
   }
   const SETTINGS_CSS = `
