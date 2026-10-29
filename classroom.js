@@ -3499,10 +3499,13 @@
       <div class="gcx-set-card">
         ${toggle('confetti', 'Confetti when you submit', 'Goes seasonal on holidays')}
         <div class="gcx-set-row gcx-set-try-row"><button type="button" class="gcx-set-try">Try confetti</button></div>
-        <div class="gcx-set-row gcx-set-soon"><span><b>Walking characters</b><small>OpenPets friends wandering your screen</small></span><span class="gcx-soon">Soon</span></div>
+        <div class="gcx-set-pets"></div>
       </div>`;
   }
   function bindSettings(box) {
+    // pets.js fills its own controls into .gcx-set-pets (same content-script world, so the event's
+    // detail is the live element).
+    setTimeout(() => window.dispatchEvent(new CustomEvent('gcx:settings', { detail: box })), 0);
     const save = (patch) => {
       store.set('prefs', { ...prefs(), ...patch });
       applyWelcomePrefs();
