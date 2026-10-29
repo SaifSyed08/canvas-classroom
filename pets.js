@@ -719,6 +719,8 @@
     hit.addEventListener('contextmenu', (e) => e.preventDefault());
     hit.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
+      // preventDefault below swallows the mousedown that open menus close on; send them one.
+      hit.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true, clientX: e.clientX, clientY: e.clientY }));
       e.preventDefault();
       e.stopPropagation();
       try {

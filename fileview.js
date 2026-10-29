@@ -462,11 +462,13 @@
         ${row('Class', extra.course ? esc(extra.course) : '')}
         ${row('Available from', m.unlock_at ? esc(fmtWhen(m.unlock_at)) : '')}
         ${row('Available until', m.lock_at ? esc(fmtWhen(m.lock_at)) : '')}
-        <a class="gcx-fv-side-link" href="${esc(`${me.cid ? `/courses/${me.cid}` : ''}/files/${me.fid}`)}" target="_blank" rel="noopener">Open in Canvas</a>`;
+        <a class="gcx-fv-side-link" href="${esc(`${me.cid ? `/courses/${me.cid}` : ''}/files/${me.fid}${me.ver ? `?${me.ver.slice(1)}` : ''}`)}" target="_blank" rel="noopener">Open in Canvas</a>`;
     };
     draw({ loading: true });
     const [full, folder, courses] = await Promise.all([
-      api(`/files/${me.fid}?include[]=user${me.ver || ''}`).catch(() => null),
+      api(`/files/${me.fid}?include[]=user${me.ver || ''}`)
+        .catch(() => (me.cid ? api(`/courses/${me.cid}/files/${me.fid}?include[]=user${me.ver || ''}`) : null))
+        .catch(() => null),
       m.folder_id ? api(`/folders/${m.folder_id}`).catch(() => null) : null,
       gcx.coursesReady ? gcx.coursesReady.catch(() => []) : [],
     ]);

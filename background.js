@@ -267,7 +267,7 @@ chrome.runtime.onConnect.addListener((port) => {
 // both on openpets.dev. Sheets are stored in chrome.storage.local as data URLs (the extension
 // has unlimitedStorage) so a page never downloads the same pet twice; the newest few are kept.
 const PET_JSON = /^https:\/\/openpets\.dev\/pets\/catalog\.v3(?:\.json|\/[a-z0-9-]+\.json)$/;
-const PET_SHEET = /^https:\/\/openpets\.dev\/pets\/[A-Za-z0-9._-]+\/spritesheet\.(?:webp|png|svg)$/;
+const PET_SHEET = /^https:\/\/openpets\.dev\/pets\/[A-Za-z0-9._-]+\/spritesheet\.(?:webp|png)$/;
 const PET_JSON_TTL = 6 * 36e5;
 const PET_SHEETS_KEPT = 4;
 const petJsonMem = new Map();
@@ -322,7 +322,7 @@ async function petSheet(id, url) {
   const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(60000) });
   if (!r.ok) throw new Error(`openpets.dev answered ${r.status}`);
   const type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-  if (!/^image\/(webp|png|svg\+xml)$/.test(type)) throw new Error('that pet is not an image');
+  if (!/^image\/(webp|png)$/.test(type)) throw new Error('that pet is not an image');
   const bytes = await petCapped(r, 12e6);
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
