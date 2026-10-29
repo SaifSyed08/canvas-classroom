@@ -2926,7 +2926,7 @@
     const box = acts.querySelector('.gcx-card-links');
     const list = store.get(cardLinksKey(id), []);
     const markup = list
-      .map((l) => `<a class="gcx-iconbtn gcx-card-link" href="${esc(l.href)}" title="${esc(l.label)}" aria-label="${esc(l.label)}">${svg(l.icon || tabIcon(l.href), 22)}</a>`)
+      .map((l) => `<a class="gcx-iconbtn gcx-card-link" href="${esc(l.href)}" title="${esc(l.label)}" aria-label="${esc(l.label)}">${svg(l.icon || tabIcon(l.href), 18)}</a>`)
       .join('');
     if (box.dataset.markup !== markup) {
       box.dataset.markup = markup;
