@@ -32,6 +32,19 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
 .gcx-pet-fx > .gcx-pet-z { color: #6366f1; font-size: 14px; animation: gcx-pet-z 2.4s ease-out forwards; }
 .gcx-pet-fx > .gcx-pet-star { color: #f59e0b; }
 .gcx-pet-fx > .gcx-pet-q { color: #0ea5e9; animation-duration: 1.4s; }
+.gcx-pet-fx > .gcx-pet-Z { font-size: 19px; }
+.gcx-pet-fx > .gcx-pet-note { color: #a855f7; }
+.gcx-pet-fx > .gcx-pet-dots { color: #94a3b8; font-size: 18px; letter-spacing: 1px; animation-duration: 1.6s; }
+.gcx-pet-fx > .gcx-pet-sweat { font-size: 13px; }
+/* Dust kicked up by each footstep; stays where it was kicked up. */
+.gcx-pet-dust {
+  position: absolute; width: 9px; height: 5px; margin: -4px 0 0 -4px; border-radius: 50%; background: rgba(120, 113, 108, .38);
+  pointer-events: none; animation: gcx-pet-dust .5s ease-out forwards;
+}
+@keyframes gcx-pet-dust {
+  from { opacity: .9; transform: scale(.5); }
+  to { opacity: 0; transform: translate(var(--dx, 0px), -7px) scale(1.7); }
+}
 @keyframes gcx-pet-float {
   0% { opacity: 0; transform: translate(-50%, 6px) scale(.6); }
   20% { opacity: 1; transform: translate(-50%, -4px) scale(1.1); }
@@ -44,5 +57,6 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
 }
 @media (prefers-reduced-motion: reduce) {
   .gcx-pet-fx > span { animation-duration: .01s; }
+  .gcx-pet-dust { display: none; }
   .gcx-pet.gcx-pet-asleep .gcx-pet-sprite { animation: none; }
 }

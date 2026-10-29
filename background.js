@@ -49,17 +49,20 @@ async function unzip(buf) {
   for (let n = 0; n < count && v.getUint32(p, true) === 0x02014b50; n++) {
     const method = v.getUint16(p + 10, true);
     const csize = v.getUint32(p + 20, true);
+    const usize = v.getUint32(p + 24, true);
     const nameLen = v.getUint16(p + 28, true);
     const extraLen = v.getUint16(p + 30, true);
     const commentLen = v.getUint16(p + 32, true);
     const local = v.getUint32(p + 42, true);
     const name = td.decode(buf.subarray(p + 46, p + 46 + nameLen));
-    out[name] = async () => {
+    // Text by default; raw bytes when asked (an image inside the zip).
+    out[name] = async (raw, max = Infinity) => {
+      if (usize > max) throw new Error(`${name} is too big`);
       const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
       const data = buf.subarray(start, start + csize);
-      if (method !== 8) return td.decode(data);
+      if (method !== 8) return raw ? data : td.decode(data);
       const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      return new Response(stream).text();
+      return raw ? new Uint8Array(await new Response(stream).arrayBuffer()) : new Response(stream).text();
     };
     p += 46 + nameLen + extraLen + commentLen;
   }
@@ -261,13 +264,93 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// ---------------------------------------------------------------- Inbox suggestions (suggest.js)
+// Gray autocomplete in Canvas's Inbox: how the message goes on from the cursor, or the whole reply
+// when the box is empty. The model starts its answer by copying the last few words before the
+// cursor (the "lead"), which tells this file exactly where its words join his: mid-word, after a
+// space, or as a new word that needs one.
+const SUGGEST_INSTRUCTIONS = `You write inline autocomplete for a message a university student is writing in Canvas's Inbox, like Gmail's Smart Compose.
+When a "lead" is given, your reply must begin with it copied exactly (it is the end of the draft, possibly cut off mid-word), followed directly by your continuation. Output nothing else.
+- Continue naturally: finish the word or sentence, and at most a sentence or two more. Stop where the message would end.
+- With an empty draft, write the whole reply: short (one to three sentences), in the tone of the thread, starting with a greeting if the thread's messages use them. No sign-off if the draft already has a signature after the cursor.
+- Don't make up specifics the writer hasn't given (times, reasons, promises) beyond what the thread says.
+- Never repeat what the draft already says after the cursor.
+- Plain text, no markdown, no quotes, no em dashes.`;
+const suggestJobs = new Map();
+async function suggest(m, signal) {
+  const key = await getKey();
+  if (!key) return { code: 'nokey' };
+  const cut = (s, n) => String(s || '').slice(0, n);
+  const before = cut(m.before, 4000);
+  // The last few words, the last one possibly half-typed (and any spaces after it).
+  const lead = before.trim() ? (before.match(/(?:\S+\s+){0,3}\S*\s*$/) || [''])[0] : '';
+  const input = [
+    m.me ? `Writer: ${cut(m.me, 80)}` : '',
+    m.header ? `The message (course, people, subject):\n${cut(m.header, 1200)}` : '',
+    m.thread ? `Earlier messages in the conversation, newest first:\n${cut(m.thread, 8000)}` : 'This is a new message, not a reply.',
+    `Draft before the cursor:\n<<<${before}>>>`,
+    `Draft after the cursor:\n<<<${cut(m.after, 1500)}>>>`,
+    lead ? `Lead (begin with exactly this): <<<${lead}>>>` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  const r = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: MODEL_FAST, reasoning: { effort: 'none' }, instructions: SUGGEST_INSTRUCTIONS, input, max_output_tokens: 300, store: false }),
+    signal,
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) return { code: r.status === 401 ? 'badkey' : 'http', error: (j.error && j.error.message) || `HTTP ${r.status}` };
+  let out = (j.output || [])
+    .filter((o) => o.type === 'message')
+    .flatMap((o) => o.content || [])
+    .filter((c) => c.type === 'output_text')
+    .map((c) => c.text)
+    .join('')
+    .replace(/^<<<|>>>$/g, '');
+  if (lead) {
+    if (out.startsWith(lead)) out = out.slice(lead.length);
+    else if (out.startsWith(lead.trimEnd())) {
+      out = out.slice(lead.trimEnd().length);
+      if (/\s$/.test(lead)) out = out.replace(/^\s+/, '');
+    }
+    // It didn't copy the lead, so where its words join his is a guess: offer nothing.
+    else return { text: '' };
+  }
+  return { text: out };
+}
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (!msg || msg.type !== 'gcxSuggest' || !sender.tab) return;
+  // One at a time per tab: a newer draft makes the older request pointless.
+  suggestJobs.get(sender.tab.id)?.abort();
+  const ctrl = new AbortController();
+  suggestJobs.set(sender.tab.id, ctrl);
+  suggest(msg, ctrl.signal)
+    .then(reply, (e) => reply({ code: e.name === 'AbortError' ? 'aborted' : 'net', error: e.message }))
+    .finally(() => suggestJobs.get(sender.tab.id) === ctrl && suggestJobs.delete(sender.tab.id));
+  return true;
+});
+
 // ---------------------------------------------------------------- pets (pets.js)
-// The pet catalogue lives on openpets.dev, which sends no CORS headers, so pets.js asks here.
-// Only two kinds of URL are fetched: the catalogue's own JSON files and a pet's spritesheet,
-// both on openpets.dev. Sheets are stored in chrome.storage.local as data URLs (the extension
-// has unlimitedStorage) so a page never downloads the same pet twice; the newest few are kept.
-const PET_JSON = /^https:\/\/openpets\.dev\/pets\/catalog\.v3(?:\.json|\/[a-z0-9-]+\.json)$/;
-const PET_SHEET = /^https:\/\/openpets\.dev\/pets\/[A-Za-z0-9._-]+\/spritesheet\.(?:webp|png)$/;
+// The pet library is codex-pets.net (Codex's pet format; its API sends no CORS headers), so
+// pets.js asks here. Only two kinds of URL are fetched: a page of the library's listing, built
+// here from a page number and search text, and a pet's spritesheet on the library's own asset
+// path (openpets.dev's too, for a pet picked before the switch). Sheets are stored in
+// chrome.storage.local as data URLs (the extension has unlimitedStorage) so a page never
+// downloads the same pet twice; the newest few are kept, plus every pet he imported himself.
+const PET_API = 'https://codex-pets.net/api/pets';
+const PET_PAGE_SIZE = 48;
+const PET_JSON = /^https:\/\/codex-pets\.net\/api\/pets\?sort=views&pageSize=48&page=\d+(?:&q=[^&#]*)?$/;
+const PET_ASSET = /^https:\/\/codex-pets\.net\/assets\/pets\/v\/\d+\/[A-Za-z0-9._-]+\/(?:spritesheet|poster)\.(?:webp|png)$/;
+const PET_SHEET = /^https:\/\/(?:openpets\.dev\/pets\/[A-Za-z0-9._-]+|codex-pets\.net\/assets\/pets\/v\/\d+\/[A-Za-z0-9._-]+)\/spritesheet\.(?:webp|png)$/;
+const PET_ID = /^[A-Za-z0-9._-]{1,80}$/;
+const PET_HOME = `${PET_API}?sort=views&pageSize=${PET_PAGE_SIZE}&page=1`;
+// Library pages saved before only the landing page was kept, and the old openpets.dev catalogue.
+chrome.storage.local.get(null).then((all) => {
+  const old = Object.keys(all).filter((k) => k.startsWith('gcxPetJson:') && k !== 'gcxPetJson:' + PET_HOME);
+  if (old.length) chrome.storage.local.remove(old);
+});
 const PET_JSON_TTL = 6 * 36e5;
 const PET_SHEETS_KEPT = 4;
 const petJsonMem = new Map();
@@ -291,7 +374,7 @@ async function petCapped(r, limit) {
   return out;
 }
 async function petJson(url) {
-  if (!PET_JSON.test(url)) throw new Error('not a catalogue URL');
+  if (!PET_JSON.test(url)) throw new Error('not a library URL');
   const mem = petJsonMem.get(url);
   if (mem && Date.now() - mem.t < PET_JSON_TTL) return mem.data;
   const key = 'gcxPetJson:' + url;
@@ -299,11 +382,13 @@ async function petJson(url) {
   if (saved && Date.now() - saved.t < PET_JSON_TTL) return petJsonMem.set(url, saved), saved.data;
   try {
     const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(10000) });
-    if (!r.ok) throw new Error(`openpets.dev answered ${r.status}`);
+    if (!r.ok) throw new Error(`codex-pets.net answered ${r.status}`);
     const data = JSON.parse(new TextDecoder().decode(await petCapped(r, 4e6)));
     const rec = { t: Date.now(), data };
+    petJsonMem.delete(url);
     petJsonMem.set(url, rec);
-    chrome.storage.local.set({ [key]: rec });
+    if (petJsonMem.size > 40) petJsonMem.delete(petJsonMem.keys().next().value);
+    if (url === PET_HOME) chrome.storage.local.set({ [key]: rec });
     return data;
   } catch (e) {
     // Offline: an old copy beats an empty picker.
@@ -312,7 +397,7 @@ async function petJson(url) {
   }
 }
 async function petSheet(id, url) {
-  if (!PET_SHEET.test(url) || !/^[A-Za-z0-9._-]{1,80}$/.test(id)) throw new Error('not a spritesheet URL');
+  if (!PET_SHEET.test(url) || !PET_ID.test(id) || /^mine-/.test(id)) throw new Error('not a spritesheet URL');
   const key = 'gcxPetSheet:' + id;
   const have = (await chrome.storage.local.get(key))[key];
   if (have && have.url === url) {
@@ -320,24 +405,212 @@ async function petSheet(id, url) {
     return key;
   }
   const r = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(60000) });
-  if (!r.ok) throw new Error(`openpets.dev answered ${r.status}`);
+  if (!r.ok) throw new Error(`${new URL(url).hostname} answered ${r.status}`);
   const type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (!/^image\/(webp|png)$/.test(type)) throw new Error('that pet is not an image');
   const bytes = await petCapped(r, 12e6);
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   await chrome.storage.local.set({ [key]: { url, dataUrl: `data:${type};base64,${btoa(bin)}`, used: Date.now() } });
-  // Keep the newest few sheets; older ones are fetched again if he goes back to them.
+  // Keep the newest few sheets; older ones are fetched again if he goes back to them. His own
+  // imports can't be fetched again, so they stay until he removes them.
   const all = await chrome.storage.local.get(null);
   const sheets = Object.keys(all)
-    .filter((k) => k.startsWith('gcxPetSheet:') && k !== key)
+    .filter((k) => k.startsWith('gcxPetSheet:') && k !== key && !all[k].mine)
     .sort((a, b) => (all[b].used || 0) - (all[a].used || 0));
   if (sheets.length >= PET_SHEETS_KEPT) await chrome.storage.local.remove(sheets.slice(PET_SHEETS_KEPT - 1));
   return key;
 }
+// One page of the library, most viewed first, or what matches a search.
+async function petList(page, q) {
+  page = Math.max(1, Math.min(1000, Math.trunc(page) || 1));
+  q = String(q || '').trim().slice(0, 80);
+  const d = await petJson(`${PET_API}?sort=views&pageSize=${PET_PAGE_SIZE}&page=${page}${q ? `&q=${encodeURIComponent(q)}` : ''}`);
+  const pets = (Array.isArray(d && d.pets) ? d.pets : [])
+    .filter((p) => p && !p.ownerShadowbanned && PET_ID.test(String(p.id)) && !/^mine-/.test(p.id) && PET_ASSET.test(String(p.spritesheetUrl)) && PET_ASSET.test(String(p.posterUrl)))
+    .map((p) => ({
+      id: p.id,
+      displayName: String(p.displayName || p.id).slice(0, 120),
+      description: String(p.description || '').slice(0, 400),
+      spriteVersionNumber: p.spriteVersionNumber === 2 ? 2 : 1,
+      spritesheet: p.spritesheetUrl,
+      thumbnail: p.posterUrl,
+    }));
+  return { pets, page, total: Number(d.total) || pets.length, totalPages: Number(d.totalPages) || 1 };
+}
+
+// ----- his own pets: imported in the settings (a codex-pets.net / Codex .zip, a pet folder's
+// pet.json + spritesheet, or a bare spritesheet), plus any in the extension's pets.local folder
+// (git-ignored; pets.local/index.json lists the folder names). Each is checked to be a real
+// Codex sheet, stored for good, and listed in 'gcxPetsMine' with a small picture of it standing.
+const MINE_KEY = 'gcxPetsMine';
+const PET_MAX_BYTES = 12e6;
+const fromDataUrl = (u) => {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(String(u || ''));
+  if (!m || !m[2]) throw new Error('unreadable file');
+  const bin = atob(m[3]);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+};
+const imageType = (b) =>
+  b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+    ? 'image/png'
+    : b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+      ? 'image/webp'
+      : '';
+// Width and height from a PNG or WebP header, so a huge image is refused before it's decoded.
+function imageSize(b) {
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (b.length < 30) return null;
+  if (b[0] === 0x89) return [v.getUint32(16), v.getUint32(20)];
+  const chunk = String.fromCharCode(b[12], b[13], b[14], b[15]);
+  if (chunk === 'VP8X') return [1 + (b[24] | (b[25] << 8) | (b[26] << 16)), 1 + (b[27] | (b[28] << 8) | (b[29] << 16))];
+  if (chunk === 'VP8L') {
+    const n = v.getUint32(21, true);
+    return [1 + (n & 0x3fff), 1 + ((n >> 14) & 0x3fff)];
+  }
+  if (chunk === 'VP8 ') return [v.getUint16(26, true) & 0x3fff, v.getUint16(28, true) & 0x3fff];
+  return null;
+}
+// Adopting and forgetting read, change and write the same list: one at a time.
+let mineQueue = Promise.resolve();
+const mineLocked = (job) => {
+  const run = mineQueue.then(job, job);
+  mineQueue = run.catch(() => {});
+  return run;
+};
+// files: [{ name, bytes }]. Returns the stored pet's entry. `fallbackId` names a pet whose files
+// don't (a pets.local folder without an id in its pet.json).
+async function petAdopt(files, source, fallbackId) {
+  let manifest = null;
+  let image = null;
+  for (const f of files) {
+    if (f.bytes.length > PET_MAX_BYTES) throw new Error(`${f.name} is too big for a pet`);
+    if (f.bytes[0] === 0x50 && f.bytes[1] === 0x4b) {
+      const z = await unzip(f.bytes);
+      const names = Object.keys(z).filter((n) => !/(^|\/)(__MACOSX|\.)/.test(n));
+      const jsonName = names.find((n) => /(^|\/)pet\.json$/i.test(n));
+      if (jsonName && !manifest) manifest = JSON.parse(await z[jsonName](false, 1e6));
+      const dir = jsonName ? jsonName.replace(/[^/]*$/, '') : '';
+      const want = manifest && manifest.spritesheetPath ? dir + String(manifest.spritesheetPath).replace(/^\.\//, '') : '';
+      const imgName = (want && z[want] && want) || names.find((n) => /spritesheet\.(webp|png)$/i.test(n)) || names.find((n) => /\.(webp|png)$/i.test(n));
+      if (imgName && !image) image = { name: imgName, bytes: await z[imgName](true, PET_MAX_BYTES) };
+    } else if (/\.json$/i.test(f.name)) manifest = manifest || JSON.parse(new TextDecoder().decode(f.bytes));
+    else if (imageType(f.bytes)) image = image || f;
+  }
+  if (!image) throw new Error('no spritesheet in what was picked (a .webp or .png, or a .zip holding one)');
+  const type = imageType(image.bytes);
+  if (!type) throw new Error('the spritesheet must be a .webp or .png');
+  if (image.bytes.length > PET_MAX_BYTES) throw new Error('that spritesheet is too big for a pet');
+  const dim = imageSize(image.bytes);
+  if (!dim || dim[0] > 4096 || dim[1] > 6144) throw new Error(dim ? `a ${dim[0]}x${dim[1]} image is too big for a pet` : "that image couldn't be read");
+  const bmp = await createImageBitmap(new Blob([image.bytes], { type }));
+  // A Codex sheet: 8 columns of 192x208-shaped cells, 9 rows (v1) or 11 (v2).
+  const cellW = bmp.width / 8;
+  const rows = bmp.height / (cellW * (208 / 192));
+  const ver = Math.abs(rows - 11) < 0.05 ? 2 : Math.abs(rows - 9) < 0.05 ? 1 : 0;
+  if (!ver) {
+    const size = `${bmp.width}x${bmp.height}`;
+    bmp.close();
+    throw new Error(`a ${size} image isn't a pet spritesheet (8 columns by 9 or 11 rows of 192x208 cells)`);
+  }
+  const cellH = bmp.height / (ver === 2 ? 11 : 9);
+  const c = new OffscreenCanvas(96, 104);
+  c.getContext('2d').drawImage(bmp, 0, 0, cellW, cellH, 0, 0, 96, 104);
+  bmp.close();
+  const thumb = new Uint8Array(await (await c.convertToBlob({ type: 'image/webp', quality: 0.9 })).arrayBuffer());
+  const m = manifest && typeof manifest === 'object' ? manifest : {};
+  const stem = String(m.id || fallbackId || image.name.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '').replace(/^spritesheet$/i, '') || 'pet');
+  const slug = stem.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 56) || 'pet';
+  return mineLocked(async () => {
+  const have = (await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || [];
+  let id = 'mine-' + slug;
+  // Same id from a pet.json (or folder) is the same pet, updated. Otherwise it's a new one.
+  if (!m.id && !fallbackId) for (let i = 2; have.some((e) => e.id === id); i++) id = `mine-${slug}-${i}`;
+  const entry = {
+    id,
+    displayName: String(m.displayName || m.name || stem).slice(0, 120),
+    description: String(m.description || '').slice(0, 400),
+    spriteVersionNumber: ver,
+    thumbnail: `data:image/webp;base64,${b64(thumb)}`,
+    source,
+  };
+  const list = have.filter((e) => e.id !== id);
+  await chrome.storage.local.set({
+    ['gcxPetSheet:' + id]: { url: 'mine', dataUrl: `data:${type};base64,${b64(image.bytes)}`, used: Date.now(), mine: true },
+    [MINE_KEY]: [entry, ...list],
+  });
+  return entry;
+  });
+}
+// Picks up pets.local/ once per change to its index.
+async function petsLocal() {
+  let index;
+  try {
+    const r = await fetch(chrome.runtime.getURL('pets.local/index.json'));
+    if (!r.ok) return;
+    index = await r.text();
+  } catch {
+    return;
+  }
+  const seen = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
+  if (seen === index) return;
+  let dirs = [];
+  try {
+    dirs = JSON.parse(index);
+  } catch {}
+  let failed = false;
+  const get = (p) => fetch(chrome.runtime.getURL(p)).catch(() => null);
+  for (const dir of Array.isArray(dirs) ? dirs : []) {
+    if (!PET_ID.test(String(dir))) continue;
+    try {
+      const files = [];
+      const j = await get(`pets.local/${dir}/pet.json`);
+      const manifest = j && j.ok ? await j.json() : {};
+      if (j && j.ok) files.push({ name: 'pet.json', bytes: new TextEncoder().encode(JSON.stringify(manifest)) });
+      const sheetName = String(manifest.spritesheetPath || 'spritesheet.webp').replace(/^\.\//, '');
+      if (!/^[A-Za-z0-9._-]+\.(webp|png)$/.test(sheetName)) throw new Error('bad spritesheetPath');
+      const s = await get(`pets.local/${dir}/${sheetName}`);
+      if (!s || !s.ok) throw new Error(`no ${sheetName}`);
+      files.push({ name: sheetName, bytes: new Uint8Array(await s.arrayBuffer()) });
+      await petAdopt(files, 'local', dir);
+    } catch (e) {
+      failed = true;
+      console.warn('[gcx pets] pets.local/' + dir, e.message);
+    }
+  }
+  if (!failed) await chrome.storage.local.set({ gcxPetsLocalSeen: index });
+}
+async function petsMine() {
+  await petsLocal();
+  return (await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || [];
+}
+async function petForget(id) {
+  if (!/^mine-/.test(id)) throw new Error('not one of yours');
+  return mineLocked(async () => {
+    const list = ((await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || []).filter((e) => e.id !== id);
+    await chrome.storage.local.set({ [MINE_KEY]: list });
+    await chrome.storage.local.remove('gcxPetSheet:' + id);
+    return list;
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== 'gcxPets' || !sender.tab) return;
-  const job = msg.op === 'json' ? petJson(String(msg.url || '')).then((data) => ({ data })) : msg.op === 'sheet' ? petSheet(String(msg.id || ''), String(msg.url || '')).then((key) => ({ key })) : null;
+  const files = () => (Array.isArray(msg.files) ? msg.files.slice(0, 4) : []).map((f) => ({ name: String(f.name || '').slice(0, 200), bytes: fromDataUrl(f.dataUrl) }));
+  const job =
+    msg.op === 'list'
+      ? petList(msg.page, msg.q)
+      : msg.op === 'sheet'
+        ? petSheet(String(msg.id || ''), String(msg.url || '')).then((key) => ({ key }))
+        : msg.op === 'mine'
+          ? petsMine().then((pets) => ({ pets }))
+          : msg.op === 'import'
+            ? Promise.resolve().then(() => petAdopt(files(), 'import')).then((pet) => ({ pet }))
+            : msg.op === 'forget'
+              ? petForget(String(msg.id || '')).then((pets) => ({ pets }))
+              : null;
   if (!job) return;
   job.then(reply, (e) => reply({ error: e.message || String(e) }));
   return true;

@@ -17,7 +17,8 @@
     "https://*.instructure.com/*",
     "https://*.inscloudgate.net/*",
     "https://*.amazonaws.com/*",
-    "https://openpets.dev/*"
+    "https://openpets.dev/*",
+    "https://codex-pets.net/*"
   ],
   "options_ui": {
     "page": "options.html",
@@ -41,7 +42,8 @@
         "ai.css",
         "assignment.css",
         "people.css",
-        "pets.css"
+        "pets.css",
+        "suggest.css"
       ],
       "js": [
         "early.js"
@@ -62,7 +64,8 @@
         "assignment.js",
         "people.js",
         "fileview.js",
-        "ai.js"
+        "ai.js",
+        "suggest.js"
       ],
       "run_at": "document_end"
     }

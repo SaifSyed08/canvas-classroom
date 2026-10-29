@@ -3123,7 +3123,7 @@
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
-    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, confetti: true, motion: true, annReveal: true,
+    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
     school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
@@ -3468,6 +3468,7 @@
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden. Ctrl + Shift + Space brings back your last chat')}
         ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
+        ${toggle('suggest', 'Suggestions in Inbox', 'Gray text suggests how a message goes on, or a whole reply when the box is empty. Tab takes it, Ctrl + → takes a word, Esc hides it. The conversation and your draft are sent to OpenAI to write it')}
       </div>
       <div class="gcx-set-h">Look</div>
       <div class="gcx-set-card">

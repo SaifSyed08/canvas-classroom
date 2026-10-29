@@ -1,12 +1,13 @@
-// Pets: an OpenPets companion (openpets.dev) living along the bottom of every Canvas page.
+// Pets: a Codex pet (from codex-pets.net, or one he imported) living along the bottom of every
+// Canvas page.
 //
 // Sheets are Codex pet atlases: 8 columns of 192x208 cells, 9 rows (v1) or 11 rows (v2), one
 // animation per row, 260 ms a frame. The behaviour follows Saif's TAILS pet (ChatPet.tsx and
 // pet-motion.ts): same rows, same gravity, throw cap, bounce and drag, same wander and glance
 // timings, same "resting states breathe, moments are brisk" frame rates.
 //
-// background.js fetches the catalogue and the sheet (openpets.dev sends no CORS headers) and
-// keeps sheets in chrome.storage.local. Prefs live in localStorage 'gcx:pets'; where the pet is
+// background.js fetches the library's pages and the sheet (codex-pets.net sends no CORS headers),
+// takes in imported pets, and keeps sheets in chrome.storage.local. Prefs live in localStorage 'gcx:pets'; where the pet is
 // lives in sessionStorage so it carries on from the same spot on the next page.
 (() => {
   if (window.__gcxPets || window.top !== window) return;
@@ -104,41 +105,116 @@
     });
 
   // ---------------------------------------------------------------- sound (off by default)
+  // Chrome keeps a page's audio suspended until someone clicks or types on it, so the context is
+  // made (or woken) on the first click or key, not when he first lands, which is usually unprompted.
   let actx = null;
+  let out = null; // a limiter in front of the speakers, so a hard landing never clips
   const audio = () => {
     if (!prefs.sound) return null;
     try {
-      actx = actx || new AudioContext();
-      if (actx.state === 'suspended') actx.resume();
+      if (!actx) {
+        actx = new AudioContext();
+        out = actx.createDynamicsCompressor();
+        out.threshold.value = -10;
+        out.ratio.value = 8;
+        out.connect(actx.destination);
+      }
+      if (actx.state === 'suspended') actx.resume().catch(() => {});
       return actx;
     } catch {
       return null;
     }
   };
+  const unlock = () => prefs.sound && audio();
+  window.addEventListener('pointerdown', unlock, true);
+  window.addEventListener('keydown', unlock, true);
+  // A knock you can hear on laptop speakers (which play little below ~200 Hz): a short pitch drop
+  // with some body, plus a tick of filtered noise for the contact. Harder landings are louder and
+  // start higher.
   function thud(force) {
     const ctx = audio();
     const s = clamp(force, 0, 1);
-    if (!ctx || s < 0.08) return;
+    if (!ctx || ctx.state !== 'running' || s < 0.06) return;
     const t = ctx.currentTime;
-    const d = 0.13;
-    const n = Math.ceil(ctx.sampleRate * d);
+    const d = 0.16;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(260 + s * 220, t);
+    o.frequency.exponentialRampToValueAtTime(70, t + d);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(0.28 + s * 0.42, t + 0.005);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + d + 0.01);
+    const n = Math.ceil(ctx.sampleRate * 0.04);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 3;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 900 + s * 900;
+    f.Q.value = 0.9;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.12 + s * 0.3;
+    src.connect(f).connect(ng).connect(out);
+    src.start(t);
+  }
+  // A footstep: a soft tap, alternating feet a little in pitch.
+  function stepSound(side) {
+    const ctx = audio();
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(side ? 210 : 180, t);
+    o.frequency.exponentialRampToValueAtTime(90, t + 0.05);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0, t);
+    og.gain.linearRampToValueAtTime(0.09, t + 0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.07);
+    const n = Math.ceil(ctx.sampleRate * 0.025);
     const buf = ctx.createBuffer(1, n, ctx.sampleRate);
     const ch = buf.getChannelData(0);
     for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n) ** 2;
     const src = ctx.createBufferSource();
     src.buffer = buf;
     const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
+    f.type = 'bandpass';
+    f.frequency.value = side ? 1900 : 1600;
     f.Q.value = 1.2;
-    f.frequency.setValueAtTime(220 + s * 520, t);
-    f.frequency.exponentialRampToValueAtTime(90, t + d);
+    const ng = ctx.createGain();
+    ng.gain.value = 0.07;
+    src.connect(f).connect(ng).connect(out);
+    src.start(t);
+  }
+  // A snore: a quiet, fluttering breath in, matching the slow breathing in pets.css.
+  function snore() {
+    const ctx = audio();
+    if (!ctx || ctx.state !== 'running') return;
+    const t = ctx.currentTime;
+    const d = 1.2;
+    const n = Math.ceil(ctx.sampleRate * d);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (0.55 + 0.45 * Math.sin((2 * Math.PI * 26 * i) / ctx.sampleRate));
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 420;
+    f.Q.value = 1.4;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.05 + s * 0.09, t + 0.004);
+    g.gain.linearRampToValueAtTime(0.05, t + 0.6);
     g.gain.exponentialRampToValueAtTime(0.0001, t + d);
-    src.connect(f).connect(g).connect(ctx.destination);
+    src.connect(f).connect(g).connect(out);
     src.start(t);
-    src.stop(t + d + 0.01);
   }
   function chirp() {
     const ctx = audio();
@@ -152,9 +228,9 @@
       o.frequency.setValueAtTime(hz, t);
       if (i) o.frequency.linearRampToValueAtTime(hz * 1.06, t + 0.12);
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.045, t + 0.01);
+      g.gain.linearRampToValueAtTime(0.12, t + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
-      o.connect(g).connect(ctx.destination);
+      o.connect(g).connect(out);
       o.start(t);
       o.stop(t + 0.14);
     });
@@ -218,11 +294,10 @@
   let rescaleTimer = 0;
   async function rescale() {
     if (!sheet) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    const cellPx = Math.max(16, Math.round(dispH() * dpr));
+    const cellPx = devH();
     if (sheet.scaledFor === cellPx) return;
     const s = sheet;
-    const w = Math.round(cellPx * (s.cellW / s.cellH)) * COLS;
+    const w = devW() * COLS;
     const h = cellPx * s.rows;
     let url = '';
     try {
@@ -244,8 +319,15 @@
   }
 
   // ---------------------------------------------------------------- geometry
-  const dispH = () => Math.round(BASE_H * clamp(prefs.size || 1, 0.4, 1.6));
-  const dispW = () => (sheet ? Math.round(dispH() * (sheet.cellW / sheet.cellH)) : dispH());
+  // Sizes are whole screen (device) pixels, and the redrawn sheet is exactly that size, so each
+  // frame is shown 1:1 instead of being resampled again (which blurs it at 125% or 150% scaling).
+  const dpr = () => Math.min(window.devicePixelRatio || 1, 3);
+  const devH = () => Math.max(16, Math.round(BASE_H * clamp(prefs.size || 1, 0.4, 1.6) * dpr()));
+  const devW = () => (sheet ? Math.round(devH() * (sheet.cellW / sheet.cellH)) : devH());
+  const dispH = () => devH() / dpr();
+  const dispW = () => devW() / dpr();
+  // A position on a whole screen pixel: in between, the browser smooths the sprite.
+  const snap = (v) => Math.round(v * dpr()) / dpr();
   const sc = () => (sheet ? dispH() / sheet.cellH : 1); // cell px -> screen px
   const body = () => {
     const b = sheet ? sheet.box : { x0: 38, y0: 42, x1: 154, y1: 200 };
@@ -271,6 +353,7 @@
   let caretX = null;
   let nextWander = 0;
   let nextGlance = 0;
+  let nextSnore = 0;
   let wavedAt = 0;
   let pointer = { x: -1e4, y: -1e4 };
 
@@ -321,6 +404,7 @@
       const mid = m.x + body().w / 2;
       return Math.abs(caretX - mid) > 160 ? look(caretX < mid ? 'left' : 'right') : 'review';
     }
+    if (m.working) return has('running') ? 'running' : 'review';
     if (m.hovered) return 'waving';
     if (m.sleeping) return 'sleep';
     // Nobody has touched anything for a minute: he waits, then (above) dozes off.
@@ -348,7 +432,7 @@
     const b = body();
     const left = m.x - b.l;
     const top = m.y - b.b;
-    ui.pet.style.transform = `translate3d(${left.toFixed(1)}px, ${top.toFixed(1)}px, 0)`;
+    ui.pet.style.transform = `translate3d(${snap(left)}px, ${snap(top)}px, 0)`;
     const key = `${W}x${H}:${row}:${f}`;
     if (key !== lastFrameKey) {
       lastFrameKey = key;
@@ -399,8 +483,23 @@
     ticker = setTimeout(() => {
       frame++;
       render();
+      if ((playing === 'running-left' || playing === 'running-right') && frame % 4 === 0 && onGround()) footstep();
       restartTicker();
     }, FRAME_MS / r);
+  }
+  let stepSide = 0;
+  function footstep() {
+    stepSide ^= 1;
+    stepSound(stepSide);
+    if (calm() || !ui) return;
+    const b = body();
+    const d = document.createElement('span');
+    d.className = 'gcx-pet-dust';
+    d.style.left = m.x + b.w * (stepSide ? 0.35 : 0.65) + 'px';
+    d.style.top = m.y + 'px';
+    d.style.setProperty('--dx', (m.facing === 'right' ? -10 : 10) + 'px');
+    ui.layer.append(d);
+    setTimeout(() => d.remove(), 600);
   }
 
   // ---------------------------------------------------------------- physics
@@ -443,7 +542,10 @@
       // Falling past the top of a card: he lands on it.
       if (m.vy > 0 && !m.perch) {
         const p = findPerch(prev, m.y);
-        if (p) m.perch = p;
+        if (p) {
+          m.perch = p;
+          if (Math.random() < 0.5) setTimeout(() => fx('gcx-pet-note', '♪'), 200);
+        }
       }
       const floor = groundY();
       const b = body();
@@ -454,11 +556,18 @@
         else m.vy = 0;
         squash(impact / 1800, 'bottom');
         thud(impact / MAX_THROW);
-        if (impact > 1900) gesture('failed', 1100);
+        if (impact > 1900) {
+          // Seeing stars.
+          gesture('failed', 1100);
+          fx('gcx-pet-star', '✦', -16);
+          setTimeout(() => fx('gcx-pet-star', '✦', 16), 120);
+          setTimeout(() => fx('gcx-pet-sweat', '💦', 10), 300);
+        } else if (impact > 1100 && m.vy < 0) fx('gcx-pet-q', '!');
       } else if (m.y - b.h < 0) {
         m.y = b.h;
         squash(Math.abs(m.vy) / 1800, 'top');
         thud(Math.abs(m.vy) / MAX_THROW);
+        if (Math.abs(m.vy) > 800) fx('gcx-pet-star', '✦');
         m.vy = Math.abs(m.vy) * BOUNCE;
       }
     }
@@ -475,6 +584,7 @@
           m.x = clamp(m.x, mn, mx);
           squash(Math.abs(m.vx) / 1600, side);
           thud(Math.abs(m.vx) / MAX_THROW);
+          if (Math.abs(m.vx) > 900) fx('gcx-pet-q', '!', side === 'left' ? 10 : -10);
           m.vx = (side === 'left' ? 1 : -1) * Math.abs(m.vx) * BOUNCE;
         }
       }
@@ -491,7 +601,12 @@
         m.x = m.target;
         m.target = null;
         // Walked into the edge of the screen on purpose: a small bonk.
-        if (m.bonk) squash(0.16, m.x <= 1 ? 'left' : 'right'), thud(0.15);
+        if (m.bonk) {
+          squash(0.16, m.x <= 1 ? 'left' : 'right');
+          thud(0.15);
+          gesture('failed', 600);
+          fx('gcx-pet-q', Math.random() < 0.5 ? '!' : '?');
+        }
         m.bonk = false;
       } else m.x = next;
     }
@@ -527,13 +642,41 @@
     if (!m.sleeping && idleFor > SLEEP_MS && onGround() && !m.held) {
       m.sleeping = true;
       m.target = null;
+      nextSnore = t + 1600;
+      fx('gcx-pet-dots', '…');
     }
     if (m.sleeping) {
-      if (Math.random() < 0.12) fx('gcx-pet-z', 'z');
+      if (t > nextSnore) {
+        nextSnore = t + 3400;
+        snore();
+        fx('gcx-pet-z', 'z', rand(-6, 4));
+        setTimeout(() => m.sleeping && fx('gcx-pet-z gcx-pet-Z', 'Z', rand(-2, 12)), 650);
+      }
       render();
       return;
     }
-    if (m.held || !onGround() || m.vx) return;
+    // At work while the AI writes (Ask, Inbox suggestions) or a page loads; a cheer when the AI is done.
+    const asking = !!document.querySelector('.gcx-ask.busy, #gcx-sg .gcx-sg-wait');
+    const working = asking || !!document.querySelector('.gcx-progress.on:not(.done)');
+    if (working !== m.working) {
+      m.working = working;
+      if (working) m.target = null;
+      else if (m.wasAsking && onGround() && !m.held) {
+        gesture('waving', 1200);
+        fx('gcx-pet-star', '!');
+      }
+      render();
+    }
+    m.wasAsking = asking;
+    if (working && Math.random() < 0.05) fx('gcx-pet-dots', '…', rand(-8, 8));
+    // Dangling from the pointer for a while: puzzled.
+    if (m.held) {
+      m.heldSince = m.heldSince || t;
+      if (t - m.heldSince > 2500 && Math.random() < 0.03) fx('gcx-pet-q', Math.random() < 0.5 ? '?' : '…');
+      return;
+    }
+    m.heldSince = 0;
+    if (!onGround() || m.vx) return;
     if (m.gesture && t > m.gestureUntil) m.gesture = null;
     // The cursor comes close: a wave, facing it.
     const b = body();
@@ -544,9 +687,12 @@
       wavedAt = t;
       m.target = null;
       gesture('waving', 1500);
+      if (Math.random() < 0.4) fx('gcx-pet-note', '♪', rand(-8, 8));
     }
     const drowsy = idleFor > DROWSY_MS;
-    const busy = m.gesture || t < typingUntil || m.hovered || near;
+    if (drowsy && !m.drowsy) fx('gcx-pet-dots', '…');
+    m.drowsy = drowsy;
+    const busy = m.gesture || t < typingUntil || m.hovered || near || m.working;
     // Wander (TAILS: 7-16 s apart, at least 40 px, within 80% of the width).
     const roams = prefs.roam && !calm() && !drowsy;
     if (roams && !busy && m.target === null && t > nextWander) {
@@ -573,9 +719,20 @@
       }
     }
     // Glance around now and then (v2 sheets only have the look rows).
-    if (!busy && m.target === null && t > nextGlance) {
+    if (!busy && m.target === null && t > nextGlance && !drowsy) {
       nextGlance = t + rand(GLANCE_MIN, GLANCE_MAX);
-      if (sheet.ver === 2) gesture(Math.random() < 0.5 ? 'look-left-side' : 'look-right-side', GLANCE_MS);
+      const r = Math.random();
+      if (r < 0.12 && !calm()) {
+        gesture('jumping', 700);
+        hop(300);
+        fx('gcx-pet-note', '♪', rand(-10, 10));
+      } else if (r < 0.3) {
+        gesture('review', 1600);
+        if (Math.random() < 0.5) setTimeout(() => fx('gcx-pet-q', '?'), 500);
+      } else if (sheet.ver === 2) {
+        gesture(Math.random() < 0.5 ? 'look-left-side' : 'look-right-side', GLANCE_MS);
+        if (Math.random() < 0.2) fx('gcx-pet-q', '?');
+      } else gesture('review', GLANCE_MS);
     }
     if (drowsy && !busy) render();
   }
@@ -629,7 +786,9 @@
       }
       caretX = x;
       if (m.target !== null && !m.held) m.target = null;
-      if (Math.random() < 0.06) fx('gcx-pet-q', '?');
+      const roll = Math.random();
+      if (roll < 0.1) fx('gcx-pet-q', '?', rand(-8, 8));
+      else if (roll < 0.13) fx('gcx-pet-dots', '…');
       render();
       clearTimeout(typingEnd);
       typingEnd = setTimeout(render, 1900);
@@ -665,11 +824,17 @@
       hop(260, (scrollSum > 0 ? -1 : 1) * rand(60, 160));
       scrollSum = 0;
       gesture('failed', 700);
+      fx('gcx-pet-q', Math.random() < 0.5 ? '?!' : '!');
     },
     { passive: true, capture: true },
   );
   window.addEventListener('resize', () => {
     if (!ui) return;
+    if (sheet && sheet.scaledFor !== devH()) {
+      lastFrameKey = '';
+      clearTimeout(rescaleTimer);
+      rescaleTimer = setTimeout(rescale, 220);
+    }
     m.perch = null;
     m.x = clamp(m.x, 0, maxX());
     if (m.y > vh()) m.y = vh();
@@ -805,6 +970,7 @@
         m.vy = fresh ? clamp((s[s.length - 1].y - s[0].y) / dt, -MAX_THROW, MAX_THROW) : 0;
         if (Math.abs(m.vx) < REST_SPEED) m.vx = 0;
         if (m.vy === 0 && m.y < vh() - 0.5) m.vy = 1;
+        if (Math.hypot(m.vx, m.vy) > 1200) fx('gcx-pet-q', Math.random() < 0.5 ? '!' : '?!');
       }
       nextWander = Date.now() + rand(WANDER_MIN, WANDER_MAX);
       wake();
@@ -920,7 +1086,8 @@
   }
 
   // ---------------------------------------------------------------- settings
-  const CAT = 'https://openpets.dev/pets/catalog.v3.json';
+  const LIB_ASSET = /^https:\/\/codex-pets\.net\//;
+  const OWN_THUMB = /^data:image\/webp;base64,/;
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const SET_CSS = `
     .gcx-set-pets > :first-child { border-top: 1px solid var(--gcx-border, #e4e4e7); }
@@ -938,7 +1105,9 @@
     .gcx-pets-search { display: block; width: 100%; box-sizing: border-box; height: 34px; margin: 8px 0; padding: 0 12px; border: 1px solid var(--gcx-border, #e4e4e7);
       border-radius: 10px; background: var(--gcx-card, #fff); color: var(--gcx-text, #18181b); font: inherit; font-size: 13px; }
     .gcx-pets-search:focus { outline: 2px solid var(--gcx-link, #4f46e5); outline-offset: -1px; }
-    .gcx-pets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; padding: 2px; overscroll-behavior: contain; }
+    .gcx-pets-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; max-height: 300px; overflow-y: auto; padding: 2px; overscroll-behavior: contain;
+      border-radius: 10px; outline: 2px dashed transparent; outline-offset: -2px; transition: outline-color .15s ease; }
+    .gcx-pets-grid.gcx-drop { outline-color: var(--gcx-link, #4f46e5); }
     .gcx-pets-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px 5px; border: 1px solid transparent; border-radius: 10px;
       background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; min-width: 0; position: relative; }
     .gcx-pets-tile:hover { background: var(--gcx-bg2, #f4f4f5); }
@@ -949,6 +1118,13 @@
     .gcx-pets-tile.gcx-busy::after { content: ''; position: absolute; top: 22px; left: 50%; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%;
       border: 2px solid var(--gcx-link, #4f46e5); border-right-color: transparent; animation: gcx-pets-spin .7s linear infinite; }
     @keyframes gcx-pets-spin { to { transform: rotate(360deg); } }
+    .gcx-pets-own { position: relative; display: flex; min-width: 0; }
+    .gcx-pets-own .gcx-pets-tile { flex: 1; }
+    .gcx-pets-own .gcx-pets-tile small::before { content: '★ '; color: var(--gcx-link, #4f46e5); }
+    .gcx-pets-x { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: var(--gcx-bg2, #f4f4f5);
+      color: var(--gcx-muted, #71717a); font: 600 14px/20px system-ui, sans-serif; cursor: pointer; opacity: 0; transition: opacity .15s ease; }
+    .gcx-pets-own:hover .gcx-pets-x, .gcx-pets-x:focus-visible { opacity: 1; }
+    .gcx-pets-x:hover { color: var(--gcx-text, #18181b); }
     .gcx-pets-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--gcx-muted, #71717a); }
     .gcx-pets-foot span { flex: 1; min-width: 0; }
     .gcx-pets-foot a { color: inherit; }
@@ -963,26 +1139,22 @@
     host.append(st);
   }
 
-  // The catalogue: page files of 100 entries each (with thumbnails), plus a lighter search index
-  // that says which page each pet is on.
-  let index = null;
-  const pages = new Map();
-  const getIndex = async () => index || (index = (await ask({ op: 'json', url: CAT })).data);
-  async function getPage(i) {
-    const idx = await getIndex();
-    const url = idx.pages && idx.pages[i];
-    if (!url) return [];
-    if (!pages.has(url)) pages.set(url, ask({ op: 'json', url }).then((r) => (r.data && r.data.pets) || []).catch((e) => (pages.delete(url), Promise.reject(e))));
-    return pages.get(url);
+  // The library's pages, each asked for once per page view (background.js keeps them for hours).
+  const lists = new Map();
+  function libPage(page, q) {
+    const k = page + '|' + q;
+    if (!lists.has(k)) lists.set(k, ask({ op: 'list', page, q }).catch((e) => (lists.delete(k), Promise.reject(e))));
+    return lists.get(k);
   }
-  let searchIdx = null;
-  async function getSearch() {
-    if (searchIdx) return searchIdx;
-    const idx = await getIndex();
-    const head = (await ask({ op: 'json', url: idx.search })).data;
-    const lists = await Promise.all((head.pages || []).map((u) => ask({ op: 'json', url: u }).then((r) => r.data.pets || [])));
-    return (searchIdx = lists.flat());
-  }
+  // His own pets (imported, or from the extension's pets.local folder).
+  const loadMine = () => ask({ op: 'mine' }).then((r) => (r.pets || []).map((e) => ({ ...e, mine: true })));
+  const readFile = (f) =>
+    new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res({ name: f.name, dataUrl: r.result });
+      r.onerror = () => rej(r.error || new Error('unreadable file'));
+      r.readAsDataURL(f);
+    });
 
   function fill(box) {
     const host = box && box.querySelector && box.querySelector('.gcx-set-pets');
@@ -991,13 +1163,14 @@
     injectCss(host.getRootNode());
     const p = prefs;
     host.innerHTML = `
-      <label class="gcx-set-row"><span><b>Pet</b><small>A little OpenPets companion along the bottom of the page. Drag it, throw it, click or hold to pat it</small></span><input type="checkbox" class="gcx-switch" data-pk="on" ${p.on ? 'checked' : ''}></label>
+      <label class="gcx-set-row"><span><b>Pet</b><small>A little Codex pet along the bottom of the page. Drag it, throw it, click or hold to pat it</small></span><input type="checkbox" class="gcx-switch" data-pk="on" ${p.on ? 'checked' : ''}></label>
       <div class="gcx-set-sub gcx-pets-main">
         <div class="gcx-pets-cur"></div>
         <div class="gcx-pets-pick" hidden>
-          <input type="search" class="gcx-pets-search" placeholder="Search 1,300+ pets" aria-label="Search pets">
+          <input type="search" class="gcx-pets-search" placeholder="Search 3,600+ pets" aria-label="Search pets">
           <div class="gcx-pets-grid" role="list"></div>
-          <div class="gcx-pets-foot"><span class="gcx-pets-status"></span><button type="button" class="gcx-pets-btn gcx-pets-more" hidden>More</button></div>
+          <div class="gcx-pets-foot"><span class="gcx-pets-status"></span><button type="button" class="gcx-pets-btn gcx-pets-import" title="A pet .zip from codex-pets.net or Codex, a pet folder's pet.json and spritesheet, or just the spritesheet. You can also drop them on the pets">Import</button><button type="button" class="gcx-pets-btn gcx-pets-more" hidden>More</button></div>
+          <input type="file" class="gcx-pets-file" accept=".zip,.webp,.png,.json,application/zip,image/webp,image/png,application/json" multiple hidden>
         </div>
         <div class="gcx-set-lbl">Size <span class="gcx-set-val">${Math.round(p.size * 100)}%</span></div>
         <input type="range" class="gcx-set-range" data-prange="size" min="40" max="160" step="5" value="${Math.round(p.size * 100)}" aria-label="Pet size">
@@ -1011,8 +1184,9 @@
     const status = q('.gcx-pets-status');
     const more = q('.gcx-pets-more');
     const search = q('.gcx-pets-search');
+    const file = q('.gcx-pets-file');
     let shown = []; // entries in the grid, by id
-    let nextPage = 0;
+    let nextPage = 1;
     let gen = 0;
 
     const sync = () => {
@@ -1021,52 +1195,47 @@
       host.querySelectorAll('.gcx-pets-dep').forEach((n) => n.classList.toggle('gcx-pets-dis', !on || !prefs.id));
       cur.innerHTML = prefs.id
         ? `<img alt="" src="${esc(prefs.thumb)}"><div><b>${esc(prefs.name)}</b><small>${esc(prefs.desc)}</small></div><button type="button" class="gcx-pets-btn gcx-pets-change">${pick.hidden ? 'Change' : 'Done'}</button>`
-        : `<span class="gcx-pets-none"></span><div><b>No pet yet</b><small>Pick one below. They come from openpets.dev; the art belongs to each pet's maker.</small></div>`;
+        : `<span class="gcx-pets-none"></span><div><b>No pet yet</b><small>Pick one below from codex-pets.net (the art belongs to each pet's maker), or import your own.</small></div>`;
       grid.querySelectorAll('.gcx-pets-tile').forEach((t) => t.setAttribute('aria-pressed', String(t.dataset.petId === prefs.id)));
     };
-    const tile = (e) =>
-      `<button type="button" class="gcx-pets-tile" role="listitem" data-pet-id="${esc(e.id)}" aria-pressed="${e.id === prefs.id}" title="${esc(e.displayName)}${e.description ? ' — ' + esc(e.description) : ''}"><img alt="" loading="lazy" src="${esc(e.thumbnail)}"><small>${esc(e.displayName)}</small></button>`;
+    const tile = (e) => {
+      const b = `<button type="button" class="gcx-pets-tile" role="listitem" data-pet-id="${esc(e.id)}" aria-pressed="${e.id === prefs.id}" title="${esc(e.displayName)}${e.description ? ' — ' + esc(e.description) : ''}"><img alt="" loading="lazy" src="${esc(e.thumbnail)}"><small>${esc(e.displayName)}</small></button>`;
+      return e.mine ? `<div class="gcx-pets-own">${b}<button type="button" class="gcx-pets-x" data-forget="${esc(e.id)}" title="Remove" aria-label="Remove ${esc(e.displayName)}">×</button></div>` : b;
+    };
     const show = (list, append) => {
       if (!append) (shown = []), (grid.innerHTML = '');
-      const ok = list.filter((e) => e && e.id && e.spritesheet && /^https:\/\/openpets\.dev\//.test(e.spritesheet) && /^https:\/\/openpets\.dev\//.test(e.thumbnail || ''));
+      const ok = list.filter((e) =>
+        e && e.id && !shown.some((s) => s.id === e.id) && (e.mine ? /^mine-/.test(e.id) && OWN_THUMB.test(e.thumbnail || '') : LIB_ASSET.test(e.spritesheet || '') && LIB_ASSET.test(e.thumbnail || '')),
+      );
       shown.push(...ok);
       grid.insertAdjacentHTML('beforeend', ok.map(tile).join(''));
     };
+    // His own pets first (those matching the search), then the library's page.
     async function browse(append) {
       const g = ++gen;
-      status.textContent = 'Loading pets…';
-      try {
-        const idx = await getIndex();
-        const list = await getPage(nextPage);
+      const text = search.value.trim();
+      if (!append) {
+        nextPage = 1;
+        more.hidden = true;
+        const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+        const own = await loadMine().catch(() => []);
         if (g !== gen) return;
-        nextPage++;
-        show(list, append);
-        more.hidden = nextPage >= (idx.pages || []).length;
-        status.innerHTML = `${(idx.total || shown.length).toLocaleString()} pets from <a href="https://openpets.dev" target="_blank" rel="noopener">openpets.dev</a>`;
+        show(own.filter((e) => words.every((w) => `${e.displayName} ${e.description}`.toLowerCase().includes(w))), false);
+      }
+      status.textContent = text ? 'Searching…' : 'Loading pets…';
+      try {
+        const d = await libPage(nextPage, text);
+        if (g !== gen) return;
+        nextPage = d.page + 1;
+        show(d.pets, true);
+        more.hidden = d.page >= d.totalPages;
+        status.innerHTML = text
+          ? d.total
+            ? `${d.total.toLocaleString()} found`
+            : 'No pets match that.'
+          : `${d.total.toLocaleString()} pets from <a href="https://codex-pets.net" target="_blank" rel="noopener">codex-pets.net</a>`;
       } catch (e) {
         if (g === gen) status.textContent = `Couldn't load pets (${e.message}).`;
-      }
-    }
-    async function find(text) {
-      const g = ++gen;
-      const words = text.toLowerCase().split(/\s+/).filter(Boolean);
-      if (!words.length) {
-        nextPage = 0;
-        return browse(false);
-      }
-      status.textContent = 'Searching…';
-      more.hidden = true;
-      try {
-        const all = await getSearch();
-        const hits = all.filter((e) => words.every((w) => (e.searchText || e.displayName || '').toLowerCase().includes(w))).slice(0, 60);
-        const want = [...new Set(hits.map((e) => e.catalogPage))];
-        const byId = new Map();
-        for (const list of await Promise.all(want.map((i) => getPage(i).catch(() => [])))) for (const e of list) byId.set(e.id, e);
-        if (g !== gen) return;
-        show(hits.map((h) => byId.get(h.id)).filter(Boolean), false);
-        status.textContent = hits.length ? `${hits.length === 60 ? '60+' : hits.length} found` : 'No pets match that.';
-      } catch (e) {
-        if (g === gen) status.textContent = `Search failed (${e.message}).`;
       }
     }
     const open = (yes) => {
@@ -1074,13 +1243,59 @@
       if (yes && !grid.children.length) browse(false);
       sync();
     };
+    async function choose(entry, t) {
+      if (t) t.classList.add('gcx-busy');
+      status.textContent = `Fetching ${entry.displayName}…`;
+      try {
+        if (!entry.mine) await ask({ op: 'sheet', id: entry.id, url: entry.spritesheet });
+        savePrefs({
+          on: true,
+          id: entry.id,
+          name: entry.displayName,
+          sheet: entry.mine ? 'mine' : entry.spritesheet,
+          thumb: entry.thumbnail,
+          ver: entry.spriteVersionNumber === 2 ? 2 : 1,
+          desc: entry.description || '',
+        });
+        q('[data-pk="on"]').checked = true;
+        status.textContent = `${entry.displayName} is on the page.`;
+      } catch (err) {
+        status.textContent = `Couldn't fetch ${entry.displayName} (${err.message}).`;
+      }
+      if (t) t.classList.remove('gcx-busy');
+      sync();
+    }
+    async function importFiles(list) {
+      const picked = [...list].slice(0, 4);
+      if (!picked.length) return;
+      status.textContent = 'Importing…';
+      try {
+        if (picked.some((f) => f.size > 12e6)) throw new Error('that file is too big for a pet');
+        const { pet } = await ask({ op: 'import', files: await Promise.all(picked.map(readFile)) });
+        search.value = '';
+        await browse(false);
+        await choose({ ...pet, mine: true });
+        status.textContent = `Imported ${pet.displayName}.`;
+      } catch (e) {
+        status.textContent = `Couldn't import that (${e.message}).`;
+      }
+    }
 
     host.addEventListener('change', (e) => {
+      if (e.target === file) {
+        e.stopPropagation();
+        importFiles(file.files).finally(() => (file.value = ''));
+        return;
+      }
       const k = e.target.dataset && e.target.dataset.pk;
       if (!k) return;
       e.stopPropagation();
       savePrefs({ [k]: e.target.checked });
       if (k === 'on' && e.target.checked && !prefs.id) open(true);
+      if (k === 'sound' && e.target.checked) {
+        const ctx = audio();
+        if (ctx) (ctx.state === 'running' ? Promise.resolve() : ctx.resume()).then(() => thud(0.6), () => {});
+      }
       sync();
     });
     host.addEventListener('input', (e) => {
@@ -1092,37 +1307,48 @@
       } else if (e.target === search) {
         e.stopPropagation();
         clearTimeout(search._t);
-        search._t = setTimeout(() => find(search.value), 250);
+        search._t = setTimeout(() => browse(false), 300);
       }
     });
     search.addEventListener('keydown', (e) => e.stopPropagation());
+    // Pet files dropped on the grid import like the button does.
+    const hasFiles = (e) => [...((e.dataTransfer && e.dataTransfer.types) || [])].includes('Files');
+    host.addEventListener('dragover', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      grid.classList.add('gcx-drop');
+    });
+    host.addEventListener('dragleave', (e) => !host.contains(e.relatedTarget) && grid.classList.remove('gcx-drop'));
+    host.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      grid.classList.remove('gcx-drop');
+      if (pick.hidden) open(true);
+      importFiles(e.dataTransfer.files);
+    });
     host.addEventListener('click', async (e) => {
       if (e.target.closest('.gcx-pets-change')) return open(pick.hidden);
       if (e.target.closest('.gcx-pets-more')) return browse(true);
+      if (e.target.closest('.gcx-pets-import')) return file.click();
+      const x = e.target.closest('.gcx-pets-x');
+      if (x) {
+        const id = x.dataset.forget;
+        const entry = shown.find((s) => s.id === id);
+        try {
+          await ask({ op: 'forget', id });
+          x.parentElement.remove();
+          shown = shown.filter((s) => s.id !== id);
+          if (prefs.id === id) savePrefs({ id: null, name: '', sheet: '', thumb: '', desc: '' });
+          status.textContent = `Removed ${entry ? entry.displayName : 'that pet'}.`;
+        } catch (err) {
+          status.textContent = `Couldn't remove it (${err.message}).`;
+        }
+        return sync();
+      }
       const t = e.target.closest('.gcx-pets-tile');
       if (!t || t.classList.contains('gcx-busy')) return;
-      const entry = shown.find((x) => x.id === t.dataset.petId);
-      if (!entry) return;
-      t.classList.add('gcx-busy');
-      status.textContent = `Fetching ${entry.displayName}…`;
-      try {
-        await ask({ op: 'sheet', id: entry.id, url: entry.spritesheet });
-        savePrefs({
-          on: true,
-          id: entry.id,
-          name: entry.displayName,
-          sheet: entry.spritesheet,
-          thumb: entry.thumbnail,
-          ver: entry.spriteVersionNumber === 2 ? 2 : 1,
-          desc: entry.description || '',
-        });
-        q('[data-pk="on"]').checked = true;
-        status.textContent = `${entry.displayName} is on the page.`;
-      } catch (err) {
-        status.textContent = `Couldn't fetch ${entry.displayName} (${err.message}).`;
-      }
-      t.classList.remove('gcx-busy');
-      sync();
+      const entry = shown.find((s) => s.id === t.dataset.petId);
+      if (entry) choose(entry, t);
     });
     sync();
     if (prefs.on && !prefs.id) open(true);
