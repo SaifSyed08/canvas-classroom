@@ -706,7 +706,7 @@
     }
     m.wasAsking = asking;
     if (working && Math.random() < 0.05) fx('gcx-pet-dots', '…', rand(-8, 8));
-    if (!m.sleeping && idleFor > SLEEP_MS && onGround() && !m.held && !m.working && !m.hovered) {
+    if (!m.sleeping && Date.now() - lastActive > SLEEP_MS && onGround() && !m.held && !m.working && !m.hovered) {
       m.snores = 0;
       m.sleeping = true;
       m.target = null;
