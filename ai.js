@@ -79,7 +79,7 @@
     {
       name: 'list_courses',
       label: 'Checking your classes',
-      description: "Saif's current Canvas courses with ids, instructors and current grade.",
+      description: "The student's current Canvas courses with ids, instructors and current grade.",
       parameters: obj({}),
       run: courses,
     },
@@ -153,7 +153,7 @@
       name: 'get_assignment',
       label: 'Reading the assignment',
       description:
-        "Full detail for one assignment: instructions, rubric, lock dates, Saif's submission and grade, and grader comments. Lists ids of Canvas files the instructions link to (read_file opens them).",
+        "Full detail for one assignment: instructions, rubric, lock dates, the student's submission and grade, and grader comments. Lists ids of Canvas files the instructions link to (read_file opens them).",
       parameters: obj({ course_id: ID, assignment_id: ID }, ['course_id', 'assignment_id']),
       run: async ({ course_id, assignment_id }) => {
         const [a, mine] = await Promise.all([
@@ -233,7 +233,7 @@
     {
       name: 'get_feedback',
       label: 'Reading grader feedback',
-      description: "Every grader comment and rubric score on Saif's work in one course, newest first.",
+      description: "Every grader comment and rubric score on the student's work in one course, newest first.",
       parameters: obj({ course_id: ID }, ['course_id']),
       run: async ({ course_id }) => {
         const [subs, assigns] = await Promise.all([
@@ -366,7 +366,7 @@
     {
       name: 'list_quizzes',
       label: 'Looking through quizzes',
-      description: "Every quiz in a course (classic and New Quizzes): due and lock dates, time limit, attempts, points, and whether Saif finished it and his score.",
+      description: "Every quiz in a course (classic and New Quizzes): due and lock dates, time limit, attempts, points, and whether the student finished it and their score.",
       parameters: obj({ course_id: ID }, ['course_id']),
       run: async ({ course_id }) => {
         const [classic, assigns] = await Promise.all([
@@ -455,7 +455,7 @@
           walk(view.view, 0);
           out.replies = lines.join('\n') || '(no replies yet)';
         } catch (e) {
-          out.replies = e.status === 403 ? 'Hidden until Saif posts his own reply.' : 'Replies not available.';
+          out.replies = e.status === 403 ? 'Hidden until the student posts their own reply.' : 'Replies not available.';
         }
         return out;
       },
@@ -528,7 +528,7 @@
       name: 'open_page',
       label: 'Opening the page',
       description:
-        "Take Saif to a Canvas page in this tab when he asks to go to / open / take him to something (a course's grades, an assignment, Classwork, a file, the To-do). Use a url from the other tools or a known Canvas path like /courses/123/grades, /courses/123/modules, /?gcx=todo. It opens once your reply finishes.",
+        "Take the student to a Canvas page in this tab when they ask to go to / open / take them to something (a course's grades, an assignment, Classwork, a file, the To-do). Use a url from the other tools or a known Canvas path like /courses/123/grades, /courses/123/modules, /?gcx=todo. It opens once your reply finishes.",
       parameters: obj({ url: { type: 'string' }, label: { type: 'string', description: 'Short name of the page, e.g. "Genetics grades"' } }, ['url']),
       run: async ({ url, label }) => {
         let u;
@@ -541,13 +541,13 @@
         navRequest = { url: u.href, label: String(label || 'that page').slice(0, 60) };
         return navAllowed
           ? { ok: true, note: 'It opens after your reply; keep the reply to one short line.' }
-          : { ok: true, note: "A link to this page will be shown under your reply. Don't say you're opening it; answer his question normally." };
+          : { ok: true, note: "A link to this page will be shown under your reply. Don't say you're opening it; answer their question normally." };
       },
     },
     {
       name: 'list_inbox',
       label: 'Checking your inbox',
-      description: "Saif's Canvas Inbox: recent conversations with subject, people, course, last message, unread.",
+      description: "The student's Canvas Inbox: recent conversations with subject, people, course, last message, unread.",
       parameters: obj({ scope: { type: 'string', enum: ['inbox', 'unread', 'sent', 'starred', 'archived'] } }),
       run: async ({ scope = 'inbox' }) =>
         (await api(`/conversations?per_page=30&scope=${encodeURIComponent(scope)}`)).map((c) => ({
@@ -643,17 +643,17 @@
     const now = new Date();
     const when = now.toLocaleString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     return [
-      `You are the assistant built into ${me.name || 'the student'}'s Canvas (his school's LMS, ${location.origin}). Now: ${when} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`,
-      `His current courses (id · name · code · instructors · grade):`,
+      `You are the assistant built into ${me.name || 'the student'}'s Canvas (their school's LMS, ${location.origin}). Now: ${when} (${Intl.DateTimeFormat().resolvedOptions().timeZone}).`,
+      `Their current courses (id · name · code · instructors · grade):`,
       ...list.map((c) => `- ${c.id} · ${c.name} · ${c.code || ''} · ${c.teachers.join(', ') || '?'} · ${c.grade || 'no grade shown'}`),
       '',
       'How to answer:',
       '- Look things up with the tools; never guess due dates, grades, scores or what a file or page says. Several tool calls are fine.',
       "- The reply appears in a small overlay about 420px wide. Lead with the answer. Keep it short: a sentence or a few bullets, no preamble, no closing offers. No tables wider than 3 columns.",
       '- Link Canvas items with markdown links using the url fields from the tools (relative /courses/... links are fine), e.g. [Exam 2](/courses/1/assignments/2).',
-      '- Give dates in his local time like "Wed, Oct 28 at 1:00 PM", and say "today"/"tomorrow" when that applies.',
-      '- You can only read. You cannot submit, post, message, or change anything; say so if asked, and link the page where he can do it.',
-      '- If he asks to go to, open or be taken to a page, find its URL (with the tools if needed) and call open_page, then reply in one short line like "Opening your Genetics grades." Only do this when he asks.',
+      '- Give dates in their local time like "Wed, Oct 28 at 1:00 PM", and say "today"/"tomorrow" when that applies.',
+      '- You can only read. You cannot submit, post, message, or change anything; say so if asked, and link the page where they can do it.',
+      '- If they ask to go to, open or be taken to a page, find its URL (with the tools if needed) and call open_page, then reply in one short line like "Opening your Genetics grades." Only do this when they ask.',
       '- If a tool fails or something is hidden by the instructor, say what you could not get.',
     ].join('\n');
   }

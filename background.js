@@ -109,7 +109,8 @@ async function readFile(att) {
   // Skip types it can't read before downloading anything (a lecture video, say).
   const readable = (e, m) => e === 'pdf' || e === 'docx' || e === 'pptx' || IMAGE.test(e) || TEXTY.test(e) || /pdf|^image\/|^text\//.test(m);
   if (!readable(ext, att.mime || '')) return { text: `${att.name} is a .${ext || '?'} file, which can't be read here. Link it instead.` };
-  const r = await fetch(att.url, { credentials: 'include' });
+  // Signed S3 links need no cookies (Canvas's own links still redirect there with them).
+  const r = await fetch(att.url, { credentials: /(^|\.)amazonaws\.com$/.test(host) ? 'omit' : 'include' });
   if (!r.ok) return { text: `Couldn't download ${att.name} (HTTP ${r.status}).` };
   const len = Number(r.headers.get('content-length')) || 0;
   if (len > MAX_FILE) {
@@ -342,14 +343,14 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 // The pet library is codex-pets.net (Codex's pet format; its API sends no CORS headers), so
 // pets.js asks here. Only two kinds of URL are fetched: a page of the library's listing, built
 // here from a page number and search text, and a pet's spritesheet on the library's own asset
-// path (openpets.dev's too, for a pet picked before the switch). Sheets are stored in
+// path. Sheets are stored in
 // chrome.storage.local as data URLs (the extension has unlimitedStorage) so a page never
 // downloads the same pet twice; the newest few are kept, plus every pet he imported himself.
 const PET_API = 'https://codex-pets.net/api/pets';
 const PET_PAGE_SIZE = 48;
 const PET_JSON = /^https:\/\/codex-pets\.net\/api\/pets\?sort=views&pageSize=48&page=\d+(?:&q=[^&#]*)?$/;
 const PET_ASSET = /^https:\/\/codex-pets\.net\/assets\/pets\/v\/\d+\/[A-Za-z0-9._-]+\/(?:spritesheet|poster)\.(?:webp|png)$/;
-const PET_SHEET = /^https:\/\/(?:openpets\.dev\/pets\/[A-Za-z0-9._-]+|codex-pets\.net\/assets\/pets\/v\/\d+\/[A-Za-z0-9._-]+)\/spritesheet\.(?:webp|png)$/;
+const PET_SHEET = /^https:\/\/codex-pets\.net\/assets\/pets\/v\/\d+\/[A-Za-z0-9._-]+\/spritesheet\.(?:webp|png)$/;
 const PET_ID = /^[A-Za-z0-9._-]{1,80}$/;
 const PET_HOME = `${PET_API}?sort=views&pageSize=${PET_PAGE_SIZE}&page=1`;
 // Library pages saved before only the landing page was kept, and the old openpets.dev catalogue.
