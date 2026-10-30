@@ -62,7 +62,9 @@ async function unzip(buf) {
       const data = buf.subarray(start, start + csize);
       if (method !== 8) return raw ? data : td.decode(data);
       const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      return raw ? new Uint8Array(await new Response(stream).arrayBuffer()) : new Response(stream).text();
+      // Counted as it comes out: the size the zip claims is only a claim.
+      const bytes = await petCapped(new Response(stream), max);
+      return raw ? bytes : td.decode(bytes);
     };
     p += 46 + nameLen + extraLen + commentLen;
   }
@@ -298,7 +300,7 @@ async function suggest(m, signal) {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: MODEL_FAST, reasoning: { effort: 'none' }, instructions: SUGGEST_INSTRUCTIONS, input, max_output_tokens: 300, store: false }),
-    signal,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) return { code: r.status === 401 ? 'badkey' : 'http', error: (j.error && j.error.message) || `HTTP ${r.status}` };
@@ -327,7 +329,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   const ctrl = new AbortController();
   suggestJobs.set(sender.tab.id, ctrl);
   suggest(msg, ctrl.signal)
-    .then(reply, (e) => reply({ code: e.name === 'AbortError' ? 'aborted' : 'net', error: e.message }))
+    .then(reply, (e) => reply({ code: e.name === 'AbortError' ? 'aborted' : e.name === 'TimeoutError' ? 'timeout' : 'net', error: e.message }))
     .finally(() => suggestJobs.get(sender.tab.id) === ctrl && suggestJobs.delete(sender.tab.id));
   return true;
 });
@@ -347,8 +349,9 @@ const PET_SHEET = /^https:\/\/(?:openpets\.dev\/pets\/[A-Za-z0-9._-]+|codex-pets
 const PET_ID = /^[A-Za-z0-9._-]{1,80}$/;
 const PET_HOME = `${PET_API}?sort=views&pageSize=${PET_PAGE_SIZE}&page=1`;
 // Library pages saved before only the landing page was kept, and the old openpets.dev catalogue.
-chrome.storage.local.get(null).then((all) => {
-  const old = Object.keys(all).filter((k) => k.startsWith('gcxPetJson:') && k !== 'gcxPetJson:' + PET_HOME);
+chrome.runtime.onInstalled.addListener(async () => {
+  const keys = chrome.storage.local.getKeys ? await chrome.storage.local.getKeys() : Object.keys(await chrome.storage.local.get(null));
+  const old = keys.filter((k) => k.startsWith('gcxPetJson:') && k !== 'gcxPetJson:' + PET_HOME);
   if (old.length) chrome.storage.local.remove(old);
 });
 const PET_JSON_TTL = 6 * 36e5;
@@ -409,6 +412,8 @@ async function petSheet(id, url) {
   const type = (r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   if (!/^image\/(webp|png)$/.test(type)) throw new Error('that pet is not an image');
   const bytes = await petCapped(r, 12e6);
+  const dim = imageSize(bytes);
+  if (!dim || dim[0] > 4096 || dim[1] > 6144) throw new Error('that pet is too big');
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   await chrome.storage.local.set({ [key]: { url, dataUrl: `data:${type};base64,${btoa(bin)}`, used: Date.now() } });
@@ -421,6 +426,117 @@ async function petSheet(id, url) {
   if (sheets.length >= PET_SHEETS_KEPT) await chrome.storage.local.remove(sheets.slice(PET_SHEETS_KEPT - 1));
   return key;
 }
+// ----- a sheet shrunk to the size the pet is shown at, done here so the page never stutters.
+// The browser's own shrink (mipmaps) blurs; this one averages the exact area each screen pixel
+// covers (alpha-weighted, so edges don't pick up dark fringes), then sharpens lightly.
+function shrinkSharp(src, sw, sh, dw, dh, amount) {
+  const weights = (sn, dn) => {
+    const r = sn / dn;
+    const out = [];
+    for (let d = 0; d < dn; d++) {
+      const a = d * r;
+      const b = a + r;
+      const list = [];
+      for (let i = Math.floor(a); i < Math.min(sn, Math.ceil(b)); i++) {
+        const w = Math.min(i + 1, b) - Math.max(i, a);
+        if (w > 1e-6) list.push(i, w / r);
+      }
+      out.push(list);
+    }
+    return out;
+  };
+  const wx = weights(sw, dw);
+  const wy = weights(sh, dh);
+  // pass 1: rows, premultiplying
+  const tmp = new Float32Array(dw * sh * 4);
+  for (let y = 0; y < sh; y++) {
+    const row = y * sw * 4;
+    const trow = y * dw * 4;
+    for (let x = 0; x < dw; x++) {
+      const list = wx[x];
+      let r = 0, g = 0, b = 0, al = 0;
+      for (let k = 0; k < list.length; k += 2) {
+        const p = row + list[k] * 4;
+        const w = list[k + 1];
+        const aw = src[p + 3] * w;
+        r += src[p] * aw;
+        g += src[p + 1] * aw;
+        b += src[p + 2] * aw;
+        al += aw;
+      }
+      const o = trow + x * 4;
+      tmp[o] = r / 255;
+      tmp[o + 1] = g / 255;
+      tmp[o + 2] = b / 255;
+      tmp[o + 3] = al;
+    }
+  }
+  // pass 2: columns
+  const pm = new Float32Array(dw * dh * 4);
+  for (let y = 0; y < dh; y++) {
+    const list = wy[y];
+    const o0 = y * dw * 4;
+    for (let k = 0; k < list.length; k += 2) {
+      const t0 = list[k] * dw * 4;
+      const w = list[k + 1];
+      for (let i = 0; i < dw * 4; i++) pm[o0 + i] += tmp[t0 + i] * w;
+    }
+  }
+  // unsharp mask (3x3 binomial blur), on premultiplied values; then back to straight alpha
+  const out = new Uint8ClampedArray(dw * dh * 4);
+  const at = (x, y, c) => pm[((y < 0 ? 0 : y >= dh ? dh - 1 : y) * dw + (x < 0 ? 0 : x >= dw ? dw - 1 : x)) * 4 + c];
+  for (let y = 0; y < dh; y++)
+    for (let x = 0; x < dw; x++) {
+      const o = (y * dw + x) * 4;
+      const v = [0, 0, 0, 0];
+      for (let c = 0; c < 4; c++) {
+        const blur =
+          (at(x - 1, y - 1, c) + 2 * at(x, y - 1, c) + at(x + 1, y - 1, c) + 2 * at(x - 1, y, c) + 4 * pm[o + c] + 2 * at(x + 1, y, c) + at(x - 1, y + 1, c) + 2 * at(x, y + 1, c) + at(x + 1, y + 1, c)) / 16;
+        v[c] = pm[o + c] + amount * (pm[o + c] - blur);
+      }
+      const a = Math.min(255, Math.max(0, v[3]));
+      out[o + 3] = a;
+      if (a > 0) {
+        out[o] = (v[0] * 255) / a;
+        out[o + 1] = (v[1] * 255) / a;
+        out[o + 2] = (v[2] * 255) / a;
+      }
+    }
+  return out;
+}
+const scaledMem = new Map();
+async function petScaled(id, w, h) {
+  if (!PET_ID.test(id)) throw new Error('bad id');
+  w = Math.trunc(w);
+  h = Math.trunc(h);
+  if (!(w > 0 && h > 0 && w <= 4096 && h <= 8192)) throw new Error('bad size');
+  const key = 'gcxPetSheet:' + id;
+  const rec = (await chrome.storage.local.get(key))[key];
+  if (!rec || !rec.dataUrl) throw new Error('sheet missing');
+  const memKey = `${id}|${w}x${h}|${rec.dataUrl.length}`;
+  if (scaledMem.has(memKey)) return scaledMem.get(memKey);
+  const bytes = fromDataUrl(rec.dataUrl);
+  const bmp = await createImageBitmap(new Blob([bytes], { type: imageType(bytes) || 'image/png' }));
+  const sw = bmp.width;
+  const sh = bmp.height;
+  // Only for shrinking; growing is left to the page.
+  if (w > sw || h > sh) {
+    bmp.close();
+    return '';
+  }
+  const c = new OffscreenCanvas(sw, sh);
+  const x = c.getContext('2d');
+  x.drawImage(bmp, 0, 0);
+  bmp.close();
+  const px = shrinkSharp(x.getImageData(0, 0, sw, sh).data, sw, sh, w, h, 0.6);
+  const d = new OffscreenCanvas(w, h);
+  d.getContext('2d').putImageData(new ImageData(px, w, h), 0, 0);
+  const url = `data:image/png;base64,${b64(new Uint8Array(await (await d.convertToBlob({ type: 'image/png' })).arrayBuffer()))}`;
+  scaledMem.set(memKey, url);
+  if (scaledMem.size > 3) scaledMem.delete(scaledMem.keys().next().value);
+  return url;
+}
+
 // One page of the library, most viewed first, or what matches a search.
 async function petList(page, q) {
   page = Math.max(1, Math.min(1000, Math.trunc(page) || 1));
@@ -535,6 +651,7 @@ async function petAdopt(files, source, fallbackId) {
     spriteVersionNumber: ver,
     thumbnail: `data:image/webp;base64,${b64(thumb)}`,
     source,
+    dir: source === 'local' ? fallbackId : undefined,
   };
   const list = have.filter((e) => e.id !== id);
   await chrome.storage.local.set({
@@ -554,16 +671,19 @@ async function petsLocal() {
   } catch {
     return;
   }
-  const seen = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
-  if (seen === index) return;
+  // { index, done: folders taken in, gone: folders he removed }; a new index starts over.
+  let seen = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
+  if (!seen || typeof seen !== 'object' || seen.index !== index) seen = { index, done: typeof seen === 'string' && seen === index ? null : [], gone: [] };
   let dirs = [];
   try {
     dirs = JSON.parse(index);
   } catch {}
-  let failed = false;
+  dirs = (Array.isArray(dirs) ? dirs : []).map(String).filter((d) => PET_ID.test(d));
+  if (seen.done === null) seen.done = dirs; // the old format: everything already taken in
+  const todo = dirs.filter((d) => !seen.done.includes(d) && !seen.gone.includes(d) && Date.now() - (localFailedAt.get(d) || 0) > 10 * 6e4);
+  if (!todo.length) return;
   const get = (p) => fetch(chrome.runtime.getURL(p)).catch(() => null);
-  for (const dir of Array.isArray(dirs) ? dirs : []) {
-    if (!PET_ID.test(String(dir))) continue;
+  for (const dir of todo) {
     try {
       const files = [];
       const j = await get(`pets.local/${dir}/pet.json`);
@@ -575,21 +695,33 @@ async function petsLocal() {
       if (!s || !s.ok) throw new Error(`no ${sheetName}`);
       files.push({ name: sheetName, bytes: new Uint8Array(await s.arrayBuffer()) });
       await petAdopt(files, 'local', dir);
+      seen.done.push(dir);
     } catch (e) {
-      failed = true;
+      localFailedAt.set(dir, Date.now());
       console.warn('[gcx pets] pets.local/' + dir, e.message);
     }
   }
-  if (!failed) await chrome.storage.local.set({ gcxPetsLocalSeen: index });
+  await chrome.storage.local.set({ gcxPetsLocalSeen: seen });
 }
+const localFailedAt = new Map();
+// Only one look at pets.local at a time (the picker asks on every search).
+let localRun = null;
+const petsLocalOnce = () => localRun || (localRun = petsLocal().finally(() => (localRun = null)));
 async function petsMine() {
-  await petsLocal();
+  await petsLocalOnce();
   return (await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || [];
 }
 async function petForget(id) {
   if (!/^mine-/.test(id)) throw new Error('not one of yours');
   return mineLocked(async () => {
-    const list = ((await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || []).filter((e) => e.id !== id);
+    const all = (await chrome.storage.local.get(MINE_KEY))[MINE_KEY] || [];
+    const was = all.find((e) => e.id === id);
+    // One that came from pets.local stays removed (until pets.local/index.json changes).
+    if (was && was.source === 'local' && was.dir) {
+      const seen = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
+      if (seen && typeof seen === 'object') await chrome.storage.local.set({ gcxPetsLocalSeen: { ...seen, gone: [...new Set([...(seen.gone || []), was.dir])] } });
+    }
+    const list = all.filter((e) => e.id !== id);
     await chrome.storage.local.set({ [MINE_KEY]: list });
     await chrome.storage.local.remove('gcxPetSheet:' + id);
     return list;
@@ -604,6 +736,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       ? petList(msg.page, msg.q)
       : msg.op === 'sheet'
         ? petSheet(String(msg.id || ''), String(msg.url || '')).then((key) => ({ key }))
+        : msg.op === 'scaled'
+          ? petScaled(String(msg.id || ''), Number(msg.w), Number(msg.h)).then((data) => ({ data }))
         : msg.op === 'mine'
           ? petsMine().then((pets) => ({ pets }))
           : msg.op === 'import'
