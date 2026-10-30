@@ -296,13 +296,17 @@ async function suggest(m, signal) {
   ]
     .filter(Boolean)
     .join('\n\n');
+  const sig = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
   const r = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: MODEL_FAST, reasoning: { effort: 'none' }, instructions: SUGGEST_INSTRUCTIONS, input, max_output_tokens: 300, store: false }),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+    signal: sig,
   });
-  const j = await r.json().catch(() => ({}));
+  const j = await r.json().catch((e) => {
+    if (sig.aborted) throw sig.reason || e;
+    return {};
+  });
   if (!r.ok) return { code: r.status === 401 ? 'badkey' : 'http', error: (j.error && j.error.message) || `HTTP ${r.status}` };
   let out = (j.output || [])
     .filter((o) => o.type === 'message')
@@ -429,7 +433,8 @@ async function petSheet(id, url) {
 // ----- a sheet shrunk to the size the pet is shown at, done here so the page never stutters.
 // The browser's own shrink (mipmaps) blurs; this one averages the exact area each screen pixel
 // covers (alpha-weighted, so edges don't pick up dark fringes), then sharpens lightly.
-function shrinkSharp(src, sw, sh, dw, dh, amount) {
+// cw x ch: one frame's cell in the output.
+function shrinkSharp(src, sw, sh, dw, dh, amount, cw, ch) {
   const weights = (sn, dn) => {
     const r = sn / dn;
     const out = [];
@@ -482,34 +487,48 @@ function shrinkSharp(src, sw, sh, dw, dh, amount) {
       for (let i = 0; i < dw * 4; i++) pm[o0 + i] += tmp[t0 + i] * w;
     }
   }
-  // unsharp mask (3x3 binomial blur), on premultiplied values; then back to straight alpha
+  // unsharp mask (3x3 binomial blur) on premultiplied values, kept inside each frame's cell so
+  // the next frame never bleeds in; back to straight alpha by the unclamped alpha (dividing by a
+  // clamped one would brighten every outline). Less sharpening the less it shrank.
+  const amt = amount * Math.max(0, Math.min(1, (sw / dw - 1) / 0.5));
   const out = new Uint8ClampedArray(dw * dh * 4);
-  const at = (x, y, c) => pm[((y < 0 ? 0 : y >= dh ? dh - 1 : y) * dw + (x < 0 ? 0 : x >= dw ? dw - 1 : x)) * 4 + c];
-  for (let y = 0; y < dh; y++)
+  let X0 = 0;
+  let X1 = 0;
+  let Y0 = 0;
+  let Y1 = 0;
+  const at = (x, y, c) => pm[((y < Y0 ? Y0 : y > Y1 ? Y1 : y) * dw + (x < X0 ? X0 : x > X1 ? X1 : x)) * 4 + c];
+  const v = new Float32Array(4);
+  for (let y = 0; y < dh; y++) {
+    Y0 = y - (y % ch);
+    Y1 = Math.min(dh - 1, Y0 + ch - 1);
     for (let x = 0; x < dw; x++) {
+      X0 = x - (x % cw);
+      X1 = Math.min(dw - 1, X0 + cw - 1);
       const o = (y * dw + x) * 4;
-      const v = [0, 0, 0, 0];
       for (let c = 0; c < 4; c++) {
         const blur =
           (at(x - 1, y - 1, c) + 2 * at(x, y - 1, c) + at(x + 1, y - 1, c) + 2 * at(x - 1, y, c) + 4 * pm[o + c] + 2 * at(x + 1, y, c) + at(x - 1, y + 1, c) + 2 * at(x, y + 1, c) + at(x + 1, y + 1, c)) / 16;
-        v[c] = pm[o + c] + amount * (pm[o + c] - blur);
+        v[c] = pm[o + c] + amt * (pm[o + c] - blur);
       }
-      const a = Math.min(255, Math.max(0, v[3]));
-      out[o + 3] = a;
-      if (a > 0) {
-        out[o] = (v[0] * 255) / a;
-        out[o + 1] = (v[1] * 255) / a;
-        out[o + 2] = (v[2] * 255) / a;
+      out[o + 3] = v[3];
+      if (v[3] > 0.5) {
+        const k = 255 / v[3];
+        out[o] = v[0] * k;
+        out[o + 1] = v[1] * k;
+        out[o + 2] = v[2] * k;
       }
     }
+  }
   return out;
 }
 const scaledMem = new Map();
-async function petScaled(id, w, h) {
+async function petScaled(id, w, h, cw, ch) {
   if (!PET_ID.test(id)) throw new Error('bad id');
   w = Math.trunc(w);
   h = Math.trunc(h);
-  if (!(w > 0 && h > 0 && w <= 4096 && h <= 8192)) throw new Error('bad size');
+  cw = Math.trunc(cw);
+  ch = Math.trunc(ch);
+  if (!(w > 0 && h > 0 && w <= 4096 && h <= 8192 && cw > 0 && ch > 0 && w % cw === 0 && h % ch === 0)) throw new Error('bad size');
   const key = 'gcxPetSheet:' + id;
   const rec = (await chrome.storage.local.get(key))[key];
   if (!rec || !rec.dataUrl) throw new Error('sheet missing');
@@ -528,7 +547,7 @@ async function petScaled(id, w, h) {
   const x = c.getContext('2d');
   x.drawImage(bmp, 0, 0);
   bmp.close();
-  const px = shrinkSharp(x.getImageData(0, 0, sw, sh).data, sw, sh, w, h, 0.6);
+  const px = shrinkSharp(x.getImageData(0, 0, sw, sh).data, sw, sh, w, h, 0.6, cw, ch);
   const d = new OffscreenCanvas(w, h);
   d.getContext('2d').putImageData(new ImageData(px, w, h), 0, 0);
   const url = `data:image/png;base64,${b64(new Uint8Array(await (await d.convertToBlob({ type: 'image/png' })).arrayBuffer()))}`;
@@ -601,6 +620,7 @@ const mineLocked = (job) => {
 async function petAdopt(files, source, fallbackId) {
   let manifest = null;
   let image = null;
+  const loose = [];
   for (const f of files) {
     if (f.bytes.length > PET_MAX_BYTES) throw new Error(`${f.name} is too big for a pet`);
     if (f.bytes[0] === 0x50 && f.bytes[1] === 0x4b) {
@@ -613,7 +633,12 @@ async function petAdopt(files, source, fallbackId) {
       const imgName = (want && z[want] && want) || names.find((n) => /spritesheet\.(webp|png)$/i.test(n)) || names.find((n) => /\.(webp|png)$/i.test(n));
       if (imgName && !image) image = { name: imgName, bytes: await z[imgName](true, PET_MAX_BYTES) };
     } else if (/\.json$/i.test(f.name)) manifest = manifest || JSON.parse(new TextDecoder().decode(f.bytes));
-    else if (imageType(f.bytes)) image = image || f;
+    else if (imageType(f.bytes)) loose.push(f);
+  }
+  if (!image && loose.length) {
+    const base = (n) => String(n || '').replace(/^.*[\\/]/, '').toLowerCase();
+    const want = manifest && manifest.spritesheetPath ? base(manifest.spritesheetPath) : '';
+    image = (want && loose.find((f) => base(f.name) === want)) || loose.find((f) => /^spritesheet\./.test(base(f.name))) || loose[0];
   }
   if (!image) throw new Error('no spritesheet in what was picked (a .webp or .png, or a .zip holding one)');
   const type = imageType(image.bytes);
@@ -673,7 +698,8 @@ async function petsLocal() {
   }
   // { index, done: folders taken in, gone: folders he removed }; a new index starts over.
   let seen = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
-  if (!seen || typeof seen !== 'object' || seen.index !== index) seen = { index, done: typeof seen === 'string' && seen === index ? null : [], gone: [] };
+  if (!seen || typeof seen !== 'object' || seen.index !== index)
+    seen = { index, done: typeof seen === 'string' && seen === index ? null : [], gone: seen && typeof seen === 'object' ? seen.gone || [] : [] };
   let dirs = [];
   try {
     dirs = JSON.parse(index);
@@ -701,6 +727,9 @@ async function petsLocal() {
       console.warn('[gcx pets] pets.local/' + dir, e.message);
     }
   }
+  const latest = (await chrome.storage.local.get('gcxPetsLocalSeen')).gcxPetsLocalSeen;
+  if (latest && typeof latest === 'object') seen.gone = [...new Set([...seen.gone, ...(latest.gone || [])])];
+  seen.gone = seen.gone.filter((d) => dirs.includes(d));
   await chrome.storage.local.set({ gcxPetsLocalSeen: seen });
 }
 const localFailedAt = new Map();
@@ -737,7 +766,7 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       : msg.op === 'sheet'
         ? petSheet(String(msg.id || ''), String(msg.url || '')).then((key) => ({ key }))
         : msg.op === 'scaled'
-          ? petScaled(String(msg.id || ''), Number(msg.w), Number(msg.h)).then((data) => ({ data }))
+          ? petScaled(String(msg.id || ''), Number(msg.w), Number(msg.h), Number(msg.cw), Number(msg.ch)).then((data) => ({ data }))
         : msg.op === 'mine'
           ? petsMine().then((pets) => ({ pets }))
           : msg.op === 'import'
