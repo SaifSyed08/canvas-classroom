@@ -109,11 +109,12 @@ or evaluated from the network.)
 **Data usage** (tick these):
 
 - Personally identifiable information (the user's name, and names and emails of instructors and classmates
-  shown from Canvas)
+  from Canvas, which go to OpenAI when the assistant is asked about people)
 - Authentication information (the user's own OpenAI API key, stored locally and sent only to OpenAI)
 - Personal communications (Canvas Inbox messages: read by the assistant when asked, and sent for reply
   suggestions)
 - Website content (Canvas course content, grades and files)
+- User activity (Inbox drafts are sent as you type, only while Suggestions in Inbox is on)
 
 And certify all three: not sold to third parties, not used for purposes unrelated to the single purpose, not
 used to determine creditworthiness or for lending.

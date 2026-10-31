@@ -241,10 +241,10 @@ unpacked.
 
 ## Notes
 
-- It runs on `*.instructure.com` pages and uses Canvas's own API with your session; the extension's
-  background worker makes the calls to OpenAI, codex-pets.net and Canvas's file storage. Questions you ask
+- It runs on `*.instructure.com` pages and uses Canvas's own API with your session. Questions you ask
   (with your course list and the Canvas data the assistant looks up), Inbox messages you write with
-  suggestions on, and AI cover requests go to OpenAI. See the [privacy policy](docs/privacy.md).
+  suggestions on (and the thread you're replying to), and AI cover requests go to OpenAI. See the
+  [privacy policy](docs/privacy.md).
 - Assignments, Classwork, files and announcements are cached in the extension's storage, per Canvas site
   and per user, and dropped after 30 days without a refresh. Pages draw the cached copy at once, refresh in
   the background (Classwork and To-do show "Updating" while they do), and redraw only if something changed.
