@@ -11,7 +11,7 @@
 
   // Login pages and borderless LTI tools have no global nav; leave them alone.
   if (!document.getElementById('header') || !document.getElementById('wrapper')) {
-    html.classList.remove('gcx', 'gcx-pinned', 'gcx-course', 'gcx-dash', 'gcx-takeover', 'gcx-dash-wait');
+    html.classList.remove('gcx', 'gcx-pinned', 'gcx-course', 'gcx-dash', 'gcx-takeover', 'gcx-dash-wait', 'gcx-topic');
     document.querySelectorAll('#gcx-theme-early, [data-early]').forEach((n) => n.remove());
     return;
   }
@@ -1296,6 +1296,8 @@
     // Until the name is known the title shows shimmer placeholders; the real text fades in.
     const paintTitle = (c) => {
       bar.style.setProperty('--c', c.color);
+      // The class color for the rest of the page too (an announcement's title and accent).
+      html.style.setProperty('--gcx-cc', c.color);
       const name = prettyName(c) || c.code || 'Course';
       const sub = [c.code, teacherLine(c)].filter(Boolean).join(' · ');
       const title = bar.querySelector('.gcx-cbar-title');

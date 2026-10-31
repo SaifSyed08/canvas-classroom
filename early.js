@@ -30,6 +30,8 @@
   if (course) {
     html.classList.add('gcx-course');
     html.dataset.gcxCourse = course[1];
+    // One announcement or discussion: read in a column in the middle (classroom.css).
+    if (/^\/(discussion_topics|announcements)\/\d+\/?$/.test(course[2] || '')) html.classList.add('gcx-topic');
   }
 
   // ?gcx-original=1 shows Canvas's own page instead of the replacement view.
