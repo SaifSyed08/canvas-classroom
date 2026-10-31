@@ -73,7 +73,11 @@
   // extension stylesheet) so Chrome counts it as the page's own.
   let still = false;
   try {
-    still = (JSON.parse(localStorage.getItem('gcx:prefs') || '{}') || {}).motion === false;
+    const prefs = JSON.parse(localStorage.getItem('gcx:prefs') || '{}') || {};
+    still = prefs.motion === false;
+    // Room between the rail and the dashboard, there from the first paint.
+    const gap = Math.max(0, Math.min(320, Number(prefs.dashGap) || 0));
+    if (gap) html.style.setProperty('--gcx-dash-gap', `${gap}px`);
   } catch {}
   if (still) html.classList.add('gcx-still');
   // Page pieces ease in one by one only when opening a class; anywhere else (like going back to

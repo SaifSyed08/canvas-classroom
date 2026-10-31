@@ -51,7 +51,7 @@ AI REPLIES IN THE INBOX
 Start a reply and gray text suggests the rest, in your voice. Tab takes it, Ctrl + → takes one word, Esc hides it.
 
 A PET
-Turn one on in settings: pick one of 3,600+ pixel pets from codex-pets.net, or import your own. It wanders along the bottom of the page, naps with little z's, runs alongside the AI while it thinks, and can be picked up and thrown. Soft sound effects if you want them.
+Turn one on in settings: pick one of 3,600+ pixel pets from codex-pets.net, import your own, or have AI draw one (your school's mascot, say). It wanders along the bottom of the page, naps with little z's, runs alongside the AI while it thinks, and can be picked up and thrown. Soft sound effects if you want them.
 
 MAKE IT YOURS
 • Themes, or your school's own colors and logo
@@ -100,7 +100,7 @@ and Inbox suggestions; they'd be the strongest two.
 | `unlimitedStorage` | The cache of Canvas data (courses, assignments, files lists) and the user's chosen pet images and class cover images can exceed the default 10 MB quota. |
 | `https://*.instructure.com/*` | The extension's whole job: it changes Canvas pages and reads the user's own Canvas data through Canvas's API with their session. |
 | `https://*.inscloudgate.net/*`, `https://*.amazonaws.com/*` | Canvas serves course files from these hosts (Canvas redirects file downloads to Instructure's file proxy and to S3 buckets, whose names and regions vary by school). Used to show PDFs in the in-place viewer, to let the assistant read a course file the user asks about, and to upload files the user turns in. Requests go only to file URLs Canvas itself returns. |
-| `https://api.openai.com/*` | The AI features (Ask anything, Inbox suggestions, AI class covers) call OpenAI with the user's own API key. |
+| `https://api.openai.com/*` | The AI features (Ask anything, Inbox suggestions, AI class covers and AI-drawn pets) call OpenAI with the user's own API key. |
 | `https://codex-pets.net/*` | Lists the pet library and downloads the pet the user picks. The site sends no CORS headers, so the requests are made from the service worker. |
 
 **Remote code:** No, I am not using remote code. (pdf.js is bundled under `viewer/pdfjs/`; nothing is loaded
