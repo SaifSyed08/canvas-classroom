@@ -1603,5 +1603,8 @@
   }
   window.addEventListener('gcx:settings', (e) => fill(e.detail));
 
-  apply();
+  // A page built ahead of time (prerendered) gets the pet only once he arrives, from where it was
+  // on the page he came from.
+  if (document.prerendering) document.addEventListener('prerenderingchange', () => apply(), { once: true });
+  else apply();
 })();
