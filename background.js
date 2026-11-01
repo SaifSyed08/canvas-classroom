@@ -773,7 +773,7 @@ async function imageCall(key, body) {
       body: JSON.stringify(b),
       signal: AbortSignal.timeout(150000),
     });
-  let r = await go({ ...body, stream: true, partial_images: 2 });
+  let r = await go({ ...body, stream: true, partial_images: 0 });
   let j = null;
   if (!r.ok) {
     j = await r.json().catch(() => ({}));
@@ -785,26 +785,35 @@ async function imageCall(key, body) {
   const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
   let buf = '';
   let done = null;
+  let failed = null;
+  const take = (ev) => {
+    const line = ev.split('\n').find((l) => l.startsWith('data:'));
+    if (!line) return;
+    let d;
+    try {
+      d = JSON.parse(line.slice(5));
+    } catch {
+      return;
+    }
+    if (d.type === 'image_generation.completed' && d.b64_json) done = d.b64_json;
+    else if (d.type === 'error' || d.error) failed = d.error || d;
+  };
   for (;;) {
     const { value, done: end } = await reader.read();
     if (end) break;
     buf += value;
     let i;
     while ((i = buf.indexOf('\n\n')) >= 0) {
-      const ev = buf.slice(0, i);
+      take(buf.slice(0, i));
       buf = buf.slice(i + 2);
-      const line = ev.split('\n').find((l) => l.startsWith('data:'));
-      if (!line) continue;
-      let d;
-      try {
-        d = JSON.parse(line.slice(5));
-      } catch {
-        continue;
-      }
-      if (d.type === 'image_generation.completed' && d.b64_json) done = d.b64_json;
-      else if (d.type === 'error' || d.error) return { r: { ok: false, status: 500 }, j: { error: d.error || d } };
+    }
+    if (failed) {
+      reader.cancel().catch(() => {});
+      return { r: { ok: false, status: 500 }, j: { error: failed } };
     }
   }
+  if (buf.trim()) take(buf);
+  if (!done && failed) return { r: { ok: false, status: 500 }, j: { error: failed } };
   return { r, j: done ? { data: [{ b64_json: done }] } : { error: { message: 'the picture never arrived' } } };
 }
 // The image models newest first, as for covers; the last error if none of them works. `alt` is
@@ -830,7 +839,9 @@ async function openaiImage(body, alt) {
   for (const model of later) {
     const { r, j } = await imageCall(key, { model, ...alt });
     if (r.ok && j.data && j.data[0] && j.data[0].b64_json) return j.data[0].b64_json;
-    last = new Error((j.error && j.error.message) || `HTTP ${r.status}`);
+    const msg = (j.error && j.error.message) || `HTTP ${r.status}`;
+    last = new Error(msg);
+    if (!(r.status === 404 || r.status === 403 || /model/i.test(msg))) break;
   }
   throw last;
 }
@@ -861,12 +872,46 @@ function genMask(px, w, h) {
   const br = ((bk >> 8) << 4) + 8;
   const bg = (((bk >> 4) & 15) << 4) + 8;
   const bb = ((bk & 15) << 4) + 8;
-  // Anything close to that color goes (the gaps between legs as well as the outside); pixels
-  // part way there (the blended edge) keep part of their alpha.
+  // The background is what the border reaches through pixels near that color. Pixels next to it
+  // that are part way there (the blended edge) keep part of their alpha. Pockets inside the
+  // character (between legs, inside an arm) go only if they're almost exactly the key color and
+  // bigger than a speck, so pink and white parts of the character stay.
   const dist = (i) => Math.abs(px[i * 4] - br) + Math.abs(px[i * 4 + 1] - bg) + Math.abs(px[i * 4 + 2] - bb);
+  const flood = (seeds, ok) => {
+    const got = [];
+    const st = seeds.filter((i) => a[i] === 255 && ok(i));
+    for (const i of st) a[i] = 0;
+    while (st.length) {
+      const i = st.pop();
+      got.push(i);
+      const x = i % w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (j < 0 || j >= n || a[j] !== 255 || !ok(j)) continue;
+        a[j] = 0;
+        st.push(j);
+      }
+    }
+    return got;
+  };
+  a.fill(255);
+  flood(edge, (i) => dist(i) < 110);
   for (let i = 0; i < n; i++) {
+    if (a[i] !== 255 || dist(i) >= 40) continue;
+    const pocket = flood([i], (j) => dist(j) < 40);
+    if (pocket.length < 48) for (const j of pocket) a[j] = 255;
+    else for (const j of pocket) a[j] = 1; // marked: cleared below with the rest
+  }
+  for (let i = 0; i < n; i++) if (a[i] === 1) a[i] = 0;
+  // soften the rim: opaque pixels touching the background, by how close they are to the key
+  const rim = [];
+  for (let i = 0; i < n; i++) {
+    if (a[i] !== 255) continue;
+    const x = i % w;
+    if ((x > 0 && !a[i - 1]) || (x < w - 1 && !a[i + 1]) || (i >= w && !a[i - w]) || (i + w < n && !a[i + w])) rim.push(i);
+  }
+  for (const i of rim) {
     const d = dist(i);
-    a[i] = d < 110 ? 0 : d < 260 ? Math.round((255 * (d - 110)) / 150) : 255;
+    if (d < 260) a[i] = Math.max(1, Math.round((255 * (d - 110)) / 150));
   }
   return a;
 }
