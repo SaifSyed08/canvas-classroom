@@ -2201,7 +2201,10 @@
   function buildBackAhead() {
     const recent = (store.get(RECENT_CLASSES, []) || []).filter((x) => Number.isInteger(x));
     if (COURSE_ID) store.set(RECENT_CLASSES, [COURSE_ID, ...recent.filter((x) => x !== COURSE_ID)].slice(0, 4));
-    const back = recent.find((x) => x !== COURSE_ID);
+    // Only on the home page he just switched to from another class: building a page ahead is a
+    // full Canvas page load (and a visit in Canvas's logs), so not on every page he opens.
+    if (!COURSE_ID || VIEW !== 'home' || recent[0] === COURSE_ID) return;
+    const back = recent[0];
     if (!back || !(COURSES || []).some((c) => c.id === back)) return;
     const ahead = document.createElement('script');
     ahead.type = 'speculationrules';
@@ -2213,7 +2216,16 @@
     if (!HTMLScriptElement.supports || !HTMLScriptElement.supports('speculationrules')) return;
     // A page that is itself being built ahead counts as visited (and builds its own) only once he
     // actually arrives on it.
-    if (document.prerendering) document.addEventListener('prerenderingchange', buildBackAhead, { once: true });
+    if (document.prerendering)
+      document.addEventListener(
+        'prerenderingchange',
+        () => {
+          // Built ahead long ago (a press-built page can outlive the 5 minutes): load it fresh.
+          if (performance.now() > AHEAD_MS + 60000) return location.reload();
+          buildBackAhead();
+        },
+        { once: true },
+      );
     else buildBackAhead();
     const s = document.createElement('script');
     s.type = 'speculationrules';
