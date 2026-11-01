@@ -2196,16 +2196,24 @@
   // and the class he was in just before this one is built ahead of time outright, so going back
   // and forth between two classes is instant. Not on hover: Canvas would log a visit to every
   // class he passed over.
-  const RECENT_CLASSES = 'recentCourses';
+  const LAST_CLASS = 'gcx:lastClass'; // this tab's last class (sessionStorage: per tab)
   const AHEAD_MS = 5 * 60 * 1000; // a page built ahead goes stale; after this it waits for a press
+  // Returns the class this tab was in before, and makes this one the last.
+  function markClass() {
+    let prev = null;
+    try {
+      prev = Number(sessionStorage.getItem(LAST_CLASS)) || null;
+      if (COURSE_ID) sessionStorage.setItem(LAST_CLASS, String(COURSE_ID));
+    } catch {}
+    return prev;
+  }
+  addEventListener('pageshow', (e) => e.persisted && markClass()); // back to a page kept in memory
   function buildBackAhead() {
-    const recent = (store.get(RECENT_CLASSES, []) || []).filter((x) => Number.isInteger(x));
-    if (COURSE_ID) store.set(RECENT_CLASSES, [COURSE_ID, ...recent.filter((x) => x !== COURSE_ID)].slice(0, 4));
+    const back = markClass();
     // Only on the home page he just switched to from another class: building a page ahead is a
     // full Canvas page load (and a visit in Canvas's logs), so not on every page he opens.
-    if (!COURSE_ID || VIEW !== 'home' || recent[0] === COURSE_ID) return;
-    const back = recent[0];
-    if (!back || !(COURSES || []).some((c) => c.id === back)) return;
+    if (!COURSE_ID || VIEW !== 'home' || !back || back === COURSE_ID) return;
+    if (!(COURSES || []).some((c) => c.id === back)) return;
     const ahead = document.createElement('script');
     ahead.type = 'speculationrules';
     ahead.textContent = JSON.stringify({ prerender: [{ source: 'list', urls: [`/courses/${back}`], eagerness: 'immediate' }] });
