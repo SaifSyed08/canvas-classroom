@@ -3629,6 +3629,20 @@
     }
     bc.slot = slot;
     bcHide(slot ? slot.children : [content]);
+    // BetterCampus's buttons over the preview (theme Edit / Create...) open its own pages: give the
+    // panel back to it. Zoom, reset and the two theme switches don't change pages.
+    if (slot && !content.dataset.gcxWired) {
+      content.dataset.gcxWired = '1';
+      content.addEventListener(
+        'click',
+        (e) => {
+          const b = e.target.closest('button');
+          if (!bc.active || !b || !b.closest('[data-theme-chrome]') || b.getAttribute('role') === 'switch' || /zoom|reset/i.test(b.title || '')) return;
+          bcDeactivate();
+        },
+        true,
+      );
+    }
   }
   // The settings tab he used last ('classroom' for ours, else BetterCampus's data-tab-id).
   const SET_TAB = 'setTab';
@@ -3771,12 +3785,6 @@
     /* In BetterCampus's settings column, next to its dashboard preview */
     .gcx-bc-panel.gcx-in-col { height: 100%; padding: 2px 4px 24px; overscroll-behavior: contain; }
     .gcx-in-col .gcx-bc-panel-in { max-width: none; }
-    @container (max-width: 520px) {
-      .gcx-set-fonts { grid-template-columns: repeat(3, 1fr) !important; }
-      .gcx-set-themes { grid-template-columns: repeat(4, 1fr) !important; }
-      .gcx-set-row { padding: 12px 14px; }
-      .gcx-set-sub { padding: 4px 14px 14px; }
-    }
     @keyframes gcx-set-in { from { opacity: 0; transform: translateY(8px); } }
     .gcx-bc-tab { opacity: .6; position: relative; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
     .gcx-bc-tab:hover { opacity: 1; }
@@ -3834,6 +3842,13 @@
     .gcx-set-soon { cursor: default; opacity: .7; }
     .gcx-set-soon:hover { background: none; }
     .gcx-soon { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); color: var(--gcx-muted, #71717a); }
+    /* narrow (BetterCampus's settings column): after the base rules, so these win */
+    @container (max-width: 520px) {
+      .gcx-set-fonts { grid-template-columns: repeat(3, 1fr) !important; }
+      .gcx-set-themes { grid-template-columns: repeat(4, 1fr) !important; }
+      .gcx-set-row { padding: 12px 14px; }
+      .gcx-set-sub { padding: 4px 14px 14px; }
+    }
   `;
 
   // ----- Confetti when he submits something (seasonal on certain days)
