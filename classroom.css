@@ -128,6 +128,7 @@ html.gcx-course #main { margin-left: 0 !important; }
 #gcx-cbar .gcx-cbar-title { display: flex; flex-direction: column; min-width: 0; text-decoration: none !important; color: var(--gcx-text) !important; }
 #gcx-cbar .gcx-cbar-name { font-size: 20px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #gcx-cbar .gcx-cbar-title .gcx-skel { display: block; margin: 3px 0; }
+#gcx-cbar .gcx-cbar-title:is(:hover, :focus-visible) .gcx-cbar-name { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 #gcx-cbar .gcx-skel-name { width: 220px; height: 16px; }
 #gcx-cbar .gcx-skel-sub { width: 140px; height: 10px; }
 #gcx-cbar .gcx-cbar-sub { font-size: 12px; color: var(--gcx-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
