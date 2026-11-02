@@ -43,6 +43,8 @@
     page: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z',
     link: 'M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z',
     tool: 'M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z',
+    bell: 'M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z',
+    chat: 'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z',
     grade: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z',
     announce: 'M18 11v2h4v-2h-4zm-2 6.61c.96.71 2.21 1.65 3.2 2.39.4-.53.8-1.07 1.2-1.6-.99-.74-2.24-1.68-3.2-2.4-.4.54-.8 1.08-1.2 1.61zM20.4 5.6c-.4-.53-.8-1.07-1.2-1.6-.99.74-2.24 1.68-3.2 2.4.4.53.8 1.07 1.2 1.6.96-.72 2.21-1.65 3.2-2.4zM4 9c-1.1 0-2 .9-2 2v2c0 1.1.9 2 2 2h1v4h2v-4h1l5 3V6L8 9H4zm11.5 3c0-1.33-.58-2.53-1.5-3.35v6.69c.92-.81 1.5-2.01 1.5-3.34z',
     people: 'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
@@ -3301,6 +3303,7 @@
     const name = ((me && me.name) || PAGE_NAME).split(' ')[0] || 'there';
     const wel = el(`<div class="gcx-welcome"><h1 class="gcx-hello"></h1><div class="gcx-ask-slot"></div></div>`);
     anchor.before(wel);
+    mountBell(wel);
     const lastVisit = store.get('lastVisit', 0);
     store.set('lastVisit', Date.now());
     welcomeCtx = { name, lastVisit, wel, titled: false, fromCache: false, items: null };
@@ -4341,8 +4344,219 @@
   // After a dark/light switch, re-check everything that was adjusted.
   const refreshInlineColors = () => document.querySelectorAll('.gcx-stream, .gcx-asg-body').forEach(fixInlineColors);
 
+  // ---------------------------------------------------------------- news (the bell and the pet)
+  // What's new for him: unread messages and announcements, recent grades and teacher comments, and
+  // work due in the next few days. One fetch every few minutes, shared by every tab.
+  const NEWS_TTL = 3 * 6e4;
+  let newsJob = null;
+  function news(fresh = false) {
+    const saved = store.get('news', null);
+    const mine = saved && saved.user === PAGE_USER ? saved : null;
+    if (!fresh && mine && Date.now() - mine.at < NEWS_TTL) return Promise.resolve(mine);
+    if (!newsJob)
+      newsJob = loadNews()
+        .then((n) => {
+          store.set('news', n);
+          // The rail's Inbox count too, while we're at it.
+          if (n.unread !== unread) {
+            unread = n.unread;
+            store.set('unread', unread);
+            store.set('unreadAt', Date.now());
+            queueRail();
+          }
+          return n;
+        })
+        .catch(() => mine)
+        .finally(() => (newsJob = null));
+    return newsJob;
+  }
+  async function loadNews() {
+    const now = Date.now();
+    const week = now - 7 * DAY;
+    const [count, convos, stream, work] = await Promise.all([
+      api('/conversations/unread_count').then((r) => Number(r.unread_count) || 0),
+      api('/conversations?scope=unread&per_page=10').catch(() => []),
+      api('/users/self/activity_stream?only_active_courses=true&per_page=50').catch(() => []),
+      planner(-7, 4).catch(() => []),
+    ]);
+    const course = (id) => (COURSES || []).find((c) => c.id === Number(id));
+    const cname = (id, fallback = '') => (course(id) ? prettyName(course(id)) : fallback);
+    const msgs = (convos || []).slice(0, 10).map((c) => ({
+      id: c.id,
+      title: c.subject || 'No subject',
+      text: String(c.last_message || '').slice(0, 140),
+      from: ((c.participants || []).find((x) => String(x.id) !== String(PAGE_USER)) || {}).name || '',
+      at: Date.parse(c.last_message_at) || 0,
+      course: c.context_name || '',
+    }));
+    const anns = (stream || [])
+      .filter((x) => x.type === 'Announcement' && x.read_state === false && Date.parse(x.created_at) > week)
+      .slice(0, 10)
+      .map((x) => ({ id: x.id, title: x.title || 'Announcement', courseId: x.course_id || null, course: cname(x.course_id), at: Date.parse(x.created_at) || 0, url: x.html_url || '/' }));
+    const grades = [];
+    for (const x of stream || []) {
+      if (x.type !== 'Submission') continue;
+      const a = x.assignment || {};
+      const at = Date.parse(x.graded_at || x.updated_at) || 0;
+      // The newest comment from someone else (his teacher or a TA).
+      const cm = (x.submission_comments || [])
+        .filter((c) => String(c.author_id) !== String(PAGE_USER) && Date.parse(c.created_at) > week)
+        .sort((u, v) => Date.parse(v.created_at) - Date.parse(u.created_at))[0];
+      const graded = x.workflow_state === 'graded' && (x.score != null || x.grade) && at > week;
+      if (!graded && !cm) continue;
+      grades.push({
+        id: x.assignment_id || a.id || x.id,
+        title: a.name || x.title || 'Assignment',
+        graded: !!graded,
+        score: x.score != null ? Number(x.score) : null,
+        grade: x.grade != null ? String(x.grade) : '',
+        pts: a.points_possible != null ? Number(a.points_possible) : null,
+        courseId: x.course_id || a.course_id || null,
+        course: cname(x.course_id || a.course_id),
+        at: Math.max(graded ? at : 0, cm ? Date.parse(cm.created_at) : 0),
+        url: x.html_url || a.html_url || '/',
+        comment: cm ? { who: cm.author_name || 'Your teacher', text: String(cm.comment || '').slice(0, 140), at: Date.parse(cm.created_at) || 0 } : null,
+      });
+    }
+    grades.sort((u, v) => v.at - u.at);
+    const slim = (i) => ({ key: i.key, type: i.type, title: i.title, due: i.due ? +i.due : 0, url: i.url, courseId: i.courseId, course: cname(i.courseId, i.courseName) });
+    const due = work.filter((i) => !i.done && i.due && +i.due > now && +i.due < now + 4 * DAY).sort((u, v) => u.due - v.due).slice(0, 20).map(slim);
+    const missing = work.filter((i) => i.flagged).slice(0, 10).map(slim);
+    return { user: PAGE_USER, at: now, unread: count, msgs, anns, grades: grades.slice(0, 12), due, missing };
+  }
+
+  // The bell on the dashboard, next to the AI button: unread messages and announcements, new grades
+  // and comments (new = since he last opened it), and what's due next.
+  const ago = (t) => {
+    const m = Math.round((Date.now() - t) / 6e4);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    if (m < 24 * 60) return `${Math.round(m / 60)}h ago`;
+    return `${Math.round(m / 1440)}d ago`;
+  };
+  const fmtPts = (x) => String(Math.round(x * 100) / 100);
+  const gradeText = (g) => (!g.graded ? '' : g.score != null && g.pts ? `${fmtPts(g.score)}/${fmtPts(g.pts)}` : g.grade);
+  function bellCount(d) {
+    if (!d) return 0;
+    const seen = store.get('bellSeen', 0);
+    return d.unread + d.anns.length + d.grades.filter((g) => g.at > seen).length;
+  }
+  function mountBell(wel) {
+    const btn = el(
+      `<button type="button" class="gcx-bell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${svg('bell', 24)}<span class="gcx-bell-n" hidden></span></button>`,
+    );
+    wel.append(btn);
+    let data = store.get('news', null);
+    if (data && data.user !== PAGE_USER) data = null;
+    const paint = () => {
+      const n = bellCount(data);
+      const b = btn.querySelector('.gcx-bell-n');
+      b.hidden = !n;
+      b.textContent = n > 99 ? '99+' : String(n);
+      btn.setAttribute('aria-label', n ? `Notifications, ${n} new` : 'Notifications');
+    };
+    paint();
+    news().then((d) => {
+      if (d) (data = d), paint();
+    });
+    btn.addEventListener('click', () => {
+      if (closeBell) return closeBell();
+      const pop = openBell(btn, data);
+      // Older than a minute: fetch again and redraw it.
+      if (!data || Date.now() - data.at > 6e4)
+        news(true).then((d) => {
+          if (!d) return;
+          data = d;
+          paint();
+          if (pop.isConnected) pop.querySelector('.gcx-bell-list').innerHTML = bellList(d, store.get('bellSeen', 0));
+        });
+      // What he has now seen stops counting as new (it stays marked in the list until next time).
+      setTimeout(() => {
+        store.set('bellSeen', Date.now());
+        paint();
+      }, 600);
+    });
+  }
+  function bellList(d, seen) {
+    if (!d) return `<div class="gcx-bell-empty">Loading…</div>`;
+    const color = (id) => {
+      const c = id && (COURSES || []).find((x) => x.id === Number(id));
+      return c ? c.color : '';
+    };
+    const row = (icon, title, sub, url, isNew, c) =>
+      `<a class="gcx-bell-row${isNew ? ' new' : ''}" href="${esc(url)}"${c ? ` style="--c:${esc(c)}"` : ''}><span class="gcx-bell-ic">${svg(icon, 18)}</span><span class="gcx-bell-tx"><b>${esc(title)}</b><small>${esc(sub)}</small></span></a>`;
+    const sec = (label, rows) => (rows.length ? `<div class="gcx-bell-sec">${esc(label)}</div>${rows.join('')}` : '');
+    const more = d.unread > d.msgs.length ? [`<a class="gcx-bell-more" href="/conversations">${d.unread - d.msgs.length} more in Inbox</a>`] : [];
+    const html0 =
+      sec('Messages', [
+        ...d.msgs.map((m) => row('chat', m.title, [m.from, m.text].filter(Boolean).join(': ') || ago(m.at), '/conversations', true, '')),
+        ...more,
+      ]) +
+      sec(
+        'Announcements',
+        d.anns.map((a) => row('announce', a.title, [a.course, ago(a.at)].filter(Boolean).join(' · '), a.url, true, color(a.courseId))),
+      ) +
+      sec(
+        'Grades and feedback',
+        d.grades
+          .slice(0, 8)
+          .map((g) =>
+            row(
+              g.comment && (!g.graded || g.comment.at >= g.at) ? 'chat' : 'grade',
+              g.title,
+              g.comment && (!g.graded || g.comment.at >= g.at)
+                ? `${g.comment.who}: ${g.comment.text}`
+                : [g.course, gradeText(g) ? `Graded ${gradeText(g)}` : 'Graded', ago(g.at)].filter(Boolean).join(' · '),
+              g.url,
+              g.at > seen,
+              color(g.courseId),
+            ),
+          ),
+      ) +
+      sec(
+        'Due soon',
+        d.due
+          .filter((i) => i.due - Date.now() < 2 * DAY)
+          .slice(0, 4)
+          .map((i) => row(TYPE_ICON[i.type] || 'assignment', i.title, [i.course, dueText(new Date(i.due))].filter(Boolean).join(' · '), i.url, false, color(i.courseId))),
+      );
+    return html0 || `<div class="gcx-bell-empty">You're all caught up.</div>`;
+  }
+  let closeBell = null;
+  function openBell(btn, d) {
+    const pop = el(`<div class="gcx-bell-panel gcx-pop-panel" role="dialog" aria-label="Notifications">
+      <div class="gcx-bell-h">Notifications</div>
+      <div class="gcx-bell-list">${bellList(d, store.get('bellSeen', 0))}</div>
+      <div class="gcx-bell-foot"><a href="/conversations">Inbox</a><a href="/?gcx=todo">To-do</a></div>
+    </div>`);
+    document.body.append(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 12)) + 'px';
+    pop.style.top = r.bottom + 8 + 'px';
+    pop.style.transformOrigin = 'top right';
+    btn.setAttribute('aria-expanded', 'true');
+    const close = () => {
+      closeBell = null;
+      pop.classList.add('gcx-out');
+      btn.setAttribute('aria-expanded', 'false');
+      setTimeout(() => pop.remove(), 160);
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    closeBell = close;
+    const outside = (e) => !pop.contains(e.target) && !btn.contains(e.target) && close();
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      close();
+      btn.focus();
+    };
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+    return pop;
+  }
+
   // ---------------------------------------------------------------- shared with fileview.js and ai.js
-  window.gcx = { api, esc, el, svg, fileTile, swr, store, user: PAGE_USER, confetti, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors };
+  window.gcx = { api, esc, el, svg, fileTile, swr, store, user: PAGE_USER, confetti, coursesReady, prettyName, toast, COURSE_ID, VIEW, getMe: () => me, prefs, fixInlineColors, news };
 
   // ---------------------------------------------------------------- loading bar
   // A thin bar across the top of the page (not the rail): dark grey track, filled with the

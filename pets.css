@@ -1,5 +1,6 @@
 /* Pets (pets.js): a sprite that lives in a fixed, click-through layer over the page. Only the
    pet's opaque middle (.gcx-pet-hit) takes the pointer, so the page under it stays usable. */
+@font-face { font-family: 'GCX Pixel'; font-weight: 600; font-display: swap; src: url('chrome-extension://__MSG_@@extension_id__/fonts/pixelify-sans-latin-600-normal.woff2') format('woff2'); }
 .gcx-pet-layer {
   /* above the page and our rail, but under every menu, panel and Canvas dialog, so he never
      covers a control someone is reaching for */
@@ -48,6 +49,33 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
   from { opacity: 1; transform: scale(.6); }
   to { opacity: 0; transform: translate(var(--dx, 0px), -9px) scale(2); }
 }
+/* A reminder: a white 8-bit speech bubble (pixel border with notched corners, a stepped tail),
+   the words typing out a letter at a time in a pixel font. */
+.gcx-pet-say {
+  position: absolute; left: 0; top: 0; max-width: 232px; padding: 7px 10px 8px; box-sizing: border-box;
+  background: #fff; color: #1d1d1f; font: 600 13px/17px 'GCX Pixel', ui-monospace, monospace; letter-spacing: .3px; text-align: left;
+  box-shadow: 0 -3px 0 #1d1d1f, 0 3px 0 #1d1d1f, -3px 0 0 #1d1d1f, 3px 0 0 #1d1d1f, 0 7px 0 rgba(0, 0, 0, .14);
+  pointer-events: auto; cursor: default; -webkit-font-smoothing: none; overflow-wrap: anywhere;
+  transform-origin: var(--tx, 50%) 100%; animation: gcx-pet-say-in .2s steps(3) both;
+}
+.gcx-pet-say.gcx-pet-say-link { cursor: pointer; }
+.gcx-pet-say.gcx-pet-say-link:hover { background: #eef3ff; }
+.gcx-pet-say.gcx-pet-say-link:hover .gcx-pet-say-tail { background: #eef3ff; box-shadow: -6px 0 #1d1d1f, -3px 0 #eef3ff, 3px 0 #eef3ff, 6px 0 #1d1d1f, -3px 3px #1d1d1f, 0 3px #eef3ff, 3px 3px #1d1d1f, 0 6px #1d1d1f; }
+.gcx-pet-say.gcx-out { opacity: 0; transition: opacity .24s steps(3); }
+.gcx-pet-say i { font-style: normal; visibility: hidden; }
+.gcx-pet-say i.on { visibility: visible; }
+.gcx-pet-say b { font-weight: inherit; color: #1f5fd1; }
+.gcx-pet-say-tail {
+  position: absolute; top: 100%; left: var(--tx, 50%); width: 3px; height: 3px; margin-left: -1px; background: #fff;
+  box-shadow: -6px 0 #1d1d1f, -3px 0 #fff, 3px 0 #fff, 6px 0 #1d1d1f, -3px 3px #1d1d1f, 0 3px #fff, 3px 3px #1d1d1f, 0 6px #1d1d1f;
+}
+/* Typed out and it opens something: a blinking arrow, like an RPG's "next". */
+.gcx-pet-say.gcx-pet-say-link.gcx-done::after {
+  content: ''; position: absolute; right: 4px; bottom: 4px; border-left: 5px solid #1d1d1f; border-top: 3px solid transparent; border-bottom: 3px solid transparent;
+  animation: gcx-pet-blink 1s steps(1) infinite;
+}
+@keyframes gcx-pet-blink { 50% { opacity: 0; } }
+@keyframes gcx-pet-say-in { from { opacity: 0; scale: .6; } }
 @keyframes gcx-pet-float {
   0% { opacity: 0; transform: translate(-50%, 6px) scale(.6); }
   20% { opacity: 1; transform: translate(-50%, -4px) scale(1.1); }
@@ -63,4 +91,5 @@ html.gcx-pet-dragging, html.gcx-pet-dragging * { cursor: grabbing !important; -w
   .gcx-pet-dust { display: none; }
   .gcx-pet.gcx-pet-asleep .gcx-pet-sprite { animation: none; }
   .gcx-pet.gcx-pet-in { animation: none; }
+  .gcx-pet-say, .gcx-pet-say.gcx-pet-say-link.gcx-done::after { animation: none; }
 }

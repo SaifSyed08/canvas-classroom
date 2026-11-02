@@ -45,8 +45,11 @@ so keep that installed: it still supplies its to-do sidebar, themes and dark mod
   Announcements/Completed tabs are gone.
 - **To-do sidebar** restyled like Google Classroom's (overdue work keeps its red pill), cut off at two
   weeks, six items before "Show more", with Add Task, Recent Feedback and View Grades below.
-- **Left rail**: Classes, To-do, then each class, with Calendar, Inbox and Account at the bottom. Hover to
-  expand it, or pin it open with the menu button. Hover a class and click ⋮ to give it an icon and color.
+- **Notifications bell** next to the AI button, with a red count: unread messages, unread announcements,
+  and new grades and teacher comments, plus what's due in the next two days. Click any to open it.
+- **Left rail**: Classes, To-do, then each class, with Calendar, Inbox (with your unread count) and Account at
+  the bottom. Hover to expand it, or pin it open with the menu button. Hover a class and click ⋮ to give it
+  an icon and color.
 
 ## Course pages
 
@@ -160,16 +163,20 @@ to page.
   spritesheet, or drop a whole pet folder (like the ones in `~/.codex/pets`) on the picker.
 - **It has a life**: it wanders, looks around, hops when it's happy, and gets curious ("?") when you type.
   Put it on a class card and now and then it walks to the edge, thinks it over, backs up for a run-up and
-  leaps across to another card, skidding to a stop with a little burst of stars.
+  hops across the next cards one at a time without slowing down, skidding to a stop with a burst of stars.
+- **It reminds you**: now and then it says something in a little 8-bit speech bubble, typed out a letter at a
+  time: "HW 8 is due at 10 PM!", "Good luck on Exam 2 today!", "Nice work on Quiz 7! 10/10", "Prof. Kim left
+  a comment on Lab 3", "New message from Su Chen!". Click the bubble to open it. It won't repeat itself, and
+  it talks at most every few minutes.
   When the AI is thinking it runs along with it and waves when the answer lands. Leave it alone and it yawns,
   dozes off with z's and a quiet snore, and wakes when you come back.
 - **Pick it up**: drag it, throw it, and it squishes on landing, bonks off the edges, and dusts up little
   clouds as it runs.
 - **Sound, if you want it**: soft footsteps, a thud when it lands, a whoosh when you throw it, a chirp when
-  you pat it, with its own volume slider. Off by default.
+  you pat it, blips when it talks, with its own volume slider. Off by default.
 
 Sprites are shrunk to their on-screen size with a sharpening pass, so the pixel art stays crisp at any size
-and zoom. Pet, size, roaming (and how much it walks) and sound are in settings.
+and zoom. Pet, size, roaming (and how much it walks), reminders and sound are in settings.
 
 ## Themes and school colors
 
@@ -191,7 +198,7 @@ dashboard preview beside it, so you see each change as you make it:
 - the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), a course-color wash over class
   images and how strong it is, black-and-white or dimmed images, and how dark class images get behind their
   white titles
-- pets: which one, size, roaming and how much it walks, sound and its volume
+- pets: which one, size, roaming and how much it walks, reminders, sound and its volume
 - page animations, the click ripple on class cards, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,
   New Year, Valentine's, St. Patrick's and the Fourth

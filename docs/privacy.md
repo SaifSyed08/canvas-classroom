@@ -14,7 +14,9 @@ This page says what it reads, where that goes, and what it keeps. Last updated O
 ## What it reads
 
 On Canvas pages (`*.instructure.com`) it uses Canvas's own API, as you, to show your courses, assignments,
-grades, announcements, modules, files, people and inbox in its own layout. The only changes it makes in
+grades, announcements, modules, files, people and inbox in its own layout, and your unread messages,
+recent activity (announcements, grades, comments) and upcoming work for the notifications bell and the pet's
+reminders. The only changes it makes in
 Canvas are ones you make yourself through its buttons: turning in an assignment or adding a private comment
 from the Your work card, sent through Canvas's API just as Canvas's own page would. The AI assistant never
 submits, posts or messages anything; when it reads a course file for you, Canvas records that you viewed it,
@@ -49,7 +51,10 @@ All of it stays in your browser:
 - in the extension's storage, copies of Canvas data (assignments, Classwork, files, announcements) so pages
   open instantly, kept per Canvas site and per user, and dropped after 30 days without a refresh
 - in Canvas's `localStorage`, smaller copies for the first paint (your course list with current grades, your
-  profile, the dashboard cards); these don't expire, and are replaced when a different user signs in
+  profile, the dashboard cards), and for the notifications bell and the pet's reminders a short list of
+  what's new (unread message subjects and senders, unread announcements, recent grades and teacher comments,
+  work due soon) with which reminders the pet has already said; these don't expire, and are replaced when a
+  different user signs in
 - in the tab's `sessionStorage`, that tab's open chat and copies of recently seen pages, gone when the tab
   closes
 - your settings, class icons and colors, covers, pinned links and shortcuts
