@@ -159,6 +159,8 @@ to page.
 - **Bring your own**: Import a codex-pets.net `.zip`, a `pet.json` with its spritesheet, a bare
   spritesheet, or drop a whole pet folder (like the ones in `~/.codex/pets`) on the picker.
 - **It has a life**: it wanders, looks around, hops when it's happy, and gets curious ("?") when you type.
+  Put it on a class card and now and then it walks to the edge, thinks it over, backs up for a run-up and
+  leaps across to another card, skidding to a stop with a little burst of stars.
   When the AI is thinking it runs along with it and waves when the answer lands. Leave it alone and it yawns,
   dozes off with z's and a quiet snore, and wakes when you come back.
 - **Pick it up**: drag it, throw it, and it squishes on landing, bonks off the edges, and dusts up little
@@ -167,7 +169,7 @@ to page.
   you pat it, with its own volume slider. Off by default.
 
 Sprites are shrunk to their on-screen size with a sharpening pass, so the pixel art stays crisp at any size
-and zoom. Pet, size, roaming and sound are in settings.
+and zoom. Pet, size, roaming (and how much it walks) and sound are in settings.
 
 ## Themes and school colors
 
@@ -189,7 +191,7 @@ dashboard preview beside it, so you see each change as you make it:
 - the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), a course-color wash over class
   images and how strong it is, black-and-white or dimmed images, and how dark class images get behind their
   white titles
-- pets: which one, size, roaming, sound and its volume
+- pets: which one, size, roaming and how much it walks, sound and its volume
 - page animations, the click ripple on class cards, and announcements easing in as you scroll
 - confetti when you submit something, which goes seasonal around Halloween, Thanksgiving, Christmas,
   New Year, Valentine's, St. Patrick's and the Fourth
