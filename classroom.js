@@ -1299,7 +1299,10 @@
       // The class color for the rest of the page too (an announcement's title and accent).
       html.style.setProperty('--gcx-cc', c.color);
       const name = prettyName(c) || c.code || 'Course';
-      const sub = [c.code, teacherLine(c)].filter(Boolean).join(' · ');
+      // Like Classroom's header: the name, and under it just the course code (the teacher is on
+      // the class card and in People), unless the name already says it.
+      const squash = (t) => String(t || '').replace(/\s+/g, '').toLowerCase();
+      const sub = c.code && !squash(name).includes(squash(c.code)) ? c.code : '';
       const title = bar.querySelector('.gcx-cbar-title');
       const wasLoading = !!title.querySelector('.gcx-skel');
       if (!wasLoading && title.textContent === name + sub) return;
