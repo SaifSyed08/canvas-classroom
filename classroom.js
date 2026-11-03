@@ -4350,6 +4350,7 @@
   const NEWS_TTL = 3 * 6e4;
   let newsJob = null;
   function news(fresh = false) {
+    if (!PAGE_USER) return Promise.resolve(null);
     const saved = store.get('news', null);
     const mine = saved && saved.user === PAGE_USER ? saved : null;
     if (!fresh && mine && Date.now() - mine.at < NEWS_TTL) return Promise.resolve(mine);
@@ -4374,7 +4375,7 @@
     const now = Date.now();
     const week = now - 7 * DAY;
     const [count, convos, stream, work] = await Promise.all([
-      api('/conversations/unread_count').then((r) => Number(r.unread_count) || 0),
+      api('/conversations/unread_count').then((r) => Number(r.unread_count) || 0, () => unread),
       api('/conversations?scope=unread&per_page=10').catch(() => []),
       api('/users/self/activity_stream?only_active_courses=true&per_page=50').catch(() => []),
       planner(-7, 4).catch(() => []),
@@ -4385,7 +4386,8 @@
       id: c.id,
       title: c.subject || 'No subject',
       text: String(c.last_message || '').slice(0, 140),
-      from: ((c.participants || []).find((x) => String(x.id) !== String(PAGE_USER)) || {}).name || '',
+      // With two people it's the other one; in a group the sender isn't known, so no name.
+      from: (c.participants || []).length === 2 ? ((c.participants || []).find((x) => String(x.id) !== String(PAGE_USER)) || {}).name || '' : '',
       at: Date.parse(c.last_message_at) || 0,
       course: c.context_name || '',
     }));
@@ -4397,7 +4399,7 @@
     for (const x of stream || []) {
       if (x.type !== 'Submission') continue;
       const a = x.assignment || {};
-      const at = Date.parse(x.graded_at || x.updated_at) || 0;
+      const at = Date.parse(x.posted_at || x.graded_at || x.updated_at) || 0;
       // The newest comment from someone else (his teacher or a TA).
       const cm = (x.submission_comments || [])
         .filter((c) => String(c.author_id) !== String(PAGE_USER) && Date.parse(c.created_at) > week)
@@ -4459,22 +4461,32 @@
     news().then((d) => {
       if (d) (data = d), paint();
     });
+    // What he has now seen stops counting as new (it stays marked in the list until next time):
+    // everything up to when the list he's looking at was fetched.
+    const seenUpTo = (d) => {
+      if (!d || d.at <= store.get('bellSeen', 0)) return;
+      store.set('bellSeen', d.at);
+      paint();
+    };
     btn.addEventListener('click', () => {
       if (closeBell) return closeBell();
-      const pop = openBell(btn, data);
+      const shown = data;
+      const pop = openBell(btn, shown);
       // Older than a minute: fetch again and redraw it.
-      if (!data || Date.now() - data.at > 6e4)
+      if (!shown || Date.now() - shown.at > 6e4)
         news(true).then((d) => {
-          if (!d) return;
+          const list = pop.isConnected && pop.querySelector('.gcx-bell-list');
+          if (!d) {
+            if (list && !shown) list.innerHTML = `<div class="gcx-bell-empty">Couldn't load your notifications.</div>`;
+            return;
+          }
           data = d;
           paint();
-          if (pop.isConnected) pop.querySelector('.gcx-bell-list').innerHTML = bellList(d, store.get('bellSeen', 0));
+          if (!list) return;
+          list.innerHTML = bellList(d, store.get('bellSeen', 0));
+          seenUpTo(d);
         });
-      // What he has now seen stops counting as new (it stays marked in the list until next time).
-      setTimeout(() => {
-        store.set('bellSeen', Date.now());
-        paint();
-      }, 600);
+      else setTimeout(() => seenUpTo(shown), 600);
     });
   }
   function bellList(d, seen) {
