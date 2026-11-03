@@ -928,8 +928,10 @@
     // Read out once, whole (the letters typing in are hidden from screen readers).
     const said = document.createElement('span');
     said.className = 'gcx-pet-say-sr';
-    said.textContent = item.parts.map((x) => (Array.isArray(x) ? x[0] : x)).join('');
+    said.setAttribute('role', 'status');
     box.append(said);
+    // Filled a moment after it's on the page, so it's announced as a change.
+    setTimeout(() => (said.textContent = item.parts.map((x) => (Array.isArray(x) ? x[0] : x)).join('')), 60);
     const typed = document.createElement('span');
     typed.setAttribute('aria-hidden', 'true');
     box.append(typed);
@@ -1499,9 +1501,8 @@
   function build() {
     const layer = document.createElement('div');
     layer.className = 'gcx-pet-layer';
-    layer.setAttribute('aria-hidden', 'true');
     layer.innerHTML =
-      '<div class="gcx-pet"><div class="gcx-pet-shadow"></div><div class="gcx-pet-body"><div class="gcx-pet-sprite"></div></div><div class="gcx-pet-fx"></div><div class="gcx-pet-hit" title="Drag to pick up. Click, or hold to pat."></div></div>';
+      '<div class="gcx-pet" aria-hidden="true"><div class="gcx-pet-shadow"></div><div class="gcx-pet-body"><div class="gcx-pet-sprite"></div></div><div class="gcx-pet-fx"></div><div class="gcx-pet-hit" title="Drag to pick up. Click, or hold to pat."></div></div>';
     (document.body || html).append(layer);
     const q = (s) => layer.querySelector(s);
     ui = { layer, pet: q('.gcx-pet'), body: q('.gcx-pet-body'), sprite: q('.gcx-pet-sprite'), hit: q('.gcx-pet-hit'), fx: q('.gcx-pet-fx'), shadow: q('.gcx-pet-shadow') };

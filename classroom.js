@@ -4377,7 +4377,9 @@
     const [count, convos, stream, work] = await Promise.all([
       api('/conversations/unread_count').then((r) => Number(r.unread_count) || 0, () => unread),
       api('/conversations?scope=unread&per_page=10').catch(() => []),
-      api('/users/self/activity_stream?only_active_courses=true&per_page=50').catch(() => []),
+      // No .catch: if this fails (offline) the whole refresh fails and the last good copy stays,
+      // rather than an empty list being cached and its grades counted as seen.
+      api('/users/self/activity_stream?only_active_courses=true&per_page=50'),
       planner(-7, 4).catch(() => []),
     ]);
     const course = (id) => (COURSES || []).find((c) => c.id === Number(id));
@@ -4478,6 +4480,7 @@
           const list = pop.isConnected && pop.querySelector('.gcx-bell-list');
           if (!d) {
             if (list && !shown) list.innerHTML = `<div class="gcx-bell-empty">Couldn't load your notifications.</div>`;
+            else if (list) seenUpTo(shown);
             return;
           }
           data = d;
