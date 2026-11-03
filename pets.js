@@ -846,8 +846,12 @@
       else if (day === 1) add(`due:${d.key}:1`, 60, ["Don't forget about ", T, '! It\u2019s due tomorrow.'], d.url);
       else if (day <= 3) add(`due:${d.key}:${day}`, 35, [T, ` is due ${weekday(d.due)}.`], d.url);
     }
+    let cleared = {};
+    try {
+      cleared = JSON.parse(localStorage.getItem('gcx:bellCleared') || '{}') || {};
+    } catch {}
     for (const g of n.grades || []) {
-      if (now - g.at > 3 * DAY_MS) continue;
+      if (now - g.at > 3 * DAY_MS || cleared[`${g.id}:${g.at}`]) continue;
       const T = [clip(g.title)];
       if (g.comment && now - g.comment.at < 3 * DAY_MS) add(`cmt:${g.id}:${g.comment.at}`, 72, [[clip(g.comment.who, 22)], ' left a comment on ', T, '.'], g.url);
       if (!g.graded) continue;

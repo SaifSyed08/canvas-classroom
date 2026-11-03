@@ -46,7 +46,8 @@ so keep that installed: it still supplies its to-do sidebar, themes and dark mod
 - **To-do sidebar** restyled like Google Classroom's (overdue work keeps its red pill), cut off at two
   weeks, six items before "Show more", with Add Task, Recent Feedback and View Grades below.
 - **Notifications bell** next to the AI button, with a red count: unread messages, unread announcements,
-  and new grades and teacher comments, plus what's due in the next two days. Click any to open it.
+  and new grades and teacher comments, plus what's due in the next two days. Click any to open it, or hover
+  and click the check to mark a message or announcement read in Canvas, or clear a grade or comment.
 - **Left rail**: Classes, To-do, then each class, with Calendar, Inbox (with your unread count) and Account at
   the bottom. Hover to expand it, or pin it open with the menu button. Hover a class and click ⋮ to give it
   an icon and color.
