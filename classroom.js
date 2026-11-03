@@ -3332,7 +3332,7 @@
   }
   let welcomeCtx = null;
   // Emoji in the greeting get their own box, so hovering one can wiggle it (classroom.css).
-  const EMOJI = /\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier}|‍\p{Extended_Pictographic}️?)*/gu;
+  const EMOJI = /\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic}\uFE0F?)*/gu;
   function helloText(hello, text) {
     hello.textContent = '';
     let at = 0;
