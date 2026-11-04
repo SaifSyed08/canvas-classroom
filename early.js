@@ -22,6 +22,33 @@
       html.append(st);
     }
   } catch {}
+  // The look's page colors (classroom.js saves them), over BetterCampus's.
+  try {
+    const look = JSON.parse(localStorage.getItem('gcx:look') || 'null');
+    if (look && typeof look.css === 'string' && !look.css.includes('<')) {
+      const st = document.createElement('style');
+      st.id = 'gcx-look';
+      st.textContent = look.css;
+      html.append(st);
+    }
+  } catch {}
+  // The page background: a built-in drawing (its address is saved) or his own picture (in
+  // chrome.storage, read as soon as it can be).
+  try {
+    const art = JSON.parse(localStorage.getItem('gcx:art') || 'null');
+    const put = (url) => {
+      if (!/^(chrome-extension:\/\/|data:image\/)/.test(url)) return;
+      html.style.setProperty('--gcx-art', `url("${url}")`);
+      html.style.setProperty('--gcx-art-pos', art.pos || 'center');
+      html.style.setProperty('--gcx-veil', `color-mix(in srgb, var(--gcx-bg) ${100 - art.amt}%, transparent)`);
+      html.classList.add('gcx-art');
+      if (art.amt >= 40) html.classList.add('gcx-artbold');
+    };
+    if (art && art.amt > 0 && art.amt <= 100) {
+      if (art.url) put(art.url);
+      else if (art.mine) chrome.storage.local.get('gcx:bgimg').then((r) => r['gcx:bgimg'] && put(r['gcx:bgimg']), () => {});
+    }
+  } catch {}
   try {
     if (localStorage.getItem('gcx:pinned') === 'true') html.classList.add('gcx-pinned');
   } catch {}
@@ -77,6 +104,8 @@
   try {
     const prefs = JSON.parse(localStorage.getItem('gcx:prefs') || '{}') || {};
     still = prefs.motion === false;
+    // The font for everything (classroom.css).
+    if (/^[a-z]+$/.test(prefs.uiFont || '')) html.dataset.gcxUi = prefs.uiFont;
     // Room between the rail and the dashboard, there from the first paint.
     const gap = Math.max(0, Math.min(320, Number(prefs.dashGap) || 0));
     if (gap) html.style.setProperty('--gcx-dash-gap', `${gap}px`);

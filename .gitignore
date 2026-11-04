@@ -2,3 +2,6 @@ node_modules/
 *.zip
 config.local.json
 pets.local/
+
+# His own screenshots for the store slides (unblurred Canvas)
+store/raw/

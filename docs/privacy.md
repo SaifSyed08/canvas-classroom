@@ -32,6 +32,7 @@ as it would if you opened it yourself.
 | OpenAI | The Inbox conversation you're replying to, the compose window's text (course, recipients, subject), your name, and your draft | As soon as you open a reply (or after the first couple of words of a new message) in Canvas's Inbox, and again as you type, while "Suggestions in Inbox" is on (it's on by default once a key is set) |
 | OpenAI | The class name and your description of the cover | When you generate an AI class cover |
 | OpenAI | Your description of the pet; for "My school's mascot", your school's Canvas address | When you make a pet with AI |
+| OpenAI | Your description of the background | When you make a page background with AI |
 | codex-pets.net | Library page and search requests, the small preview images of the pets shown, and the pet you pick | When you browse or pick a pet |
 | Google's favicon service and YouTube's image server | The address of a web link in a course | When you hover that link to preview it |
 
@@ -57,7 +58,8 @@ All of it stays in your browser:
   different user signs in
 - in the tab's `sessionStorage`, that tab's open chat and copies of recently seen pages, gone when the tab
   closes
-- your settings, class icons and colors, covers, pinned links and shortcuts
+- your settings, class icons and colors, covers, pinned links and shortcuts, and the background picture you
+  uploaded or made
 - your recent AI chat (the latest 40 messages, per Canvas site and user) so Ctrl + Shift + Space can bring it
   back
 - your OpenAI key, if you added one; it is only ever sent to api.openai.com, by the extension's

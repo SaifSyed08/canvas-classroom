@@ -17,8 +17,8 @@ html.gcx-asg #content { padding-top: 28px !important; }
 
 /* ---- left: the assignment */
 /* Over a picture background (BetterCampus image themes) the text needs a surface. */
-html.gcx-imgbg .gcx-asg-main { background: var(--gcx-card); border-radius: 14px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
-html.gcx-imgbg .gcx-asg-original { background: var(--gcx-card); padding: 2px 8px; border-radius: 8px; }
+:is(html.gcx-imgbg, html.gcx-artbold) .gcx-asg-main { background: var(--gcx-card); border-radius: 14px; padding: 20px 22px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+:is(html.gcx-imgbg, html.gcx-artbold) .gcx-asg-original { background: var(--gcx-card); padding: 2px 8px; border-radius: 8px; }
 .gcx-asg-head { display: flex; align-items: flex-start; gap: 16px; }
 .gcx-asg-ic {
   width: 44px; height: 44px; flex: none; border-radius: 50%; display: grid; place-items: center;
@@ -101,7 +101,7 @@ html.gcx-imgbg .gcx-asg-original { background: var(--gcx-card); padding: 2px 8px
 .gcx-asg-links { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
 .gcx-asg-original { font-size: 12px; color: var(--gcx-muted) !important; }
 button.gcx-asg-original { padding: 0; border: 0; background: none; font-family: inherit; text-decoration: underline; cursor: pointer; }
-html.gcx-imgbg button.gcx-asg-original { background: var(--gcx-card); padding: 2px 8px; border-radius: 8px; }
+:is(html.gcx-imgbg, html.gcx-artbold) button.gcx-asg-original { background: var(--gcx-card); padding: 2px 8px; border-radius: 8px; }
 .gcx-asg-original[hidden] { display: none !important; }
 
 /* ---- Your work: the attempt he's looking at */

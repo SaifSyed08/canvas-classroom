@@ -940,6 +940,17 @@
     bmp.close();
     return cv.toDataURL('image/jpeg', 0.85);
   }
+  // A background picture: kept whole, at most 1920 wide, as a JPEG.
+  async function shrinkBackdrop(file) {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1920 / bmp.width, 1200 / bmp.height);
+    const cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(bmp.width * scale));
+    cv.height = Math.max(1, Math.round(bmp.height * scale));
+    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+    bmp.close();
+    return cv.toDataURL('image/jpeg', 0.85);
+  }
   let closeCovers = null;
   function openCoverPicker(btn, id) {
     if (closeCovers) return closeCovers();
@@ -3184,6 +3195,7 @@
   const PREF_DEFAULTS = {
     greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true,
     school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
+    look: '', uiFont: '', art: '', artAmt: 18,
   };
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
   const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
@@ -3222,6 +3234,7 @@
     ['school', 'School', ''],
     ['deepblue', 'Deep blue', '#1e3a8a'],
     ['forest', 'Forest', '#166534'],
+    ['blossom', 'Blossom', '#c2457a'],
     ['plum', 'Plum', '#6b21a8'],
     ['crimson', 'Crimson', '#9f1239'],
     ['teal', 'Teal', '#0f766e'],
@@ -3284,6 +3297,124 @@
       side.prepend(box);
     }
   }
+  // Looks: a whole style in one tap (page colors, theme color, fonts, background). Picking one sets
+  // the settings below it, which can still be changed one by one; its page colors stay until another
+  // look (or None, back to BetterCampus's colors) is picked. Page colors: background, second and
+  // third surfaces, cards, text (strong, muted, faint), borders, links.
+  const LOOKS = [
+    { id: '', label: 'None', sw: [] },
+    {
+      id: 'classroom',
+      label: 'Classroom',
+      vars: ['#ffffff', '#f1f3f4', '#e8eaed', '#ffffff', '#1f1f1f', '#5f6368', '#80868b', '#dadce0', '#1a73e8'],
+      set: { theme: '', uniform: false, font: 'grotesk', uiFont: '', art: '' },
+    },
+    {
+      id: 'blossom',
+      label: 'Blossom',
+      vars: ['#fff6f9', '#fde7ef', '#f9d5e2', '#ffffff', '#3a1f2b', '#86566a', '#a77f90', '#f3d1de', '#c2185b'],
+      set: { theme: 'blossom', uniform: true, font: 'playfair', uiFont: 'nunito', art: 'blossom', artAmt: 30 },
+    },
+    {
+      id: 'forest',
+      label: 'Forest',
+      vars: ['#f3f7f1', '#e4ede0', '#d5e3cf', '#ffffff', '#1c2a1f', '#56695a', '#7d8f80', '#d0ddca', '#2e7d32'],
+      set: { theme: 'forest', uniform: true, font: 'fredoka', uiFont: 'lexend', art: 'trees', artAmt: 16 },
+    },
+    {
+      id: 'midnight',
+      label: 'Midnight',
+      dark: true,
+      vars: ['#0c1430', '#141f45', '#1b2856', '#17224b', '#e8ecf8', '#a3add0', '#7c87ad', '#2a3870', '#8ab4ff'],
+      set: { theme: 'deepblue', uniform: false, font: 'poppins', uiFont: '', art: '' },
+    },
+    {
+      id: 'schooldark',
+      label: 'School dark',
+      dark: true,
+      vars: ['#141414', '#1e1e1e', '#262626', '#232323', '#f5f5f5', '#b0b0b0', '#8a8a8a', '#343434', 'color-mix(in oklab, var(--ic-brand-global-nav-bgd, #8ab4f8) 55%, white)'],
+      set: { theme: 'school', uniform: true, font: 'grotesk', uiFont: 'lexend', art: '' },
+    },
+  ];
+  const LOOK_VARS = ['--bcbackground-0', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks'];
+  const lookOf = (id) => LOOKS.find((l) => l.id === id && l.vars) || null;
+  function lookCss(l) {
+    if (!l) return '';
+    const d = LOOK_VARS.map((k, i) => `${k}: ${l.vars[i]} !important`);
+    d.push(`--bcbackground-0-ungradient: ${l.vars[0]} !important`, '--bcbackground-image: none !important', `color-scheme: ${l.dark ? 'dark' : 'light'}`);
+    return `:root.gcx, :root.gcx body { ${d.join('; ')} }`;
+  }
+  // The look's colors go in over BetterCampus's (they're its variables, so its own dark mode
+  // follows them too); early.js puts the same style in before the next page's first frame.
+  function applyLook() {
+    const p = prefs();
+    const css = lookCss(lookOf(p.look));
+    let st = document.getElementById('gcx-look');
+    if (css) {
+      if (!st) {
+        st = document.createElement('style');
+        st.id = 'gcx-look';
+        html.append(st);
+      }
+      if (st.textContent !== css) st.textContent = css;
+      store.set('look', { css });
+    } else {
+      st?.remove();
+      try {
+        localStorage.removeItem('gcx:look');
+      } catch {}
+    }
+    if (p.uiFont && UI_FONTS.some((f) => f[0] === p.uiFont)) html.dataset.gcxUi = p.uiFont;
+    else delete html.dataset.gcxUi;
+    applyArt();
+  }
+  // Page backgrounds: two drawings (each with an ink for light pages and one for dark), or his
+  // own picture (uploaded or made with AI, in chrome.storage). The strength is how much of it
+  // shows through the page color.
+  const ARTS = [
+    ['', 'None'],
+    ['trees', 'Trees', 'center bottom'],
+    ['blossom', 'Blossom', 'center top'],
+    ['mine', 'Yours', 'center'],
+  ];
+  const BG_KEY = 'gcx:bgimg';
+  let bgMine = null; // his picture once read ('' if there's none)
+  const pageIsDark = () => {
+    const l = lookOf(prefs().look);
+    if (l) return !!l.dark;
+    const n = document.createElement('i');
+    n.style.cssText = 'position:absolute;visibility:hidden;background:var(--gcx-bg, #fff)';
+    html.append(n);
+    const c = getComputedStyle(n).backgroundColor;
+    n.remove();
+    return rgbLuminance(c) < 0.35;
+  };
+  let artRun = 0;
+  async function applyArt() {
+    const run = ++artRun;
+    const p = prefs();
+    const amt = Math.max(3, Math.min(100, Number(p.artAmt) || 18));
+    const art = ARTS.find((a) => a[0] === p.art && a[0]);
+    let url = '';
+    if (art && art[0] === 'mine') {
+      if (bgMine === null) bgMine = (await chrome.storage.local.get(BG_KEY).catch(() => ({})))[BG_KEY] || '';
+      if (run !== artRun) return;
+      url = bgMine;
+    } else if (art) url = chrome.runtime.getURL(`art/${art[0]}-${pageIsDark() ? 'dark' : 'light'}.svg`);
+    html.classList.toggle('gcx-art', !!url);
+    html.classList.toggle('gcx-artbold', !!url && amt >= 40);
+    if (!url) {
+      ['--gcx-art', '--gcx-art-pos', '--gcx-veil'].forEach((k) => html.style.removeProperty(k));
+      try {
+        localStorage.removeItem('gcx:art');
+      } catch {}
+      return;
+    }
+    html.style.setProperty('--gcx-art', `url("${url}")`);
+    html.style.setProperty('--gcx-art-pos', art[2]);
+    html.style.setProperty('--gcx-veil', `color-mix(in srgb, var(--gcx-bg) ${100 - amt}%, transparent)`);
+    store.set('art', art[0] === 'mine' ? { mine: true, pos: art[2], amt } : { url, pos: art[2], amt });
+  }
   function rgbLuminance(rgb) {
     const m = String(rgb).match(/(\d+(?:\.\d+)?)/g);
     if (!m || m.length < 3) return 1;
@@ -3315,7 +3446,7 @@
     try {
       saved = JSON.parse(sessionStorage.getItem('gcx:hello') || 'null');
     } catch {}
-    if (saved && saved.kind !== 'urgent' && saved.tone === prefs().tone && Date.now() - saved.t < 3 * 36e5) {
+    if (saved && !FORCE_HELLO && saved.kind !== 'urgent' && saved.tone === prefs().tone && Date.now() - saved.t < 3 * 36e5) {
       welcomeCtx.titled = true;
       welcomeCtx.fromCache = true;
       greetRefs = saved.refs || [];
@@ -3354,7 +3485,7 @@
     welcomeCtx.kind = greetKind;
     if (animate) reveal(hello);
     // A placeholder picked without his work list isn't worth keeping for the session.
-    if (welcomeCtx.provisional) return;
+    if (welcomeCtx.provisional || FORCE_HELLO) return;
     try {
       sessionStorage.setItem('gcx:hello', JSON.stringify({ text, refs: greetRefs, kind: greetKind, tone: prefs().tone, t: since }));
     } catch {}
@@ -3408,6 +3539,7 @@
   const thanksgiving = (year) => ((4 - new Date(year, 10, 1).getDay() + 7) % 7) + 1 + 21;
   let greetRefs = []; // keys of the work items ('flagged', 'clear') the last greeting talked about
   let greetKind = ''; // which branch it came from: 'urgent', 'holiday', 'today' or ''
+  const FORCE_HELLO = new URLSearchParams(location.search).get('gcx-hello') || '';
   function greeting(n, items, lastVisit = 0) {
     greetRefs = [];
     greetKind = '';
@@ -3429,6 +3561,16 @@
     const next = open[0];
     const hoursLeft = next ? (next.due - now) / 36e5 : Infinity;
     const short = (t) => (t.length > 34 ? t.slice(0, 32).trim() + '…' : t);
+    // Asked for by the address (?gcx-hello=returns, spooky, morning or due): for screenshots, or to
+    // see the kinds there are.
+    if (FORCE_HELLO === 'returns') return say([[`${n} returns!`, '🦸'], [`Look who's back, ${n}!`, '👀']]);
+    if (FORCE_HELLO === 'spooky') return say([[`Boo! Greetings, ${n}!`, '👻'], [`Spooky season, ${n}.`, '🎃']]);
+    if (FORCE_HELLO === 'morning') return say([[`Good morning, ${n}!`, '☀️'], [`Rise and shine, ${n}!`, '🌅']]);
+    if (FORCE_HELLO === 'due' && next) {
+      greetRefs = [next.key];
+      const when = dayDiff(next.due) === 0 ? 'today' : dayDiff(next.due) === 1 ? 'tomorrow' : 'soon';
+      return say([[`${short(next.title)} is due ${when}, ${n}.`, '📅']]);
+    }
 
     if (next && hoursLeft < 6) {
       greetRefs = [next.key];
@@ -3481,7 +3623,7 @@
     }
 
     const away = lastVisit ? (Date.now() - lastVisit) / 864e5 : 0;
-    if (away > 7) return calm ? `Welcome back, ${n}.` : say([[`Long time no see, ${n}!`, '👋'], [`It's been a minute, ${n}!`, '👀']]);
+    if (away > 7) return calm ? `Welcome back, ${n}.` : say([[`Long time no see, ${n}!`, '👋'], [`It's been a minute, ${n}!`, '👀'], [`${n} returns!`, '🦸']]);
     if (away > 2 && !calm) return say([[`Good to see you, ${n}!`, '👋'], [`Missed you, ${n}.`, '🫶']]);
     if (lastVisit && Date.now() - lastVisit < 10 * 6e4 && !calm && Math.random() < 0.5) return say([[`Back already, ${n}?`, '😄'], [`Hi again, ${n}!`, '👋']]);
     if (h < 4 && !calm) return say([[`Up late, ${n}?`, '🌙'], [`Night owl mode, ${n}.`, '🦉'], [`Still up, ${n}? Get some sleep.`, '😴']]);
@@ -3529,6 +3671,12 @@
     ['grotesk', 'Grotesk'],
     ['canvas', 'Plain'],
   ];
+  const UI_FONTS = [
+    ['', 'Canvas'],
+    ['nunito', 'Nunito'],
+    ['lexend', 'Lexend'],
+    ['lora', 'Lora'],
+  ];
   function settingsHtml() {
     const p = prefs();
     const toggle = (k, label, sub) =>
@@ -3559,6 +3707,15 @@
       <div class="gcx-set-h">Look</div>
       <div class="gcx-set-card">
         <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Style (sets everything below in one go; dark ones color the rest of Canvas when BetterCampus's dark mode is on)</div>
+          <div class="gcx-set-looks" role="radiogroup" aria-label="Style">${LOOKS.map(
+            (l) =>
+              `<button type="button" role="radio" data-look="${l.id}" aria-checked="${(p.look || '') === l.id}" title="${l.label}"><span class="gcx-lk"${
+                l.vars ? ` style="--lk-bg:${l.vars[0]};--lk-card:${l.vars[3]};--lk-text:${l.vars[4]};--lk-bar:${(THEMES.find((t) => t[0] === l.set.theme) || [])[2] || l.vars[8]}"` : ''
+              }><i></i><b></b><b></b></span><small>${l.label}</small></button>`,
+          ).join('')}</div>
+        </div>
+        <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Theme (menu rail and accents; School uses your school's Canvas colors and logo)</div>
           <div class="gcx-set-themes" role="radiogroup" aria-label="Theme">${THEMES.map(
             ([k, label, color]) =>
@@ -3566,6 +3723,27 @@
           ).join('')}</div>
           </div>
         ${toggle('uniform', 'Classes take the theme color', 'With a theme on, every class card, banner and chip uses the theme color instead of its own').replace('<label class="gcx-set-row"', '<label class="gcx-set-row" data-needs="theme"')}
+        <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Font for everything</div>
+          <div class="gcx-set-fonts gcx-set-uifonts" role="radiogroup" aria-label="Font for everything">${UI_FONTS.map(
+            ([k, label]) => `<button type="button" role="radio" data-uifont="${k}" aria-checked="${(p.uiFont || '') === k}"><span class="gcx-ui-${k || 'canvas'}">Aa</span><small>${label}</small></button>`,
+          ).join('')}</div>
+        </div>
+        <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Background</div>
+          <div class="gcx-set-tone gcx-set-arts" role="radiogroup" aria-label="Background">${ARTS.map(
+            ([k, label]) => `<button type="button" role="radio" data-art="${k}" aria-checked="${(p.art || '') === k}">${label}</button>`,
+          ).join('')}</div>
+          <div class="gcx-set-bgmine">
+            <button type="button" class="gcx-set-try gcx-set-bgup">Upload a picture</button>
+            <input type="file" class="gcx-set-bgfile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+            <form class="gcx-set-bggen"><input type="text" maxlength="300" placeholder="Or describe one for AI: misty mountains at dawn" aria-label="Describe a background for AI to make"><button type="submit" class="gcx-set-try">Make it</button></form>
+          </div>
+          <div class="gcx-set-need" data-needs="art">
+            <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p.artAmt}%</span></div>
+            <input type="range" class="gcx-set-range" data-range="artAmt" min="5" max="100" step="1" value="${p.artAmt}" aria-label="Background strength">
+          </div>
+        </div>
         ${toggle('tint', 'Color over class images', "Each class image takes a wash of that class's color, like Canvas's own color overlay")}
         <div class="gcx-set-sub" data-needs="tint">
           <div class="gcx-set-lbl">Strength <span class="gcx-set-val">${p.tintAmt}%</span></div>
@@ -3606,11 +3784,57 @@
       applyFontPref();
       applyShadePref();
       applyLayoutPref();
-      if ('school' in patch || 'uniform' in patch) applySchoolPref();
+      if ('school' in patch || 'uniform' in patch || 'theme' in patch) applySchoolPref();
+      if ('look' in patch || 'uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
     const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : prefs()[k]);
+    // His own background: an upload, or one made with AI. Kept at screen size, then shown.
+    const useBackdrop = async (blob) => {
+      const data = await shrinkBackdrop(blob);
+      await chrome.storage.local.set({ [BG_KEY]: data });
+      bgMine = data;
+      const amt = prefs().art === 'mine' ? {} : { artAmt: 35 };
+      save({ art: 'mine', ...amt });
+      box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.art === 'mine')));
+      const r = box.querySelector('[data-range="artAmt"]');
+      if (r) {
+        r.value = prefs().artAmt;
+        const val = r.parentElement.querySelector('.gcx-set-val');
+        if (val) val.textContent = `${prefs().artAmt}%`;
+      }
+      sync();
+    };
+    box.querySelector('.gcx-set-bgfile')?.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        await useBackdrop(file);
+      } catch (err) {
+        toast(`Couldn't use that picture: ${err.message || err}`);
+      }
+    });
+    box.querySelector('.gcx-set-bggen')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const text = form.querySelector('input').value.trim();
+      const go = form.querySelector('button');
+      if (!text || go.disabled) return;
+      go.disabled = true;
+      go.textContent = 'Making…';
+      try {
+        const r = await chrome.runtime.sendMessage({ type: 'genBackdrop', prompt: text });
+        if (!r || !r.data) throw new Error((r && r.error) || 'No picture came back');
+        await useBackdrop(await (await fetch(r.data)).blob());
+      } catch (err) {
+        toast(`Couldn't make that background: ${err.message || err}`);
+      } finally {
+        go.disabled = false;
+        go.textContent = 'Make it';
+      }
+    });
     const sync = () => box.querySelectorAll('[data-needs]').forEach((n) => n.classList.toggle('off', !needs(n.dataset.needs)));
     sync();
     box.addEventListener('change', (e) => {
@@ -3631,7 +3855,47 @@
       const f = e.target.closest('[data-font]');
       const sh = e.target.closest('[data-shade]');
       const th = e.target.closest('[data-theme]');
-      if (th) {
+      const lk = e.target.closest('[data-look]');
+      const uf = e.target.closest('[data-uifont]');
+      const ar = e.target.closest('[data-art]');
+      if (lk) {
+        const l = LOOKS.find((x) => x.id === lk.dataset.look);
+        if (!l) return;
+        save({ look: l.id, ...(l.set || {}), ...(l.set ? { school: false } : {}) });
+        applySchoolPref();
+        // The rows below show what it set.
+        const now = prefs();
+        const mark = (sel, key) => box.querySelectorAll(`[${sel}]`).forEach((b) => b.setAttribute('aria-checked', String(b.getAttribute(sel) === String(now[key] || ''))));
+        mark('data-look', 'look');
+        mark('data-theme', 'theme');
+        mark('data-font', 'font');
+        mark('data-uifont', 'uiFont');
+        mark('data-art', 'art');
+        const u = box.querySelector('[data-k="uniform"]');
+        if (u) u.checked = now.uniform !== false;
+        const amt = box.querySelector('[data-range="artAmt"]');
+        if (amt) {
+          amt.value = now.artAmt;
+          const val = amt.parentElement.querySelector('.gcx-set-val');
+          if (val) val.textContent = `${now.artAmt}%`;
+        }
+        if (welcomeCtx) reveal(welcomeCtx.wel.querySelector('.gcx-hello'));
+        sync();
+      } else if (uf) {
+        save({ uiFont: uf.dataset.uifont });
+        box.querySelectorAll('[data-uifont]').forEach((b) => b.setAttribute('aria-checked', String(b === uf)));
+      } else if (ar) {
+        if (ar.dataset.art === 'mine' && !bgMine) {
+          // Nothing of his yet: pick one first.
+          box.querySelector('.gcx-set-bgfile').click();
+          return;
+        }
+        save({ art: ar.dataset.art });
+        box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b === ar)));
+        sync();
+      } else if (e.target.closest('.gcx-set-bgup')) {
+        box.querySelector('.gcx-set-bgfile').click();
+      } else if (th) {
         save({ theme: th.dataset.theme, school: false });
         applySchoolPref();
         box.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-checked', String(b === th)));
@@ -3879,7 +4143,7 @@
     .gcx-switch:checked { background: var(--gcx-link, #4f46e5); }
     .gcx-switch:checked::after { transform: translateX(16px); }
     .gcx-set-sub { padding: 4px 16px 14px; transition: opacity .15s ease; }
-    .gcx-set-sub.off, .gcx-set-row.off { opacity: .4; pointer-events: none; }
+    .gcx-set-sub.off, .gcx-set-row.off, .gcx-set-need.off { opacity: .4; pointer-events: none; }
     .gcx-set-lbl { font-size: 12px; font-weight: 600; color: var(--gcx-muted, #71717a); margin: 8px 0 6px; }
     .gcx-set-tone { display: flex; gap: 4px; padding: 3px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-tone button { flex: 1; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--gcx-muted, #71717a); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -3892,7 +4156,31 @@
     .gcx-set-fonts button:hover { background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-fonts button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); background: color-mix(in srgb, var(--gcx-link, #4f46e5) 8%, transparent); }
     .gcx-set-fonts span { font-size: 22px; line-height: 1.1; }
-    .gcx-set-themes { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-bottom: 4px; }
+    .gcx-set-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; margin-bottom: 4px; }
+    .gcx-set-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; margin-bottom: 4px; }
+    .gcx-set-looks button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 4px; border: 1px solid transparent; border-radius: 12px;
+      background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
+    .gcx-set-looks button:hover { background: var(--gcx-bg2, #f4f4f5); }
+    .gcx-set-looks button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); }
+    .gcx-set-looks small { font-size: 11px; color: var(--gcx-muted, #71717a); white-space: nowrap; }
+    /* A tiny page: the rail, two cards. "None" is BetterCampus's own colors. */
+    .gcx-lk { position: relative; display: block; width: 64px; height: 42px; border-radius: 8px; overflow: hidden; background: var(--lk-bg, conic-gradient(#f4f4f5 0 25%, #e4e4e7 0 50%, #f4f4f5 0 75%, #e4e4e7 0) 0 0 / 12px 12px);
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+    .gcx-lk i { position: absolute; inset: 0 auto 0 0; width: 11px; background: var(--lk-bar, transparent); }
+    .gcx-lk b { position: absolute; top: 9px; width: 20px; height: 24px; border-radius: 4px; background: var(--lk-card, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--lk-text, transparent) 14%, transparent); }
+    .gcx-lk b:first-of-type { left: 17px; }
+    .gcx-lk b:last-of-type { left: 40px; }
+    .gcx-lk:not([style]) b, .gcx-lk:not([style]) i { display: none; }
+    .gcx-set-uifonts { grid-template-columns: repeat(4, 1fr); }
+    .gcx-ui-canvas { font-family: 'Lato Extended', Lato, sans-serif; font-weight: 700; }
+    .gcx-ui-nunito { font-family: 'GCX Nunito', sans-serif; font-weight: 700; }
+    .gcx-ui-lexend { font-family: 'GCX Lexend', sans-serif; font-weight: 600; }
+    .gcx-ui-lora { font-family: 'GCX Lora', serif; font-weight: 700; }
+    .gcx-set-arts { margin-bottom: 8px; }
+    .gcx-set-bgmine { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .gcx-set-bggen { display: flex; flex: 1 1 260px; gap: 8px; margin: 0; }
+    .gcx-set-bggen input { flex: 1; min-width: 0; height: 30px; padding: 0 12px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 15px; background: none; color: var(--gcx-text, #18181b); font: inherit; font-size: 13px; }
+    .gcx-set-bggen button:disabled { opacity: .6; cursor: progress; }
     .gcx-set-themes button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px; border: 1px solid transparent; border-radius: 10px;
       background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
     .gcx-set-themes button:hover { background: var(--gcx-bg2, #f4f4f5); }
@@ -4963,6 +5251,7 @@
         refreshInlineColors();
         syncFirstPaint();
         applySchoolPref();
+        applyArt();
       }
       return;
     }
@@ -4980,6 +5269,7 @@
       refreshInlineColors();
       syncFirstPaint();
       applySchoolPref();
+      applyArt();
     };
     try {
       document
@@ -5025,6 +5315,7 @@
   applyShadePref();
   applyLayoutPref();
   applySchoolPref();
+  applyLook();
   html.classList.toggle('gcx-still', !prefs().motion);
   // Elements ease in one by one after a page change; stop once the page has settled so later
   // refreshes and redraws don't replay it.
