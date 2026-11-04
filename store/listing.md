@@ -6,7 +6,8 @@ Everything the Developer Dashboard asks for, ready to paste. Images are in `stor
 ## Before submitting
 
 - [ ] Developer account: https://chrome.google.com/webstore/devconsole ($5 one-time fee, 2-step verification on).
-- [ ] Final name in `manifest.json`, `store/make-images.py --name`, the README and `docs/privacy.md`.
+- [x] Final name in `manifest.json`, `store/make-images.py --name`, the README and `docs/privacy.md`
+      (Even Better Canvas; if the store turns it down, change it in all four and rebuild the images).
 - [ ] A new icon. The current one (green board with a person) is close to Google Classroom's, and the store
       rejects icons that look like another product's.
 - [ ] `version` in `manifest.json` (1.0.0 for the first listing); every later upload needs a higher one.
@@ -19,11 +20,11 @@ Everything the Developer Dashboard asks for, ready to paste. Images are in `stor
 
 ## Store listing tab
 
-**Name** (from the manifest, max 75): Canvas Classroom
+**Name** (from the manifest, max 75): Even Better Canvas
 
 **Summary** (the store takes it from the manifest's `description`, which already has it; 132 characters, the maximum):
 
-> Canvas, Classroom-style: a class rail, Classwork, one To-do list, files that open in place, an AI that knows your classes and a pet.
+> BETTER CANVAS MUST BE INSTALLED! A Google Classroom-inspired interface for BetterCanvas: assignments, file viewer, AI help and more.
 
 **Category:** Education
 
@@ -32,9 +33,11 @@ Everything the Developer Dashboard asks for, ready to paste. Images are in `stor
 **Description:**
 
 ```
+BETTER CANVAS MUST BE INSTALLED! Get BetterCampus (previously BetterCanvas), free on the Chrome Web Store, first.
+
 Canvas, but it feels like Google Classroom, and then some.
 
-Canvas Classroom rebuilds Canvas around how you actually use it. Pages open instantly from your last visit and refresh quietly in the background.
+Even Better Canvas rebuilds Canvas around how you actually use it. Pages open instantly from your last visit and refresh quietly in the background.
 
 FEELS LIKE CLASSROOM
 • A slim rail with all your classes. Hover to expand, pin it open, give each class an icon and color.
@@ -44,14 +47,10 @@ FEELS LIKE CLASSROOM
 • Assignment pages with a Your work card: status, what you turned in, private comments, and turning in text, links or files.
 • One To-do list for every class: Assigned, Missing, Done.
 
-ASK ANYTHING
+AI ASSISTANCE (BRING YOUR OWN KEY)
 Press Ctrl + Space on any Canvas page and ask: "what's due this week?", "what did I get on Exam 2?", "summarize the lecture 9 slides". It reads your Canvas to answer, links what it cites, and can take you to the page. It only reads; it never submits or posts.
-
-AI REPLIES IN THE INBOX
-Start a reply and gray text suggests the rest, in your voice. Tab takes it, Ctrl + → takes one word, Esc hides it.
-
-A PET
-Turn one on in settings: pick one of 3,600+ pixel pets from codex-pets.net, import your own, or have AI draw one (your school's mascot, say). It wanders along the bottom of the page, naps with little z's, runs alongside the AI while it thinks, and can be picked up and thrown. Soft sound effects if you want them.
+In the Inbox, start a reply and gray text suggests the rest, in your voice. Tab takes it, Esc hides it.
+The AI runs on your own OpenAI key, which you paste into the settings. It stays in your browser and goes only to OpenAI. We never see it, or anything you ask.
 
 MAKE IT YOURS
 • Themes, or your school's own colors and logo
@@ -59,17 +58,18 @@ MAKE IT YOURS
 • Shortcuts on class cards, pinned links on a class's Home
 • Smooth page transitions (cards grow into the class banner), or turn motion off
 • Seasonal confetti when you turn something in
+• An optional pixel companion that reminds you what's due
 
 FILES OPEN IN PLACE
 PDFs, slides and documents open over the page with zoom, download and details, instead of sending you somewhere else.
 
 GOOD TO KNOW
 • Works on Canvas sites at *.instructure.com.
-• Built to run alongside BetterCampus (free on the Chrome Web Store), which supplies the to-do sidebar, dark mode and themes. Canvas Classroom works without it, but is best with it.
-• The AI features use your own OpenAI key (add it in the extension's options). Everything else works without one.
-• No account, no tracking, no developer server. Canvas data is cached in your browser; the AI features send what they need to OpenAI with your key. Privacy policy: https://github.com/SaifSyed08/canvas-classroom/blob/main/docs/privacy.md
+• Requires BetterCampus (previously BetterCanvas, free on the Chrome Web Store), which supplies the to-do sidebar, dark mode and themes.
+• Everything except the AI works without an OpenAI key.
+• We don't collect your data. No account, no tracking, no analytics, no developer server: your Canvas data is cached in your own browser, and the AI features send what they need straight to OpenAI with your key. Privacy policy: https://github.com/SaifSyed08/canvas-classroom/blob/main/docs/privacy.md
 
-Not affiliated with Instructure, Google or BetterCampus.
+Not affiliated with Instructure, Google or BetterCampus (BetterCanvas).
 ```
 
 **Screenshots** (1280x800, in this order): `screenshot-1-dashboard.png`, `screenshot-2-course-home.png`,

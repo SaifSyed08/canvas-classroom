@@ -94,15 +94,15 @@ def promo(w, h, name, tagline, shot_w, icon_px, title_px, tag_px, pad, show=0.82
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--name', default='Canvas Classroom')
+    ap.add_argument('--name', default='Even Better Canvas')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     for i, n in enumerate(SCREENSHOTS, 1):
         im = Image.open(os.path.join(SHOTS, n + '.jpg')).convert('RGB').resize((1280, 800), Image.LANCZOS)
         im.save(os.path.join(OUT, f'screenshot-{i}-{n}.png'))
-    two = a.name.replace(' ', '\n', 1)
+    two = '\n'.join(a.name.rsplit(' ', 1))
     promo(440, 280, two, 'Canvas, Classroom-style', 320, 40, 32, 15, 22, show=0.6).save(os.path.join(OUT, 'promo-small.png'))
-    promo(1400, 560, two, 'Canvas, Classroom-style.\nWith an AI and a pet.', 1000, 96, 92, 36, 64).save(os.path.join(OUT, 'promo-marquee.png'))
+    promo(1400, 560, two, 'Canvas, Classroom-style.\nWith AI that knows your classes.', 1000, 96, 92, 36, 64).save(os.path.join(OUT, 'promo-marquee.png'))
     print('wrote', OUT)
 
 

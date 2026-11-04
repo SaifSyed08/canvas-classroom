@@ -1,4 +1,4 @@
-# Canvas Classroom
+# Even Better Canvas
 
 **Canvas, but it feels like Google Classroom, and then some.**
 
@@ -7,8 +7,8 @@ Home / Classwork / People on every course, one To-do list for everything, files 
 that has read your classes, and a little pet that lives at the bottom of the page. Pages open instantly from
 cache and slide into each other instead of flashing white.
 
-It runs on top of [BetterCampus](https://chromewebstore.google.com/detail/cndibmoanboadcifjkjbdpjgfedanolh),
-so keep that installed: it still supplies its to-do sidebar, themes and dark mode.
+It runs on top of [BetterCampus](https://chromewebstore.google.com/detail/cndibmoanboadcifjkjbdpjgfedanolh)
+(previously BetterCanvas), so keep that installed: it still supplies its to-do sidebar, themes and dark mode.
 
 ![Dashboard](docs/screenshots/dashboard.jpg)
 
