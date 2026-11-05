@@ -120,9 +120,10 @@ def slide_themes():
     if any(im is None for im, _ in shots):
         return None
     bg = gradient(1280, 800).convert('RGBA')
-    heading(bg, 'Make it yours', 'Themes, fonts and backgrounds, light or dark', 26, 44, 21)
-    tw, th, gap = 528, 330, 20
-    x0, y0 = (1280 - tw * 2 - gap) // 2, 112
+    heading(bg, 'Make it yours', 'Themes, fonts and backgrounds, light or dark', 38, 44, 21)
+    # Wide browser-window shots: tiles near their own shape, so little is cropped.
+    tw, th, gap = 604, 290, 20
+    x0, y0 = (1280 - tw * 2 - gap) // 2, 146
     for i, (im, label) in enumerate(shots):
         x = x0 + (i % 2) * (tw + gap)
         y = y0 + (i // 2) * (th + gap)

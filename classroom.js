@@ -3627,11 +3627,11 @@
   // ----- Settings live in a "Classroom" tab inside BetterCampus's own settings panel (its gear,
   // top right of the dashboard's to-do list).
   const FONTS = [
-    ['fredoka', 'Rounded'],
+    ['fredoka', 'Round'],
     ['poppins', 'Bold'],
     ['playfair', 'Serif'],
-    ['caveat', 'Handwritten'],
-    ['grotesk', 'Grotesk'],
+    ['caveat', 'Script'],
+    ['grotesk', 'Clean'],
     ['canvas', 'Plain'],
   ];
   const UI_FONTS = [
@@ -3670,10 +3670,10 @@
       <div class="gcx-set-h">Look</div>
       <div class="gcx-set-card">
         <div class="gcx-set-sub">
-          <div class="gcx-set-lbl">Theme (menu rail and accents; School uses your school's Canvas colors and logo)</div>
+          <div class="gcx-set-lbl">Theme <span class="gcx-set-val gcx-theme-name">${(THEMES.find((t) => t[0] === themeOf(p)) || THEMES[0])[1]}</span></div>
           <div class="gcx-set-themes" role="radiogroup" aria-label="Theme">${THEMES.map(
             ([k, label, color]) =>
-              `<button type="button" role="radio" data-theme="${k}" aria-checked="${themeOf(p) === k}" title="${label}"><span class="gcx-sw gcx-sw-${k || 'default'}" style="${color ? `--sw:${color}` : ''}"></span><small>${label}</small></button>`,
+              `<button type="button" role="radio" data-theme="${k}" aria-checked="${themeOf(p) === k}" title="${k === 'school' ? "School: your school's Canvas colors and logo" : label}" aria-label="${label}"><span class="gcx-sw gcx-sw-${k || 'default'}" style="${color ? `--sw:${color}` : ''}"></span></button>`,
           ).join('')}</div>
           </div>
         ${toggle('uniform', 'Classes take the theme color', 'With a theme on, every class card, banner and chip uses the theme color instead of its own').replace('<label class="gcx-set-row"', '<label class="gcx-set-row" data-needs="theme"')}
@@ -3688,7 +3688,7 @@
           <div class="gcx-set-tone gcx-set-arts" role="radiogroup" aria-label="Background">${ARTS.map(
             ([k, label]) => `<button type="button" role="radio" data-art="${k}" aria-checked="${(p.art || '') === k}">${label}</button>`,
           ).join('')}</div>
-          <div class="gcx-set-bgmine">
+          <div class="gcx-set-bgmine"${p.art === 'mine' ? '' : ' hidden'}>
             <button type="button" class="gcx-set-try gcx-set-bgup">Upload a picture</button>
             <input type="file" class="gcx-set-bgfile" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
             <form class="gcx-set-bggen"><input type="text" maxlength="300" placeholder="Or describe one for AI: misty mountains at dawn" aria-label="Describe a background for AI to make"><button type="submit" class="gcx-set-try">Make it</button></form>
@@ -3752,6 +3752,7 @@
       const amt = prefs().art === 'mine' ? {} : { artAmt: 35 };
       save({ art: 'mine', ...amt });
       box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.art === 'mine')));
+      box.querySelector('.gcx-set-bgmine')?.removeAttribute('hidden');
       const r = box.querySelector('[data-range="artAmt"]');
       if (r) {
         r.value = prefs().artAmt;
@@ -3817,24 +3818,10 @@
         save({ uiFont: uf.dataset.uifont });
         box.querySelectorAll('[data-uifont]').forEach((b) => b.setAttribute('aria-checked', String(b === uf)));
       } else if (ar) {
-        if (ar.dataset.art === 'mine' && !bgMine) {
-          if (bgMine === null) {
-            // Not read yet this page: look first, then come back here.
-            chrome.storage.local.get(BG_KEY).then(
-              (r) => {
-                bgMine = r[BG_KEY] || '';
-                ar.click();
-              },
-              () => {},
-            );
-            return;
-          }
-          // Nothing of his yet: pick one first.
-          box.querySelector('.gcx-set-bgfile').click();
-          return;
-        }
         save({ art: ar.dataset.art });
         box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b === ar)));
+        const mine = box.querySelector('.gcx-set-bgmine');
+        if (mine) mine.hidden = ar.dataset.art !== 'mine';
         sync();
       } else if (e.target.closest('.gcx-set-bgup')) {
         box.querySelector('.gcx-set-bgfile').click();
@@ -3842,6 +3829,8 @@
         save({ theme: th.dataset.theme, school: false });
         applySchoolPref();
         box.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-checked', String(b === th)));
+        const name = box.querySelector('.gcx-theme-name');
+        if (name) name.textContent = th.getAttribute('aria-label');
         sync();
       } else if (sh) {
         save({ shade: Number(sh.dataset.shade) });
@@ -4093,14 +4082,14 @@
     .gcx-set-tone button[aria-checked="true"] { background: var(--gcx-card, #fff); color: var(--gcx-text, #18181b); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
     .gcx-set-val { float: right; font-variant-numeric: tabular-nums; }
     .gcx-set-range { display: block; width: 100%; margin: 4px 0 0; accent-color: var(--gcx-link, #4f46e5); cursor: pointer; }
-    .gcx-set-fonts { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-    .gcx-set-fonts button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px; border: 1px solid var(--gcx-border, #e4e4e7);
+    .gcx-set-fonts { display: flex; gap: 6px; }
+    .gcx-set-fonts button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px 6px; border: 1px solid var(--gcx-border, #e4e4e7);
       border-radius: 10px; background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
     .gcx-set-fonts button:hover { background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-fonts button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); background: color-mix(in srgb, var(--gcx-link, #4f46e5) 8%, transparent); }
     .gcx-set-fonts span { font-size: 22px; line-height: 1.1; }
-    .gcx-set-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; margin-bottom: 4px; }
-    .gcx-set-uifonts { grid-template-columns: repeat(4, 1fr); }
+    .gcx-set-themes { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin: 2px 0 4px; }
+    .gcx-set-themes .gcx-sw { width: 72%; height: 72%; }
     .gcx-ui-canvas { font-family: 'Lato Extended', Lato, sans-serif; font-weight: 700; }
     .gcx-ui-nunito { font-family: 'GCX Nunito', sans-serif; font-weight: 700; }
     .gcx-ui-lexend { font-family: 'GCX Lexend', sans-serif; font-weight: 600; }
@@ -4110,15 +4099,14 @@
     .gcx-set-bggen { display: flex; flex: 1 1 260px; gap: 8px; margin: 0; }
     .gcx-set-bggen input { flex: 1; min-width: 0; height: 30px; padding: 0 12px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 15px; background: none; color: var(--gcx-text, #18181b); font: inherit; font-size: 13px; }
     .gcx-set-bggen button:disabled { opacity: .6; cursor: progress; }
-    .gcx-set-themes button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px 6px; border: 1px solid transparent; border-radius: 10px;
+    .gcx-set-themes button { display: grid; place-items: center; justify-self: center; width: 100%; max-width: 38px; aspect-ratio: 1; padding: 0; border: 2px solid transparent; border-radius: 50%;
       background: none; color: var(--gcx-text, #18181b); cursor: pointer; font: inherit; transition: border-color .15s ease, background-color .15s ease; }
     .gcx-set-themes button:hover { background: var(--gcx-bg2, #f4f4f5); }
     .gcx-set-themes button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); }
-    .gcx-set-themes small { font-size: 10px; color: var(--gcx-muted, #71717a); white-space: nowrap; }
     .gcx-sw { width: 26px; height: 26px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
     .gcx-sw-default { background: linear-gradient(135deg, #fff 50%, #e8eaed 50%); }
     .gcx-sw-school { background: conic-gradient(var(--ic-brand-global-nav-bgd, #bf5700) 0 50%, var(--ic-brand-primary, #2b7abc) 0); }
-    .gcx-set-fonts small { font-size: 10px; color: var(--gcx-muted, #71717a); }
+    .gcx-set-fonts small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--gcx-muted, #71717a); }
     .gcx-font-fredoka { font-family: 'GCX Fredoka', sans-serif; font-weight: 700; }
     .gcx-font-poppins { font-family: 'GCX Poppins', sans-serif; font-weight: 800; }
     .gcx-font-playfair { font-family: 'GCX Playfair', serif; font-weight: 800; }
@@ -4134,8 +4122,6 @@
     .gcx-soon { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: var(--gcx-bg2, #f4f4f5); color: var(--gcx-muted, #71717a); }
     /* narrow (BetterCampus's settings column): after the base rules, so these win */
     @container (max-width: 520px) {
-      .gcx-set-fonts { grid-template-columns: repeat(3, 1fr) !important; }
-      .gcx-set-themes { grid-template-columns: repeat(4, 1fr) !important; }
       .gcx-set-row { padding: 12px 14px; }
       .gcx-set-sub { padding: 4px 14px 14px; }
     }
