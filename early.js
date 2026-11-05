@@ -22,16 +22,6 @@
       html.append(st);
     }
   } catch {}
-  // The look's page colors (classroom.js saves them), over BetterCampus's.
-  try {
-    const look = JSON.parse(localStorage.getItem('gcx:look') || 'null');
-    if (look && typeof look.css === 'string' && !look.css.includes('<')) {
-      const st = document.createElement('style');
-      st.id = 'gcx-look';
-      st.textContent = look.css;
-      html.append(st);
-    }
-  } catch {}
   // The page background: a built-in drawing (its address is saved) or his own picture (in
   // chrome.storage, read as soon as it can be).
   try {

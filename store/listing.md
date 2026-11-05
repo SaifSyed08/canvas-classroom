@@ -53,7 +53,6 @@ In the Inbox, start a reply and gray text suggests the rest, in your voice. Tab 
 The AI runs on your own OpenAI key, which you paste into the settings. It stays in your browser and goes only to OpenAI. We never see it, or anything you ask.
 
 MAKE IT YOURS
-• Whole styles in one tap: Classroom, Blossom, Forest, Midnight, School dark
 • Themes, or your school's own colors and logo, and a font for everything
 • Page backgrounds: drawn, your own picture, or one AI makes from your description
 • Illustrated, moving or AI-made class covers
@@ -80,10 +79,10 @@ Not affiliated with Instructure, Google or BetterCampus (BetterCanvas).
 
 | File in `store/raw/` | What to capture (full window, 16:10, e.g. 1920x1200) |
 | --- | --- |
-| `theme-blossom.png` | Dashboard in the Blossom style, greeting via `/?gcx-hello=returns`, a few class icons set |
-| `theme-classroom.png` | Classroom style, `/?gcx-hello=morning` |
-| `theme-schooldark.png` | School dark style, `/?gcx-hello=due` |
-| `theme-forest.png` | Forest style, `/?gcx-hello=spooky` |
+| `theme-blossom.png` | Dashboard, pink: Blossom theme + Blossom background, greeting via `/?gcx-hello=returns`, a few class icons set |
+| `theme-classroom.png` | Plain light Canvas look, `/?gcx-hello=morning` |
+| `theme-schooldark.png` | BetterCampus dark mode + School theme, `/?gcx-hello=due` |
+| `theme-forest.png` | Forest theme + Trees background, `/?gcx-hello=spooky` |
 | `ai-pill.png` | Ctrl + Space open over a page, nothing typed yet |
 | `ai-chat.png` | The same after asking something, with the answer showing |
 | `pet.png` | The pet with its speech bubble up |

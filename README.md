@@ -26,8 +26,7 @@ It runs on top of [BetterCampus](https://chromewebstore.google.com/detail/cndibm
 - **Pets.** Pick one of 3,600+ pixel pets from codex-pets.net, import your own, or have AI draw one
   (your school's mascot, say). It wanders the page,
   naps, reacts to what you do, and can be picked up and thrown.
-- **Make it yours.** Whole looks in one tap (Classroom, Blossom, Forest, Midnight, School dark), a font for
-  everything, page backgrounds (drawn, your own picture, or AI-made), illustrated and moving class covers, card
+- **Make it yours.** Themes and school colors, a font for everything, page backgrounds (drawn, your own picture, or AI-made), illustrated and moving class covers, card
   icons and colors, shortcuts, seasonal confetti when you turn something in.
 - **Smooth.** Cards grow into the class banner, rows grow into the assignment, tabs slide, dark mode
   crossfades. One switch turns all of it off.
@@ -180,21 +179,15 @@ to page.
 Sprites are shrunk to their on-screen size with a sharpening pass, so the pixel art stays crisp at any size
 and zoom. Pet, size, roaming (and how much it walks), reminders and sound are in settings.
 
-## Looks, themes and school colors
-
-A **style** sets everything at once: the page colors, the theme, the greeting font, a font for everything else
-and a background. **Classroom** is Google Classroom's plain light look; **Blossom** is pink with blossom
-branches; **Forest** is soft green with a line of trees; **Midnight** is a deep-blue dark mode that keeps each
-class's own color; **School dark** is dark with your school's colors. Each part can still be changed on its
-own after. The dark styles color the rest of Canvas too when BetterCampus's dark mode is on.
+## Themes, fonts and backgrounds
 
 **Background**: Trees, Blossom, or your own picture (upload one, or describe one and AI makes it), with a
-strength slider for how much shows through.
+strength slider for how much shows through. **Font for everything**: Canvas's own, Nunito, Lexend or Lora.
 
 To get each kind of greeting for a screenshot, add `?gcx-hello=returns`, `spooky`, `morning` or `due` to the
 dashboard's address.
 
-Pick a theme in settings and the rail and accents take its color: Deep blue, Forest, Plum, Crimson, Teal or
+Pick a theme in settings and the rail and accents take its color: Deep blue, Forest, Blossom, Plum, Crimson, Teal or
 Slate. **School** uses your school's own Canvas branding instead: its color and logo on the rail, with its
 wordmark above the to-do list.
 
