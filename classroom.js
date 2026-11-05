@@ -3266,7 +3266,7 @@
     // A see-through body (image themes) says nothing; go by the theme's background color then.
     const bodyBg = getComputedStyle(document.body).backgroundColor;
     let bg = rgbLuminance(bodyBg);
-    if (/^transparent$|,\s*0\)$/.test(bodyBg)) {
+    if (seeThrough(bodyBg)) {
       const n = document.createElement('i');
       n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0, #fff)';
       document.body.append(n);
@@ -3397,7 +3397,7 @@
     (document.body || html).append(n);
     const c = getComputedStyle(n).backgroundColor;
     n.remove();
-    if (/,\s*0\)$|transparent/.test(c)) return false;
+    if (seeThrough(c)) return false;
     return rgbLuminance(c) < 0.35;
   };
   let artRun = 0;
@@ -3434,10 +3434,20 @@
     html.style.setProperty('--gcx-art-amt', `${amt}%`);
     store.set('art', art[0] === 'mine' ? { mine: true, pos: art[2], amt } : { url, pos: art[2], amt });
   }
+  // Chrome writes a color with alpha under 1 as rgba(..., a) or color(... / a); an opaque one as
+  // rgb(...) (whose last number can be 0 too). `partly`: any alpha under 1 counts.
+  function seeThrough(c, partly = false) {
+    const t = String(c).trim();
+    const m = t.match(/^(?:rgba\(.*,|color\(.*\/)\s*([\d.]+)\)$/);
+    return t === 'transparent' || (!!m && (partly ? +m[1] < 1 : +m[1] === 0));
+  }
   function rgbLuminance(rgb) {
-    const m = String(rgb).match(/(\d+(?:\.\d+)?)/g);
+    const s = String(rgb);
+    const m = s.match(/(\d+(?:\.\d+)?)/g);
     if (!m || m.length < 3) return 1;
-    const hex = '#' + m.slice(0, 3).map((v) => Math.round(+v).toString(16).padStart(2, '0')).join('');
+    // color(srgb 0.9 0.9 0.9) is 0-1, rgb() is 0-255.
+    const k = /^color\(srgb/.test(s) ? 255 : 1;
+    const hex = '#' + m.slice(0, 3).map((v) => Math.max(0, Math.min(255, Math.round(+v * k))).toString(16).padStart(2, '0')).join('');
     return luminance(hex);
   }
   function luminance(color) {
@@ -5216,7 +5226,7 @@
       const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (!saved || typeof saved !== 'object') return;
       const c = probe('var(--bcbackground-0, #fff)');
-      if (/(,|\/)\s*0(\.\d+)?\)$/.test(c)) return; // see-through: an image or gradient background
+      if (seeThrough(c, true)) return; // see-through: an image or gradient background
       const [r, g, b] = rgbOf(c);
       if (b === undefined) return;
       const dark = lum([r, g, b]) < 0.2;
