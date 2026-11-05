@@ -37,10 +37,13 @@
   try {
     const art = JSON.parse(localStorage.getItem('gcx:art') || 'null');
     const put = (url) => {
-      if (!/^(chrome-extension:\/\/|data:image\/)/.test(url)) return;
-      html.style.setProperty('--gcx-art', `url("${url}")`);
+      if (!/^(chrome-extension:\/\/|data:image\/)/.test(url) || url.includes('"')) return;
+      const st = document.createElement('style');
+      st.id = 'gcx-art-src';
+      st.textContent = `:root{--gcx-art:url("${url}")}`;
+      html.append(st);
       html.style.setProperty('--gcx-art-pos', art.pos || 'center');
-      html.style.setProperty('--gcx-veil', `color-mix(in srgb, var(--gcx-bg) ${100 - art.amt}%, transparent)`);
+      html.style.setProperty('--gcx-art-amt', `${art.amt}%`);
       html.classList.add('gcx-art');
       if (art.amt >= 40) html.classList.add('gcx-artbold');
     };
@@ -105,7 +108,7 @@
     const prefs = JSON.parse(localStorage.getItem('gcx:prefs') || '{}') || {};
     still = prefs.motion === false;
     // The font for everything (classroom.css).
-    if (/^[a-z]+$/.test(prefs.uiFont || '')) html.dataset.gcxUi = prefs.uiFont;
+    if (/^(nunito|lexend|lora)$/.test(prefs.uiFont || '')) html.dataset.gcxUi = prefs.uiFont;
     // Room between the rail and the dashboard, there from the first paint.
     const gap = Math.max(0, Math.min(320, Number(prefs.dashGap) || 0));
     if (gap) html.style.setProperty('--gcx-dash-gap', `${gap}px`);

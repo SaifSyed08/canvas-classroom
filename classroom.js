@@ -3341,12 +3341,17 @@
   function lookCss(l) {
     if (!l) return '';
     const d = LOOK_VARS.map((k, i) => `${k}: ${l.vars[i]} !important`);
-    d.push(`--bcbackground-0-ungradient: ${l.vars[0]} !important`, '--bcbackground-image: none !important', `color-scheme: ${l.dark ? 'dark' : 'light'}`);
-    return `:root.gcx, :root.gcx body { ${d.join('; ')} }`;
+    d.push(
+      `--bcbackground-0-ungradient: ${l.vars[0]} !important`,
+      '--bcbackground-image: initial !important',
+      '--bcbackground-image-layer: initial !important',
+      `color-scheme: ${l.dark ? 'dark' : 'light'}`,
+    );
+    return `:root.gcx, :root.gcx body { ${d.join('; ')} } html.gcx :is(body, #application.ic-app) { background-color: ${l.vars[0]} !important; color: ${l.vars[4]}; }`;
   }
   // The look's colors go in over BetterCampus's (they're its variables, so its own dark mode
   // follows them too); early.js puts the same style in before the next page's first frame.
-  function applyLook() {
+  function applyLook(changed = false) {
     const p = prefs();
     const css = lookCss(lookOf(p.look));
     let st = document.getElementById('gcx-look');
@@ -3367,6 +3372,11 @@
     if (p.uiFont && UI_FONTS.some((f) => f[0] === p.uiFont)) html.dataset.gcxUi = p.uiFont;
     else delete html.dataset.gcxUi;
     applyArt();
+    if (changed) {
+      checkFlatSurface();
+      refreshInlineColors();
+      saveThemeVars();
+    }
   }
   // Page backgrounds: two drawings (each with an ink for light pages and one for dark), or his
   // own picture (uploaded or made with AI, in chrome.storage). The strength is how much of it
@@ -3383,8 +3393,8 @@
     const l = lookOf(prefs().look);
     if (l) return !!l.dark;
     const n = document.createElement('i');
-    n.style.cssText = 'position:absolute;visibility:hidden;background:var(--gcx-bg, #fff)';
-    html.append(n);
+    n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0-ungradient, var(--gcx-bg, #fff))';
+    (document.body || html).append(n);
     const c = getComputedStyle(n).backgroundColor;
     n.remove();
     return rgbLuminance(c) < 0.35;
@@ -3403,16 +3413,24 @@
     } else if (art) url = chrome.runtime.getURL(`art/${art[0]}-${pageIsDark() ? 'dark' : 'light'}.svg`);
     html.classList.toggle('gcx-art', !!url);
     html.classList.toggle('gcx-artbold', !!url && amt >= 40);
+    let src = document.getElementById('gcx-art-src');
     if (!url) {
-      ['--gcx-art', '--gcx-art-pos', '--gcx-veil'].forEach((k) => html.style.removeProperty(k));
+      src?.remove();
+      ['--gcx-art-pos', '--gcx-art-amt'].forEach((k) => html.style.removeProperty(k));
       try {
         localStorage.removeItem('gcx:art');
       } catch {}
       return;
     }
-    html.style.setProperty('--gcx-art', `url("${url}")`);
+    if (!src) {
+      src = document.createElement('style');
+      src.id = 'gcx-art-src';
+      html.append(src);
+    }
+    const rule = `:root{--gcx-art:url("${url}")}`;
+    if (src.textContent !== rule) src.textContent = rule;
     html.style.setProperty('--gcx-art-pos', art[2]);
-    html.style.setProperty('--gcx-veil', `color-mix(in srgb, var(--gcx-bg) ${100 - amt}%, transparent)`);
+    html.style.setProperty('--gcx-art-amt', `${amt}%`);
     store.set('art', art[0] === 'mine' ? { mine: true, pos: art[2], amt } : { url, pos: art[2], amt });
   }
   function rgbLuminance(rgb) {
@@ -3785,7 +3803,8 @@
       applyShadePref();
       applyLayoutPref();
       if ('school' in patch || 'uniform' in patch || 'theme' in patch) applySchoolPref();
-      if ('look' in patch || 'uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
+      if ('look' in patch) applyLook(true);
+      else if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
       html.classList.toggle('gcx-still', !prefs().motion);
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
@@ -3807,6 +3826,7 @@
       sync();
     };
     box.querySelector('.gcx-set-bgfile')?.addEventListener('change', async (e) => {
+      if (!e.isTrusted) return;
       const file = e.target.files && e.target.files[0];
       e.target.value = '';
       if (!file) return;
@@ -3818,6 +3838,7 @@
     });
     box.querySelector('.gcx-set-bggen')?.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!e.isTrusted) return;
       const form = e.currentTarget;
       const text = form.querySelector('input').value.trim();
       const go = form.querySelector('button');
@@ -3886,6 +3907,17 @@
         box.querySelectorAll('[data-uifont]').forEach((b) => b.setAttribute('aria-checked', String(b === uf)));
       } else if (ar) {
         if (ar.dataset.art === 'mine' && !bgMine) {
+          if (bgMine === null) {
+            // Not read yet this page: look first, then come back here.
+            chrome.storage.local.get(BG_KEY).then(
+              (r) => {
+                bgMine = r[BG_KEY] || '';
+                ar.click();
+              },
+              () => {},
+            );
+            return;
+          }
           // Nothing of his yet: pick one first.
           box.querySelector('.gcx-set-bgfile').click();
           return;
@@ -3911,7 +3943,7 @@
         save({ font: f.dataset.font });
         box.querySelectorAll('[data-font]').forEach((b) => b.setAttribute('aria-checked', String(b === f)));
         if (welcomeCtx) reveal(welcomeCtx.wel.querySelector('.gcx-hello'));
-      } else if (e.target.closest('.gcx-set-try')) confetti();
+      } else if (e.target.closest('.gcx-set-try') && !e.target.closest('.gcx-set-bggen')) confetti();
     });
   }
 
