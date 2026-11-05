@@ -3393,10 +3393,11 @@
     const l = lookOf(prefs().look);
     if (l) return !!l.dark;
     const n = document.createElement('i');
-    n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0-ungradient, var(--gcx-bg, #fff))';
+    n.style.cssText = 'position:absolute;visibility:hidden;background:var(--bcbackground-0-ungradient, var(--bcbackground-1, #fff))';
     (document.body || html).append(n);
     const c = getComputedStyle(n).backgroundColor;
     n.remove();
+    if (/,\s*0\)$|transparent/.test(c)) return false;
     return rgbLuminance(c) < 0.35;
   };
   let artRun = 0;
@@ -3415,7 +3416,7 @@
     html.classList.toggle('gcx-artbold', !!url && amt >= 40);
     let src = document.getElementById('gcx-art-src');
     if (!url) {
-      src?.remove();
+      document.querySelectorAll('#gcx-art-src').forEach((n) => n.remove());
       ['--gcx-art-pos', '--gcx-art-amt'].forEach((k) => html.style.removeProperty(k));
       try {
         localStorage.removeItem('gcx:art');
@@ -3838,7 +3839,7 @@
     });
     box.querySelector('.gcx-set-bggen')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!e.isTrusted) return;
+      if (!e.isTrusted || !(navigator.userActivation && navigator.userActivation.isActive)) return;
       const form = e.currentTarget;
       const text = form.querySelector('input').value.trim();
       const go = form.querySelector('button');
@@ -3902,6 +3903,8 @@
         }
         if (welcomeCtx) reveal(welcomeCtx.wel.querySelector('.gcx-hello'));
         sync();
+        if (l.dark && (document.getElementById('darkcss')?.textContent || '').length < 2000)
+          toast("Turn on BetterCampus's dark mode too, so the rest of Canvas goes dark with it.");
       } else if (uf) {
         save({ uiFont: uf.dataset.uifont });
         box.querySelectorAll('[data-uifont]').forEach((b) => b.setAttribute('aria-checked', String(b === uf)));
@@ -5224,7 +5227,7 @@
   };
   // The theme's colors, saved for early.js to paint the next page's very first frame with (so it
   // isn't Canvas white until BetterCampus catches up, and page transitions don't fade from white).
-  const THEME_VARS = ['--bcbackground-0', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks', '--bcbackground-image'];
+  const THEME_VARS = ['--bcbackground-0', '--bcbackground-0-ungradient', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks', '--bcbackground-image'];
   const saveThemeVars = () => {
     if (!document.getElementById('bettercanvas-theme-preset')) return; // BetterCampus hasn't drawn its theme yet
     // BetterCampus's own theme is up now; the stand-in from early.js has done its job (and must be
