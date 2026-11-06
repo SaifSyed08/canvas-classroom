@@ -495,6 +495,7 @@
       graded: !!(s && s.graded),
       late: !!(s && s.late),
       submitted: !!(s && s.submitted),
+      ovr: (it.planner_override && it.planner_override.id) || null,
     };
   }
   function normAssignment(a, c) {
@@ -554,9 +555,13 @@
         (g) => `<div class="gcx-due-grp"><div class="gcx-due-h ${g.cls}">${esc(g.label)}</div>${g.items
           .map(
             (it) =>
-              `<a class="gcx-due-item" href="${esc(it.url)}" style="--c:${esc(colorOf(it))}" title="${esc(
+              `<div class="gcx-due-row" style="--c:${esc(colorOf(it))}"><a class="gcx-due-item" href="${esc(it.url)}" title="${esc(
                 it.title + (it.due ? ' · ' + shortDate(it.due) + ', ' + timeOf(it.due) : ''),
-              )}">${esc(it.title)}</a>`,
+              )}">${esc(it.title)}</a>${
+                /^[a-z_]+:\d+$/.test(it.key)
+                  ? `<button type="button" class="gcx-due-done" data-key="${esc(it.key)}"${it.ovr ? ` data-ovr="${esc(it.ovr)}"` : ''} title="Mark as done" aria-label="Mark as done: ${esc(it.title)}">${svg('check', 14)}</button>`
+                  : ''
+              }</div>`,
           )
           .join('')}</div>`,
       )
@@ -3186,6 +3191,90 @@
     foot.firstElementChild.outerHTML =
       soon.length > CARD_LIMIT ? `<a class="gcx-more-link" href="/?gcx=todo&course=${id}">${soon.length - CARD_LIMIT} more</a>` : '<span></span>';
   }
+  // Marked done from a due chip: Canvas's planner "done" for him (BetterCampus's to-do circles do the
+  // same). The chip folds away; Undo puts it back.
+  async function setDone(key, ovr, done) {
+    if (ovr) return (await canvasReq('PUT', `/planner/overrides/${encodeURIComponent(ovr)}`, `marked_complete=${done}`)) || { id: ovr };
+    const [type, id] = key.split(':');
+    const body = `plannable_type=${encodeURIComponent(type)}&plannable_id=${encodeURIComponent(id)}&marked_complete=${done}`;
+    try {
+      return await canvasReq('POST', '/planner/overrides', body);
+    } catch (e) {
+      // There's one already (made somewhere else): find it and change it.
+      const all = await api('/planner/overrides?per_page=100', true).catch(() => []);
+      const o = all.find((x) => x.plannable_type === type && String(x.plannable_id) === id);
+      if (!o) throw e;
+      return (await canvasReq('PUT', `/planner/overrides/${o.id}`, `marked_complete=${done}`)) || o;
+    }
+  }
+  const saveDash = () => dashItems && cache.set('dash:planner', JSON.parse(JSON.stringify(dashItems)));
+  async function dueDone(btn) {
+    const row = btn.closest('.gcx-due-row');
+    if (!row || row.classList.contains('gcx-going')) return;
+    const key = btn.dataset.key;
+    const title = row.querySelector('.gcx-due-item')?.textContent || 'it';
+    row.classList.add('gcx-going');
+    let o;
+    try {
+      o = await setDone(key, btn.dataset.ovr, true);
+    } catch (err) {
+      row.classList.remove('gcx-going');
+      toast(`Couldn't mark it done: ${err.message}`);
+      return;
+    }
+    const ovr = (o && o.id) || btn.dataset.ovr || null;
+    // On the dashboard the cards redraw from the list (the next one moves up); elsewhere the row goes.
+    const dash = !!(dashItems && dashItems.some((i) => i.key === key));
+    const parent = row.parentElement;
+    const next = row.nextSibling;
+    row.style.height = row.offsetHeight + 'px';
+    void row.offsetHeight;
+    row.classList.add('gcx-gone');
+    setTimeout(() => {
+      if (dash) {
+        dashItems = dashItems.map((i) => (i.key === key ? { ...i, done: true, missing: false, flagged: false, ovr } : i));
+        saveDash();
+        refreshCards();
+      } else {
+        row.remove();
+        if (parent && !parent.querySelector('.gcx-due-row')) parent.hidden = true;
+      }
+    }, 220);
+    toast(`Marked ${title} as done`, 'Undo', async () => {
+      try {
+        await setDone(key, ovr, false);
+      } catch (err) {
+        toast(`Couldn't undo: ${err.message}`);
+        return;
+      }
+      if (dash && dashItems) {
+        dashItems = dashItems.map((i) => (i.key === key ? normUndone(i) : i));
+        saveDash();
+        refreshCards();
+      } else if (parent && parent.isConnected) {
+        parent.hidden = false;
+        row.classList.remove('gcx-going', 'gcx-gone');
+        row.style.height = '';
+        parent.insertBefore(row, next && next.parentNode === parent ? next : null);
+      }
+    });
+  }
+  // Back to how it was before he checked it: missing again if it's past due.
+  const normUndone = (i) => {
+    const past = i.due && new Date(i.due) < new Date();
+    return { ...i, done: !!(i.submitted || i.graded), missing: !(i.submitted || i.graded) && !!past };
+  };
+  document.addEventListener(
+    'click',
+    (e) => {
+      const b = e.target.closest && e.target.closest('.gcx-due-done');
+      if (!b) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dueDone(b);
+    },
+    true,
+  );
   function refreshCards() {
     document.querySelectorAll('#DashboardCard_Container .gcx-card-body[data-color]').forEach(fillCardDue);
     maybeReleaseGhosts();
@@ -3748,8 +3837,9 @@
     const useBackdrop = async (blob) => {
       const data = await shrinkBackdrop(blob);
       await chrome.storage.local.set({ [BG_KEY]: data });
+      // A first picture comes in stronger than the drawings; a replacement keeps his strength.
+      const amt = prefs().art === 'mine' && bgMine ? {} : { artAmt: 35 };
       bgMine = data;
-      const amt = prefs().art === 'mine' ? {} : { artAmt: 35 };
       save({ art: 'mine', ...amt });
       box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.art === 'mine')));
       box.querySelector('.gcx-set-bgmine')?.removeAttribute('hidden');
@@ -4096,6 +4186,7 @@
     .gcx-ui-lora { font-family: 'GCX Lora', serif; font-weight: 700; }
     .gcx-set-arts { margin-bottom: 8px; }
     .gcx-set-bgmine { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .gcx-set-bgmine[hidden] { display: none; }
     .gcx-set-bggen { display: flex; flex: 1 1 260px; gap: 8px; margin: 0; }
     .gcx-set-bggen input { flex: 1; min-width: 0; height: 30px; padding: 0 12px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 15px; background: none; color: var(--gcx-text, #18181b); font: inherit; font-size: 13px; }
     .gcx-set-bggen button:disabled { opacity: .6; cursor: progress; }
@@ -4685,9 +4776,12 @@
   // Marking things read in Canvas (only when he clicks the check). Canvas checks X-CSRF-Token
   // against the _csrf_token cookie on anything that changes data.
   async function canvasPut(path, body = '') {
+    await canvasReq('PUT', path, body);
+  }
+  async function canvasReq(method, path, body = '') {
     const c = document.cookie.match(/(?:^|;\s*)_csrf_token=([^;]*)/);
     const r = await fetch(location.origin + '/api/v1' + path, {
-      method: 'PUT',
+      method,
       credentials: 'same-origin',
       headers: {
         Accept: 'application/json',
@@ -4698,6 +4792,7 @@
       body,
     });
     if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'Canvas said no (are you still signed in?)' : `Canvas error ${r.status}`);
+    return r.json().catch(() => null);
   }
   function mountBell(wel) {
     const btn = el(

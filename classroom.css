@@ -246,8 +246,22 @@ html.gcx-takeover #content { padding: 24px 32px 64px !important; }
 .gcx-due-h { font-size: 12px; font-weight: 700; color: var(--gcx-muted); margin-bottom: 2px; }
 .gcx-due-h.missing { color: var(--gcx-red); }
 .gcx-due-h.soon { color: color-mix(in srgb, var(--c, var(--gcx-link)) 62%, var(--gcx-text)); }
+/* A chip and its done circle (shows on hover; a check inside it on its own hover). */
+.gcx-due-row { position: relative; margin-top: 4px; transition: height .2s ease, opacity .2s ease, margin .2s ease; }
+.gcx-due-row.gcx-gone { height: 0 !important; margin-top: 0; opacity: 0; overflow: hidden; }
+.gcx-due-row:hover .gcx-due-item, .gcx-due-row:focus-within .gcx-due-item { padding-right: 36px; }
+.gcx-due-done {
+  position: absolute; top: 50%; right: 8px; display: grid; place-items: center; width: 20px; height: 20px; margin-top: -10px; padding: 0;
+  border: 2px solid var(--c, var(--gcx-link)); border-radius: 50%; background: var(--gcx-card); color: transparent; cursor: pointer;
+  opacity: 0; transition: opacity .12s ease, background-color .12s ease, color .12s ease;
+}
+.gcx-due-done .gcx-svg { width: 14px; height: 14px; }
+.gcx-due-row:hover .gcx-due-done, .gcx-due-done:focus-visible { opacity: 1; }
+.gcx-due-done:hover, .gcx-due-done:focus-visible { color: var(--c, var(--gcx-link)); background: color-mix(in srgb, var(--c, var(--gcx-link)) 14%, var(--gcx-card)); }
+.gcx-due-row.gcx-going .gcx-due-done { opacity: 1; background: var(--c, var(--gcx-link)); color: #fff; pointer-events: none; }
+@media (hover: none) { .gcx-due-done { opacity: 1; } .gcx-due-row .gcx-due-item { padding-right: 36px; } }
 .gcx-due-item {
-  display: block; margin-top: 4px; padding: 7px 10px; border-radius: 8px; border-left: 3px solid var(--c, var(--gcx-link));
+  display: block; padding: 7px 10px; border-radius: 8px; border-left: 3px solid var(--c, var(--gcx-link)); transition: padding-right .12s ease;
   background: var(--gcx-bg2); color: var(--gcx-text) !important; font-size: 14px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none !important;
 }
