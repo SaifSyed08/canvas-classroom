@@ -5309,7 +5309,7 @@
   };
   // The theme's colors, saved for early.js to paint the next page's very first frame with (so it
   // isn't Canvas white until BetterCampus catches up, and page transitions don't fade from white).
-  const THEME_VARS = ['--bcbackground-0', '--bcbackground-0-ungradient', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks', '--bcbackground-image'];
+  const THEME_VARS = ['--bcbackground-0', '--bcbackground-0-ungradient', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks', '--bcbackground-image', '--bcbackground-image-layer', '--bcbackground-image-filter'];
   const saveThemeVars = () => {
     if (!document.getElementById('bettercanvas-theme-preset')) return; // BetterCampus hasn't drawn its theme yet
     // BetterCampus's own theme is up now; the stand-in from early.js has done its job (and must be
