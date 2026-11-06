@@ -287,7 +287,20 @@
     if (now !== shown) onData(revive(fresh), false);
     return fresh;
   }
-  const reviveItems = (list) => list.map((i) => ({ ...i, due: i.due ? new Date(i.due) : null }));
+  // Done marks made here, for ten minutes: a saved copy or a fetch that started before the mark
+  // can't bring the old state back.
+  const MARK_TTL = 10 * 6e4;
+  const doneMarks = () => {
+    const m = store.get('doneMarks', {}) || {};
+    for (const k of Object.keys(m)) if (!m[k] || Date.now() - m[k].t > MARK_TTL) delete m[k];
+    return m;
+  };
+  const setDoneMark = (key, done) => store.set('doneMarks', { ...doneMarks(), [key]: { done, t: Date.now() } });
+  const applyMarks = (list) => {
+    const m = doneMarks();
+    return list.map((i) => (m[i.key] ? statusOf(i, m[i.key].done) : i));
+  };
+  const reviveItems = (list) => applyMarks(list.map((i) => ({ ...i, due: i.due ? new Date(i.due) : null })));
 
   // ---------------------------------------------------------------- dates
   const startOfDay = (d) => {
@@ -469,16 +482,19 @@
   const WORK_TYPES = new Set(['assignment', 'quiz', 'discussion_topic', 'sub_assignment', 'wiki_page', 'planner_note']);
   const TYPE_ICON = { assignment: 'assignment', sub_assignment: 'assignment', quiz: 'quiz', discussion_topic: 'discussion', wiki_page: 'page', planner_note: 'todo' };
 
+  // Done, missing (past due with nothing handed in) and flagged (Canvas itself calls it missing;
+  // in-class and on-paper work is past due without being flagged until it's graded).
+  function statusOf(i, markedDone) {
+    const past = !!(i.due && new Date(i.due) < new Date());
+    const done = !!(markedDone || i.submitted || i.excused || i.graded || (i.noSub && past));
+    return { ...i, done, missing: !done && (past || !!i.canvasMissing), flagged: !done && !!i.canvasMissing };
+  }
   function normPlanner(it) {
     const due = it.plannable_date ? new Date(it.plannable_date) : null;
     const s = it.submissions;
-    const past = due && due < new Date();
-    const done = !!(
-      (it.planner_override && it.planner_override.marked_complete) ||
-      (s && (s.submitted || s.excused || s.graded)) ||
-      (s === false && past)
-    );
-    return {
+    const po = it.planner_override;
+    return statusOf(
+      {
       key: `${it.plannable_type}:${it.plannable_id}`,
       type: it.plannable_type,
       title: (it.plannable && (it.plannable.title || it.plannable.name)) || 'Untitled',
@@ -487,16 +503,17 @@
       url: it.plannable_type === 'planner_note' ? '/calendar' : it.html_url || '#',
       courseId: it.course_id || null,
       courseName: it.context_name || '',
-      done,
-      // missing = past due with nothing handed in; flagged = Canvas itself calls it missing.
-      // In-class and on-paper work is past due without being flagged until it's graded.
-      missing: !done && (!!past || !!(s && s.missing)),
-      flagged: !done && !!(s && s.missing),
       graded: !!(s && s.graded),
       late: !!(s && s.late),
       submitted: !!(s && s.submitted),
-      ovr: (it.planner_override && it.planner_override.id) || null,
-    };
+      excused: !!(s && s.excused),
+      canvasMissing: !!(s && s.missing),
+      noSub: s === false,
+      ovr: (po && po.id) || null,
+      dis: !!(po && po.dismissed),
+      },
+      !!(po && po.marked_complete),
+    );
   }
   function normAssignment(a, c) {
     const s = a.submission || {};
@@ -555,11 +572,11 @@
         (g) => `<div class="gcx-due-grp"><div class="gcx-due-h ${g.cls}">${esc(g.label)}</div>${g.items
           .map(
             (it) =>
-              `<div class="gcx-due-row" style="--c:${esc(colorOf(it))}"><a class="gcx-due-item" href="${esc(it.url)}" title="${esc(
+              `<div class="gcx-due-row${pendingDone.has(it.key) ? ' gcx-going' : ''}" style="--c:${esc(colorOf(it))}"><a class="gcx-due-item" href="${esc(it.url)}" title="${esc(
                 it.title + (it.due ? ' · ' + shortDate(it.due) + ', ' + timeOf(it.due) : ''),
               )}">${esc(it.title)}</a>${
                 /^[a-z_]+:\d+$/.test(it.key)
-                  ? `<button type="button" class="gcx-due-done" data-key="${esc(it.key)}"${it.ovr ? ` data-ovr="${esc(it.ovr)}"` : ''} title="Mark as done" aria-label="Mark as done: ${esc(it.title)}">${svg('check', 14)}</button>`
+                  ? `<button type="button" class="gcx-due-done" data-key="${esc(it.key)}"${it.ovr ? ` data-ovr="${esc(it.ovr)}"` : ''}${it.dis ? ' data-dis' : ''} title="Mark as done" aria-label="Mark as done: ${esc(it.title)}">${svg('check', 14)}</button>`
                   : ''
               }</div>`,
           )
@@ -1618,11 +1635,17 @@
       'home:upc:' + id,
       () => planner(-HORIZON_DAYS, HORIZON_DAYS, id),
       (items) => {
-        const soon = dueSoon(items);
-        swapIn(
-          view.querySelector('.gcx-upc-list'),
-          soon.length ? `<div class="gcx-due">${dueGroupsHtml(soon, 6, color)}</div>` : `<div class="gcx-due-none">Nothing due in the next two weeks.</div>`,
-        );
+        homeUpc = {
+          items,
+          draw() {
+            const soon = dueSoon(this.items);
+            swapIn(
+              view.querySelector('.gcx-upc-list'),
+              soon.length ? `<div class="gcx-due">${dueGroupsHtml(soon, 6, color)}</div>` : `<div class="gcx-due-none">Nothing due in the next two weeks.</div>`,
+            );
+          },
+        };
+        homeUpc.draw();
       },
       reviveItems,
     ).catch((e) => showError(view.querySelector('.gcx-upc-list'), 'upcoming work', `/courses/${id}/assignments`, e));
@@ -3193,77 +3216,88 @@
   }
   // Marked done from a due chip: Canvas's planner "done" for him (BetterCampus's to-do circles do the
   // same). The chip folds away; Undo puts it back.
-  async function setDone(key, ovr, done) {
-    if (ovr) return (await canvasReq('PUT', `/planner/overrides/${encodeURIComponent(ovr)}`, `marked_complete=${done}`)) || { id: ovr };
+  async function setDone(key, ovr, done, dis = false) {
+    const put = (id) => canvasReq('PUT', `/planner/overrides/${encodeURIComponent(id)}`, `marked_complete=${done}&dismissed=${dis}`);
+    if (ovr) return (await put(ovr)) || { id: ovr };
     const [type, id] = key.split(':');
     const body = `plannable_type=${encodeURIComponent(type)}&plannable_id=${encodeURIComponent(id)}&marked_complete=${done}`;
     try {
       return await canvasReq('POST', '/planner/overrides', body);
     } catch (e) {
       // There's one already (made somewhere else): find it and change it.
+      if (![400, 409, 422].includes(e.status)) throw e;
       const all = await api('/planner/overrides?per_page=100', true).catch(() => []);
       const o = all.find((x) => x.plannable_type === type && String(x.plannable_id) === id);
       if (!o) throw e;
-      return (await canvasReq('PUT', `/planner/overrides/${o.id}`, `marked_complete=${done}`)) || o;
+      return (await canvasReq('PUT', `/planner/overrides/${o.id}`, `marked_complete=${done}&dismissed=${!!o.dismissed}`)) || o;
     }
   }
   const saveDash = () => dashItems && cache.set('dash:planner', JSON.parse(JSON.stringify(dashItems)));
+  const pendingDone = new Set(); // keys whose mark is on its way
+  let homeUpc = null; // a class Home's Upcoming list: its items and how to draw them
+  // The lists on this page take the mark (the dashboard's cards and their saved copy, or Home's list).
+  function showMarks() {
+    if (dashItems) {
+      dashItems = applyMarks(dashItems);
+      saveDash();
+      refreshCards();
+      saveSnapshot();
+    }
+    if (homeUpc) {
+      homeUpc.items = applyMarks(homeUpc.items);
+      homeUpc.draw();
+    }
+  }
   async function dueDone(btn) {
     const row = btn.closest('.gcx-due-row');
-    if (!row || row.classList.contains('gcx-going')) return;
+    // Stand-in cards (before the real ones are up) aren't for clicking.
+    if (!row || row.closest('.gcx-ghosts') || row.classList.contains('gcx-going')) return;
     const key = btn.dataset.key;
+    if (pendingDone.has(key)) return;
     const title = row.querySelector('.gcx-due-item')?.textContent || 'it';
     row.classList.add('gcx-going');
+    pendingDone.add(key);
     let o;
     try {
-      o = await setDone(key, btn.dataset.ovr, true);
+      o = await setDone(key, btn.dataset.ovr, true, btn.hasAttribute('data-dis'));
     } catch (err) {
+      pendingDone.delete(key);
       row.classList.remove('gcx-going');
       toast(`Couldn't mark it done: ${err.message}`);
       return;
     }
     const ovr = (o && o.id) || btn.dataset.ovr || null;
-    // On the dashboard the cards redraw from the list (the next one moves up); elsewhere the row goes.
-    const dash = !!(dashItems && dashItems.some((i) => i.key === key));
-    const parent = row.parentElement;
-    const next = row.nextSibling;
+    if (ovr) btn.dataset.ovr = ovr;
+    setDoneMark(key, true);
+    // Keyboard focus goes to the row after it (or before it) once the list redraws.
+    const list = row.closest('.gcx-card-body, .gcx-upc-list');
+    const rows = list ? [...list.querySelectorAll('.gcx-due-row')] : [];
+    const at = rows.indexOf(row);
+    const hadFocus = row.contains(document.activeElement);
     row.style.height = row.offsetHeight + 'px';
     void row.offsetHeight;
     row.classList.add('gcx-gone');
     setTimeout(() => {
-      if (dash) {
-        dashItems = dashItems.map((i) => (i.key === key ? { ...i, done: true, missing: false, flagged: false, ovr } : i));
-        saveDash();
-        refreshCards();
-      } else {
-        row.remove();
-        if (parent && !parent.querySelector('.gcx-due-row')) parent.hidden = true;
+      pendingDone.delete(key);
+      if (dashItems || homeUpc) showMarks();
+      else row.remove();
+      if (hadFocus && list && list.isConnected) {
+        const items = list.querySelectorAll('.gcx-due-item');
+        const to = items[at] || items[at - 1] || list.closest('.ic-DashboardCard')?.querySelector('a[href]');
+        to?.focus();
       }
     }, 220);
     toast(`Marked ${title} as done`, 'Undo', async () => {
       try {
-        await setDone(key, ovr, false);
+        await setDone(key, ovr, false, btn.hasAttribute('data-dis'));
       } catch (err) {
         toast(`Couldn't undo: ${err.message}`);
         return;
       }
-      if (dash && dashItems) {
-        dashItems = dashItems.map((i) => (i.key === key ? normUndone(i) : i));
-        saveDash();
-        refreshCards();
-      } else if (parent && parent.isConnected) {
-        parent.hidden = false;
-        row.classList.remove('gcx-going', 'gcx-gone');
-        row.style.height = '';
-        parent.insertBefore(row, next && next.parentNode === parent ? next : null);
-      }
+      setDoneMark(key, false);
+      showMarks();
     });
   }
-  // Back to how it was before he checked it: missing again if it's past due.
-  const normUndone = (i) => {
-    const past = i.due && new Date(i.due) < new Date();
-    return { ...i, done: !!(i.submitted || i.graded), missing: !(i.submitted || i.graded) && !!past };
-  };
   document.addEventListener(
     'click',
     (e) => {
@@ -4859,7 +4893,11 @@
       },
       body,
     });
-    if (!r.ok) throw new Error(r.status === 401 || r.status === 403 ? 'Canvas said no (are you still signed in?)' : `Canvas error ${r.status}`);
+    if (!r.ok) {
+      const err = new Error(r.status === 401 || r.status === 403 ? 'Canvas said no (are you still signed in?)' : `Canvas error ${r.status}`);
+      err.status = r.status;
+      throw err;
+    }
     return r.json().catch(() => null);
   }
   function mountBell(wel) {
@@ -5371,7 +5409,7 @@
   document.addEventListener('pointerdown', (e) => {
     // Whole class cards ripple too (a setting); a click on something inside that has its own
     // ripple (a due item, the mail button) uses that one instead.
-    const own = e.target.closest && e.target.closest('.gcx-due-item, .gcx-iconbtn, .gcx-more-link');
+    const own = e.target.closest && e.target.closest('.gcx-due-item, .gcx-due-done, .gcx-iconbtn, .gcx-more-link');
     const card = !own && prefs().cardRipple && e.target.closest && e.target.closest('#DashboardCard_Container .ic-DashboardCard');
     const t = card || (e.target.closest && e.target.closest('.gcx-row, .gcx-chip, .gcx-ri, .gcx-tab, .gcx-due-item, .gcx-more-btn, .gcx-seg button, .gcx-link a, .gcx-iconbtn, .gcx-links-add'));
     if (!t || e.button) return;
