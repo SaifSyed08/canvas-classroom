@@ -352,6 +352,9 @@ html.gcx.gcx-art body {
 html.gcx.gcx-art :is(body, #application.ic-app) {
   background: linear-gradient(var(--gcx-veil), var(--gcx-veil)) fixed, var(--gcx-art) var(--gcx-art-pos, center) / cover no-repeat fixed, var(--gcx-bg) !important;
 }
+/* "None" with a BetterCampus picture theme: the plain page color instead of its picture. */
+html.gcx.gcx-noart :is(body, #application.ic-app) { background: var(--bcbackground-0-ungradient, var(--bcbackground-1, #fff)) !important; }
+html.gcx.gcx-noart::before { display: none !important; }
 html.gcx.gcx-art :is(#wrapper, #main, #not_right_side, #content-wrapper, #content, .ic-Layout-wrapper, .ic-Layout-columns, .ic-Layout-contentWrapper, .ic-Layout-contentMain, #dashboard, #DashboardCard_Container) {
   background-color: transparent !important;
 }
