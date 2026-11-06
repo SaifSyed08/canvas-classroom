@@ -3746,6 +3746,15 @@
     ['grotesk', 'Clean'],
     ['canvas', 'Plain'],
   ];
+  // A background choice's preview: the picture (a drawing a little stronger than on the page, so
+  // it reads that small) over the page color.
+  function artThumb(k) {
+    const url =
+      k === 'theme' ? bcPicture() : k === 'mine' ? (typeof bgMine === 'string' ? bgMine : '') : k === 'trees' || k === 'blossom' ? chrome.runtime.getURL(`art/${k}-${pageIsDark() ? 'dark' : 'light'}.svg`) : '';
+    if (!url || url.includes('"')) return { cls: k === 'mine' ? 'add' : '', style: '' };
+    const pos = (ARTS.find((a) => a[0] === k) || [])[2] || 'center';
+    return { cls: k === 'theme' || k === 'mine' ? 'pic' : '', style: `--tn:url("${url}");--tn-pos:${pos}` };
+  }
   const UI_FONTS = [
     ['', 'Canvas'],
     ['nunito', 'Nunito'],
@@ -3797,8 +3806,10 @@
         </div>
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Background</div>
-          <div class="gcx-set-tone gcx-set-arts" role="radiogroup" aria-label="Background">${ARTS.map(
-            ([k, label]) => (k === 'theme' && !bcPicture() ? '' : `<button type="button" role="radio" data-art="${k}" aria-checked="${artOf(p) === k}">${label}</button>`),
+          <div class="gcx-set-arts" role="radiogroup" aria-label="Background">${ARTS.map(([k, label]) =>
+            k === 'theme' && !bcPicture()
+              ? ''
+              : `<button type="button" role="radio" data-art="${k}" aria-checked="${artOf(p) === k}" title="${label}"><span class="gcx-art-tn ${artThumb(k).cls}" style="${esc(artThumb(k).style)}"></span><small>${label}</small></button>`,
           ).join('')}</div>
           <div class="gcx-set-bgmine"${artOf(p) === 'mine' ? '' : ' hidden'}>
             <button type="button" class="gcx-set-try gcx-set-bgup">Upload a picture</button>
@@ -3856,6 +3867,21 @@
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
     const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? artOf() !== 'none' : prefs()[k]);
+    const paintMine = () => {
+      const t = box.querySelector('[data-art="mine"] .gcx-art-tn');
+      if (!t) return;
+      const { cls, style } = artThumb('mine');
+      t.className = `gcx-art-tn ${cls}`;
+      t.setAttribute('style', style);
+    };
+    if (bgMine === null)
+      chrome.storage.local.get(BG_KEY).then(
+        (r) => {
+          if (bgMine === null) bgMine = r[BG_KEY] || '';
+          paintMine();
+        },
+        () => {},
+      );
     // The strength slider shows (and sets) the strength of whatever background is up.
     const syncAmt = () => {
       const r = box.querySelector('.gcx-set-artamt');
@@ -3876,6 +3902,7 @@
       save({ art: 'mine', ...amt });
       box.querySelectorAll('[data-art]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.art === 'mine')));
       box.querySelector('.gcx-set-bgmine')?.removeAttribute('hidden');
+      paintMine();
       syncAmt();
       sync();
     };
@@ -4213,7 +4240,19 @@
     .gcx-ui-nunito { font-family: 'GCX Nunito', sans-serif; font-weight: 700; }
     .gcx-ui-lexend { font-family: 'GCX Lexend', sans-serif; font-weight: 600; }
     .gcx-ui-lora { font-family: 'GCX Lora', serif; font-weight: 700; }
-    .gcx-set-arts { margin-bottom: 8px; }
+    .gcx-set-arts { display: flex; gap: 8px; margin: 2px 0 10px; }
+    .gcx-set-arts button { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 5px; padding: 0; border: 0; background: none;
+      color: var(--gcx-muted, #71717a); font: inherit; cursor: pointer; }
+    .gcx-set-arts small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; text-align: center; }
+    .gcx-set-arts button[aria-checked="true"] small { color: var(--gcx-text, #18181b); font-weight: 700; }
+    .gcx-art-tn { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 10; border-radius: 8px; color: var(--gcx-muted, #71717a); font-size: 20px;
+      background: linear-gradient(color-mix(in srgb, var(--gcx-bg, #fff) 40%, transparent), color-mix(in srgb, var(--gcx-bg, #fff) 40%, transparent)),
+        var(--tn, none) var(--tn-pos, center) / cover no-repeat, var(--gcx-bg, #fff);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); transition: transform .12s ease, box-shadow .12s ease; }
+    .gcx-art-tn.pic { background: var(--tn) center / cover no-repeat, var(--gcx-bg, #fff); }
+    .gcx-art-tn.add::after { content: "+"; }
+    .gcx-set-arts button:hover .gcx-art-tn { transform: scale(1.04); }
+    .gcx-set-arts button[aria-checked="true"] .gcx-art-tn { box-shadow: 0 0 0 2px var(--gcx-card, #fff), 0 0 0 4px var(--gcx-link, #4f46e5); }
     .gcx-set-bgmine { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
     .gcx-set-bgmine[hidden] { display: none; }
     .gcx-set-bggen { display: flex; flex: 1 1 260px; gap: 8px; margin: 0; }
