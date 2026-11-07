@@ -3270,6 +3270,7 @@
     const ovr = (o && o.id) || btn.dataset.ovr || null;
     if (ovr) btn.dataset.ovr = ovr;
     setDoneMark(key, true, ovr);
+    staleNews();
     // Keyboard focus goes to the row after it (or before it) once the list redraws.
     const list = row.closest('.gcx-card-body, .gcx-upc-list');
     const rows = list ? [...list.querySelectorAll('.gcx-due-row')] : [];
@@ -3296,6 +3297,7 @@
         return;
       }
       setDoneMark(key, false, ovr);
+      staleNews();
       showMarks();
     });
   }
@@ -3914,7 +3916,7 @@
     // The strip of backgrounds starts scrolled to the one he has.
     const arts = box.querySelector('.gcx-set-arts');
     const on = arts && arts.querySelector('[aria-checked="true"]');
-    if (on) arts.scrollLeft = Math.max(0, on.offsetLeft - arts.offsetLeft - 8);
+    if (on) requestAnimationFrame(() => (arts.scrollLeft = Math.max(0, on.offsetLeft - arts.offsetLeft - 8)));
     const paintMine = () => {
       const t = box.querySelector('[data-art="mine"] .gcx-art-tn');
       if (!t) return;
@@ -4430,8 +4432,10 @@
     const workPath = () => (location.pathname.match(/^\/courses\/\d+\/(?:assignments|quizzes)\/\d+/) || [])[0] || '';
     let celebrated = false;
     const celebrate = () => {
-      if (celebrated || !prefs().confetti) return;
+      if (celebrated) return;
       celebrated = true;
+      staleNews();
+      if (!prefs().confetti) return;
       try {
         sessionStorage.removeItem('gcx:celebrate');
       } catch {}
@@ -4883,7 +4887,12 @@
     const gone = bellCleared();
     return d.unread + d.anns.length + d.grades.filter((g) => g.at > seen && !gone[gradeKey(g)]).length;
   }
-  const bellUrgent = (d) => !!d && ((d.missing || []).length > 0 || (d.due || []).some((i) => i.due - Date.now() < DAY));
+  const bellUrgent = (d) => !!d && ((d.missing || []).length > 0 || (d.due || []).some((i) => i.due > Date.now() && i.due - Date.now() < DAY));
+  // He handed something in or marked it done: the saved list is out of date.
+  function staleNews() {
+    store.set('news', null);
+    window.dispatchEvent(new Event('gcx:news-stale'));
+  }
   function annReadPath(a) {
     const m = String(a.url || '').match(/\/(courses|groups)\/(\d+)\/(?:discussion_topics|announcements)\/(\d+)/);
     if (m) return `/${m[1]}/${m[2]}/discussion_topics/${m[3]}/read`;
@@ -4945,6 +4954,14 @@
     news().then((d) => {
       if (d) (data = scrub(d)), paint();
     });
+    window.addEventListener('gcx:news-stale', () => {
+      if (btn.isConnected)
+        news(true).then((d) => {
+          if (d) (data = scrub(d)), paint();
+        });
+    });
+    // Something crossing into its last day turns the badge red without a reload.
+    setInterval(() => btn.isConnected && paint(), 10 * 6e4);
     // What he has now seen stops counting as new (it stays marked in the list until next time):
     // everything up to when the list he's looking at was fetched.
     const seenUpTo = (d) => {
