@@ -20,11 +20,11 @@ Even Better Canvas
 A Google Classroom-inspired interface for Canvas: assignments, file viewer, AI help and more. Requires the BetterCanvas extension.
 ```
 
-The current `manifest.description` is exactly 132, so it fits — the problem is not length.
-It opens with "BETTER CANVAS MUST BE INSTALLED!", and store policy treats all-caps shouting
-in a listing as grounds for rejection; the dependency also reads better as a plain sentence.
-The replacement above is 130 characters. `manifest.json` needs the same text, since the
-store takes the short description from the manifest.
+`manifest.json` now carries exactly this text, at 130 characters. The old opening,
+"BETTER CANVAS MUST BE INSTALLED!", fit the 132 limit too — length was never the problem.
+Store policy treats all-caps shouting in a listing as grounds for rejection, and the
+dependency reads better as a plain sentence anyway. The store takes the short description
+from the manifest, so there is nothing to paste into this field.
 
 **Category:** Productivity
 **Language:** English
@@ -119,8 +119,7 @@ Creating the draft itself needs your Google account, so I stopped here:
 
 ## Blockers before submitting
 
-- [ ] Replace the all-caps opening in `manifest.description` with the version above and
-      rebuild the zip (it fits the 132 limit either way — this is the policy issue, not length)
+- [x] Replace the all-caps opening in `manifest.description` and rebuild the zip — done
 - [ ] Push `docs/privacy.md` so the policy URL resolves publicly
 - [ ] Decide whether the pet and the AI assistant ship in v1 — each adds a host permission
       the reviewer will ask about, and dropping either shortens the review

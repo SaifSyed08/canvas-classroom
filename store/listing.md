@@ -22,9 +22,9 @@ Everything the Developer Dashboard asks for, ready to paste. Images are in `stor
 
 **Name** (from the manifest, max 75): Even Better Canvas
 
-**Summary** (the store takes it from the manifest's `description`, which already has it; 132 characters, the maximum):
+**Summary** (the store takes it from the manifest's `description`, which already has it; 130 characters, under the 132 maximum):
 
-> BETTER CANVAS MUST BE INSTALLED! A Google Classroom-inspired interface for BetterCanvas: assignments, file viewer, AI help and more.
+> A Google Classroom-inspired interface for Canvas: assignments, file viewer, AI help and more. Requires the BetterCanvas extension.
 
 **Category:** Education
 
