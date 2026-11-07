@@ -549,10 +549,13 @@ html[data-gcx-font="canvas"] .gcx-hello { font-family: inherit !important; font-
 .gcx-bell:hover, .gcx-bell[aria-expanded="true"] { background: color-mix(in srgb, var(--gcx-link) 10%, transparent); color: var(--gcx-text); }
 .gcx-welcome:not(.no-ask) .gcx-bell { margin-left: -8px; }
 .gcx-welcome.no-ask .gcx-bell { margin-left: auto; }
+.gcx-welcome.no-bell .gcx-bell { display: none; }
 .gcx-bell-n {
   position: absolute; top: 5px; right: 4px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
-  background: var(--gcx-red); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--gcx-bg);
+  background: var(--gcx-link); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--gcx-bg);
 }
+.gcx-bell-n.urgent { background: var(--gcx-red); }
+.gcx-bell-n.dot { top: 11px; right: 11px; min-width: 10px; width: 10px; height: 10px; padding: 0; }
 .gcx-bell-n[hidden] { display: none; }
 .gcx-bell-panel { display: flex; flex-direction: column; width: 360px; max-width: calc(100vw - 24px); max-height: min(560px, calc(100vh - 110px)); overflow: hidden; }
 .gcx-bell-h { padding: 14px 16px 4px; font-size: 16px; font-weight: 600; }
