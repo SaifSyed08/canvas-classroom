@@ -4785,7 +4785,7 @@
     const mine = saved && saved.user === PAGE_USER && saved.v === NEWS_V ? saved : null;
     if (!fresh && mine && Date.now() - mine.at < NEWS_TTL) return Promise.resolve(mine);
     // A fetch started before his change can't know about it: wait it out, then fetch again.
-    if (newsJob && fresh && newsJob.gen !== newsGen) return newsJob.catch(() => {}).then(() => news(true));
+    if (newsJob && newsJob.gen !== newsGen) return newsJob.catch(() => {}).then(() => news(fresh));
     if (!newsJob) {
       const gen = newsGen;
       newsJob = loadNews()
