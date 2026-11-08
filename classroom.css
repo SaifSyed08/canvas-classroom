@@ -369,7 +369,10 @@ html.gcx.gcx-noart::before { display: none !important; }
 .gcx-topic-h .gcx-svg { transition: transform 0.15s ease; color: var(--gcx-muted); }
 .gcx-topic.closed .gcx-topic-h .gcx-svg { transform: rotate(-90deg); }
 
-.gcx-topic-tag { font-size: 12px; font-weight: 600; color: var(--gcx-muted); }
+.gcx-topic-tag { max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--gcx-muted); }
+/* What a module asks of a row (view it, submit it...): in the class color until it's done. */
+.gcx-row-sub.gcx-req { color: var(--c, var(--gcx-link)); font-weight: 600; }
+.gcx-row-sub.gcx-req.done { color: var(--gcx-muted); font-weight: 400; }
 .gcx-topic-rows .gcx-row { border-radius: 8px; }
 .gcx-topic-rows .gcx-row + .gcx-row { border-top: 0; }
 

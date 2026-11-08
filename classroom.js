@@ -2001,13 +2001,26 @@
   }
   const KIND_ICON = { Assignment: 'assignment', Quiz: 'quiz', Discussion: 'discussion', File: 'file', Page: 'page', ExternalUrl: 'link', ExternalTool: 'tool' };
 
+  const REQ = {
+    must_view: ['View it', 'Viewed'],
+    must_submit: ['Submit it', 'Submitted'],
+    must_contribute: ['Post in it', 'Posted'],
+    must_mark_done: ['Mark it as done', 'Marked done'],
+    min_score: ['Score at least {n}', 'Score met'],
+  };
+  const reqText = (q) => {
+    const t = REQ[q.type];
+    if (!t) return '';
+    return q.done ? `✓ ${t[1]}` : `To do: ${t[0].replace('{n}', q.min != null ? q.min : '')}`;
+  };
   function rowHtml(r, i = 0) {
     const st = statusOf(r.a, r.details);
     const locked = r.details && r.details.locked_for_user;
-    const sub = r.details && r.details.lock_explanation && locked ? htmlText(r.details.lock_explanation) : '';
+    const sub = r.details && r.details.lock_explanation && locked ? htmlText(r.details.lock_explanation) : r.req ? reqText(r.req) : '';
+    const todo = r.req && !r.req.done;
     const pad = r.indent ? `padding-left:${16 + r.indent * 20}px;` : '';
     const host = r.ext ? hostOf(r.url) : '';
-    return `<a class="gcx-row${st.done || r.kind === 'File' || r.kind === 'Page' ? ' done' : ''}${locked ? ' locked' : ''}" href="${esc(r.url)}"${
+    return `<a class="gcx-row${st.done || ((r.kind === 'File' || r.kind === 'Page') && !todo) ? ' done' : ''}${locked ? ' locked' : ''}" href="${esc(r.url)}"${r.iid ? ` data-iid="${esc(r.iid)}"` : ''}${
       r.fileId ? ` data-gcx-file="${esc(r.fileId)}" data-gcx-course="${COURSE_ID}"` : ''
     }${r.ext ? ` target="_blank" rel="noopener noreferrer" data-gcx-ext="1"${r.track ? ` data-gcx-track="${esc(r.track)}"` : ''}` : ''}${
       r.a && r.a.id ? ` data-aid="${esc(r.a.id)}"` : ''
@@ -2015,7 +2028,7 @@
       r.title.toLowerCase(),
     )}" style="${pad}--i:${Math.min(i, 12)}">
       <span class="gcx-row-ic">${!locked && r.kind === 'File' ? fileTile(r.title, 34) : svg(locked ? 'lock' : KIND_ICON[r.kind] || 'link', 20)}</span>
-      <span class="gcx-row-main"><span class="gcx-row-title">${esc(r.title)}</span>${sub ? `<span class="gcx-row-sub">${esc(sub)}</span>` : ''}</span>
+      <span class="gcx-row-main"><span class="gcx-row-title">${esc(r.title)}</span>${sub ? `<span class="gcx-row-sub${r.req && !locked ? (todo ? ' gcx-req' : ' gcx-req done') : ''}">${esc(sub)}</span>` : ''}</span>
       <span class="gcx-row-meta ${st.cls}">${host ? `${esc(host)}${svg('open', 14)}` : esc(r.meta != null ? r.meta : st.text)}</span></a>`;
   }
   const hostOf = (u) => {
@@ -2163,9 +2176,12 @@
 
   // Canvas data trimmed to what Classwork draws, so it caches small.
   async function fetchClasswork(id, strict = false, tally) {
-    const [mods, groups] = await Promise.all([
+    const [mods, groups, quizzes, discs] = await Promise.all([
       api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(softFail(strict, null, tally)),
       api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(softFail(strict, null, tally)),
+      // Off when the class hides its Quizzes or Discussions tab; nothing is missing then.
+      api(`/courses/${id}/quizzes?per_page=100`, true).catch(() => null),
+      api(`/courses/${id}/discussion_topics?per_page=100`, true).catch(() => null),
     ]);
     if (!mods && !groups) throw new Error('Canvas returned nothing');
     // Big modules come back without inline items.
@@ -2178,13 +2194,29 @@
     );
     const sub = (s) =>
       s && { excused: !!s.excused, workflow_state: s.workflow_state, score: s.score, missing: !!s.missing, submitted_at: s.submitted_at, late: !!s.late };
+    const ungraded = {
+      quizzes: (quizzes || [])
+        .filter((q) => q.quiz_type === 'practice_quiz' || q.quiz_type === 'survey')
+        .map((q) => ({ id: q.id, title: q.title, html_url: q.html_url, due_at: q.due_at, locked: !!q.locked_for_user })),
+      discs: (discs || [])
+        .filter((d) => !d.assignment_id)
+        .map((d) => ({ id: d.id, title: d.title, html_url: d.html_url, posted_at: d.posted_at, locked: !!d.locked_for_user })),
+    };
     return {
+      ungraded,
       mods:
         mods &&
         mods.map((m) => ({
+          id: m.id,
           name: m.name,
           state: m.state,
+          unlock_at: m.unlock_at || null,
+          prereqs: m.prerequisite_module_ids || [],
           items: (m.items || []).map((it) => ({
+            id: it.id,
+            req: it.completion_requirement
+              ? { type: it.completion_requirement.type, done: !!it.completion_requirement.completed, min: it.completion_requirement.min_score }
+              : null,
             type: it.type,
             title: it.title,
             html_url: it.html_url,
@@ -2392,6 +2424,15 @@
     const byTitle = new Map(assigns.map((a) => [a.name.trim().toLowerCase(), a]));
     const used = new Set();
     const topics = [];
+    const inMods = new Set();
+    const modName = new Map((mods || []).map((m) => [m.id, m.name]));
+    const lockTag = (m) => {
+      if (m.state === 'completed') return 'Complete';
+      if (m.state !== 'locked') return '';
+      if (m.unlock_at && new Date(m.unlock_at) > new Date()) return `Opens ${shortDate(new Date(m.unlock_at))}`;
+      const first = (m.prereqs || []).map((p) => modName.get(p)).filter(Boolean);
+      return first.length ? `Locked: finish ${first.join(', ')} first` : 'Locked';
+    };
     for (const m of mods || []) {
       const rows = [];
       for (const it of m.items || []) {
@@ -2404,7 +2445,10 @@
         else if (it.type === 'Quiz') a = byQuiz.get(it.content_id);
         else if (it.type === 'Discussion') a = byDisc.get(it.content_id) || byTitle.get(String(it.title).trim().toLowerCase());
         if (a) used.add(a.id);
+        if (it.type === 'Quiz' || it.type === 'Discussion') inMods.add(`${it.type}:${it.content_id}`);
         rows.push({
+          iid: it.id,
+          req: it.req,
           kind: it.type,
           title: it.title,
           // Web links open the site itself in a new tab; Canvas's module-item URL is pinged
@@ -2418,7 +2462,7 @@
           fileId: it.type === 'File' ? it.content_id : null,
         });
       }
-      topics.push({ name: m.name, key: 'm:' + m.name, rows, tag: m.state === 'locked' ? 'Locked' : '' });
+      topics.push({ name: m.name, key: 'm:' + m.name, mid: m.id, rows, tag: lockTag(m) });
     }
     const kindOf = (a) => (a.quiz_id ? 'Quiz' : a.discussion_topic ? 'Discussion' : 'Assignment');
     for (const g of groups) {
@@ -2428,6 +2472,14 @@
         .map((a) => ({ kind: kindOf(a), title: a.name, url: a.html_url, a }));
       if (rows.length) topics.push({ name: g.name, key: 'g:' + g.name, rows, tag: mods && mods.length ? 'Not in a module' : '' });
     }
+    const u = data.ungraded || { quizzes: [], discs: [] };
+    const extra = [
+      ...u.quizzes.filter((q) => !inMods.has(`Quiz:${q.id}`)).map((q) => ({ kind: 'Quiz', title: q.title, url: q.html_url, details: { due_at: q.due_at, locked_for_user: q.locked } })),
+      ...u.discs
+        .filter((d) => !inMods.has(`Discussion:${d.id}`))
+        .map((d) => ({ kind: 'Discussion', title: d.title, url: d.html_url, details: { locked_for_user: d.locked }, meta: d.posted_at ? shortDate(new Date(d.posted_at)) : '' })),
+    ];
+    if (extra.length) topics.push({ name: 'Practice quizzes and discussions', key: 'x:ungraded', rows: extra, tag: mods && mods.length ? 'Not in a module' : '' });
     if (hasTab(/\/files\/?$/)) topics.push({ name: 'All course files', rows: [], files: true });
     const missing = assigns.filter((a) => a.submission && a.submission.missing).length;
     const weekEnd = weekStart(1);
@@ -2505,7 +2557,7 @@
             ? topics
                 .map((t, i) => {
                   const closed = t.files ? !closedSet.has('open:files') : closedSet.has(t.key);
-                  return `<section class="gcx-topic${closed ? ' closed' : ''}${t.files ? ' gcx-files-topic' : ''}" id="gcx-t${i}" data-k="${esc(t.files ? 'files' : t.key)}" style="--i:${Math.min(i, 8)}">
+                  return `<section class="gcx-topic${closed ? ' closed' : ''}${t.files ? ' gcx-files-topic' : ''}" id="gcx-t${i}" data-k="${esc(t.files ? 'files' : t.key)}"${t.mid ? ` data-mid="${esc(t.mid)}"` : ''} style="--i:${Math.min(i, 8)}">
             <button class="gcx-topic-h" type="button" aria-expanded="${!closed}"><h2>${esc(t.name)}</h2>${t.tag ? `<span class="gcx-topic-tag">${esc(t.tag)}</span>` : ''}<span class="gcx-count">${
               t.files ? '' : t.rows.filter((r) => !r.header).length || ''
             }</span>${svg('chevron')}</button>
@@ -2523,6 +2575,7 @@
       else window.scrollTo(0, scrollY);
       drawn = true;
       wire();
+      jumpToHash();
       const reopen = openAid && view.querySelector(`.gcx-row[data-aid="${CSS.escape(openAid)}"]`);
       if (q) {
         const input = view.querySelector('.gcx-filter input');
@@ -2538,6 +2591,28 @@
       const filesTopic = view.querySelector('.gcx-files-topic');
       if (filesTopic && !filesTopic.classList.contains('closed')) loadFiles();
     };
+
+    // /modules#module_12 or #context_module_item_34 (Canvas's own links): open that module and go to it.
+    let jumped = false;
+    function jumpToHash() {
+      if (jumped) return;
+      const h = location.hash;
+      let sec = null;
+      let row = null;
+      let m = h.match(/^#(?:context_)?module_(\d+)$/);
+      if (m) sec = view.querySelector(`.gcx-topic[data-mid="${m[1]}"]`);
+      m = h.match(/^#context_module_item_(\d+)$/);
+      if (m) {
+        row = view.querySelector(`.gcx-row[data-iid="${m[1]}"]`);
+        sec = row && row.closest('.gcx-topic');
+      }
+      if (!sec) return;
+      jumped = true;
+      if (sec.classList.contains('closed')) sec.querySelector('.gcx-topic-h').click();
+      const sub = row && row.closest('.gcx-sub.closed');
+      if (sub) sub.querySelector('.gcx-sub-h').click();
+      requestAnimationFrame(() => (row || sec).scrollIntoView({ block: row ? 'center' : 'start' }));
+    }
 
     function loadFiles() {
       if (loadFiles.started) return;
