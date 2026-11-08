@@ -2179,9 +2179,9 @@
     const [mods, groups, quizzes, discs] = await Promise.all([
       api(`/courses/${id}/modules?include[]=items&include[]=content_details&per_page=50`, true).catch(softFail(strict, null, tally)),
       api(`/courses/${id}/assignment_groups?include[]=assignments&include[]=submission&include[]=discussion_topic&per_page=50`, true).catch(softFail(strict, null, tally)),
-      // Off when the class hides its Quizzes or Discussions tab; nothing is missing then.
-      api(`/courses/${id}/quizzes?per_page=100`, true).catch(() => null),
-      api(`/courses/${id}/discussion_topics?per_page=100`, true).catch(() => null),
+      // A class that hides its Quizzes or Discussions tab answers 404: nothing is missing then.
+      api(`/courses/${id}/quizzes?per_page=100`, true).catch(softFail(strict, null, tally)),
+      api(`/courses/${id}/discussion_topics?per_page=100`, true).catch(softFail(strict, null, tally)),
     ]);
     if (!mods && !groups) throw new Error('Canvas returned nothing');
     // Big modules come back without inline items.
@@ -2425,12 +2425,15 @@
     const used = new Set();
     const topics = [];
     const inMods = new Set();
-    const modName = new Map((mods || []).map((m) => [m.id, m.name]));
+    const modOf = new Map((mods || []).map((m) => [m.id, m]));
     const lockTag = (m) => {
-      if (m.state === 'completed') return 'Complete';
+      if (m.state === 'completed') return (m.items || []).some((it) => it.req) ? 'Complete' : '';
       if (m.state !== 'locked') return '';
       if (m.unlock_at && new Date(m.unlock_at) > new Date()) return `Opens ${shortDate(new Date(m.unlock_at))}`;
-      const first = (m.prereqs || []).map((p) => modName.get(p)).filter(Boolean);
+      const first = (m.prereqs || [])
+        .map((p) => modOf.get(p))
+        .filter((p) => p && p.state !== 'completed')
+        .map((p) => p.name);
       return first.length ? `Locked: finish ${first.join(', ')} first` : 'Locked';
     };
     for (const m of mods || []) {
@@ -2479,7 +2482,7 @@
         .filter((d) => !inMods.has(`Discussion:${d.id}`))
         .map((d) => ({ kind: 'Discussion', title: d.title, url: d.html_url, details: { locked_for_user: d.locked }, meta: d.posted_at ? shortDate(new Date(d.posted_at)) : '' })),
     ];
-    if (extra.length) topics.push({ name: 'Practice quizzes and discussions', key: 'x:ungraded', rows: extra, tag: mods && mods.length ? 'Not in a module' : '' });
+    if (extra.length) topics.push({ name: 'Other quizzes and discussions', key: 'x:ungraded', rows: extra, tag: mods && mods.length ? 'Not in a module' : '' });
     if (hasTab(/\/files\/?$/)) topics.push({ name: 'All course files', rows: [], files: true });
     const missing = assigns.filter((a) => a.submission && a.submission.missing).length;
     const weekEnd = weekStart(1);
@@ -2558,7 +2561,7 @@
                 .map((t, i) => {
                   const closed = t.files ? !closedSet.has('open:files') : closedSet.has(t.key);
                   return `<section class="gcx-topic${closed ? ' closed' : ''}${t.files ? ' gcx-files-topic' : ''}" id="gcx-t${i}" data-k="${esc(t.files ? 'files' : t.key)}"${t.mid ? ` data-mid="${esc(t.mid)}"` : ''} style="--i:${Math.min(i, 8)}">
-            <button class="gcx-topic-h" type="button" aria-expanded="${!closed}"><h2>${esc(t.name)}</h2>${t.tag ? `<span class="gcx-topic-tag">${esc(t.tag)}</span>` : ''}<span class="gcx-count">${
+            <button class="gcx-topic-h" type="button" aria-expanded="${!closed}"><h2>${esc(t.name)}</h2>${t.tag ? `<span class="gcx-topic-tag" title="${esc(t.tag)}">${esc(t.tag)}</span>` : ''}<span class="gcx-count">${
               t.files ? '' : t.rows.filter((r) => !r.header).length || ''
             }</span>${svg('chevron')}</button>
             <div class="gcx-topic-rows gcx-collapse"><div class="gcx-collapse-in">${
@@ -2608,10 +2611,13 @@
       }
       if (!sec) return;
       jumped = true;
-      if (sec.classList.contains('closed')) sec.querySelector('.gcx-topic-h').click();
+      let wait = 0;
+      if (sec.classList.contains('closed')) sec.querySelector('.gcx-topic-h').click(), (wait = 340);
       const sub = row && row.closest('.gcx-sub.closed');
-      if (sub) sub.querySelector('.gcx-sub-h').click();
-      requestAnimationFrame(() => (row || sec).scrollIntoView({ block: row ? 'center' : 'start' }));
+      if (sub) sub.querySelector('.gcx-sub-h').click(), (wait = 340);
+      // Found again by its id: fresh data may redraw Classwork while it opens.
+      const sel = row ? `.gcx-row[data-iid="${row.dataset.iid}"]` : `.gcx-topic[data-mid="${sec.dataset.mid}"]`;
+      setTimeout(() => view.querySelector(sel)?.scrollIntoView({ block: row ? 'center' : 'start' }), wait);
     }
 
     function loadFiles() {
