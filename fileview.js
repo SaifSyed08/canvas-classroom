@@ -701,6 +701,9 @@
       if (!hit) return;
       e.preventDefault();
       e.stopImmediatePropagation();
+      // A file in a module: visiting its module link is what marks "must view" done in Canvas.
+      const mod = (a.getAttribute('href') || '').match(/^(?:https?:\/\/[^/]+)?\/courses\/\d+\/modules\/items\/\d+/);
+      if (mod && (!/^https?:/.test(mod[0]) || mod[0].startsWith(location.origin))) fetch(mod[0], { credentials: 'same-origin' }).catch(() => {});
       const name = (a.dataset.gcxName || a.querySelector('.gcx-row-title')?.textContent || a.textContent || '').replace(/\s+/g, ' ').trim();
       // Where to send him if the API won't describe the file (Canvas's page explains why).
       let fallback = '';
