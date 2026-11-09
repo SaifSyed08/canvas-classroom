@@ -7,6 +7,8 @@ const params = new URLSearchParams(location.search);
 const SRC = params.get('src') || '';
 const ALT = params.get('alt') || '';
 const MODE = params.get('mode') === 'text' ? 'text' : 'pdf';
+// A file picked on the assignment page but not uploaded yet: its bytes come from the page.
+const LOCAL = params.get('local') === '1';
 const PARENT = params.get('o') || '';
 const CANVAS_ORIGIN = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.instructure\.com$/i;
 const FILE_HOSTS = /(^|\.)(instructure\.com|inscloudgate\.net|amazonaws\.com)$/i;
@@ -51,6 +53,7 @@ function allowed(u) {
 // Fetch the file bytes, reporting progress. The signed public URL needs no cookies; the
 // Canvas download URL (fallback) does.
 async function fetchBytes() {
+  if (LOCAL) return bytesFromParent();
   const tries = [
     [SRC, 'omit'],
     [ALT, 'include'],
@@ -86,6 +89,24 @@ async function fetchBytes() {
     }
   }
   throw last;
+}
+function bytesFromParent() {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', onData);
+      reject(new Error('the file didn’t arrive'));
+    }, 20000);
+    function onData(e) {
+      if (e.source !== window.parent || e.origin !== PARENT || !parentOk) return;
+      const m = e.data || {};
+      if (m.gcxfv !== 1 || m.type !== 'data' || !(m.bytes instanceof ArrayBuffer)) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', onData);
+      resolve(new Uint8Array(m.bytes));
+    }
+    window.addEventListener('message', onData);
+    post({ type: 'want' });
+  });
 }
 async function finishGrow(buf, got, first, reader) {
   const chunks = [buf.subarray(0, got), first];

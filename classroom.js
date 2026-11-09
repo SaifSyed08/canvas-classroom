@@ -2532,7 +2532,7 @@
       <div class="gcx-cw-head">
         <a class="gcx-chip" href="/courses/${id}/grades">${gradeChip(c)}</a>
         ${missing ? `<a class="gcx-chip warn" href="/?gcx=todo&tab=missing&course=${id}">${missing} missing</a>` : ''}
-        ${dueThisWeek ? `<span class="gcx-chip">${dueThisWeek} due this week</span>` : ''}
+        ${dueThisWeek ? `<a class="gcx-chip" href="/?gcx=todo&tab=assigned&course=${id}">${dueThisWeek} due this week</a>` : ''}
         <span class="gcx-sync" ${fromCache ? '' : 'hidden'}>${svg('sync', 18)}Updating</span>
         <label class="gcx-filter">${svg('search', 18)}<input type="text" placeholder="Filter classwork" aria-label="Filter classwork"></label>
       </div>

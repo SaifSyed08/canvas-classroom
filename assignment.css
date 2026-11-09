@@ -199,6 +199,15 @@ button.gcx-asg-original { padding: 0; border: 0; background: none; font-family: 
 .gcx-asg-chip.draft { padding-right: 4px; }
 .gcx-asg-chip.draft .gcx-asg-chip-tx { flex: 1; }
 .gcx-asg-chip.draft:hover { background: var(--gcx-card); border-color: var(--gcx-border); }
+/* the picked file's name and icon open its preview; the x beside them still removes it */
+.gcx-asg-chip-open {
+  flex: 1; min-width: 0; display: flex; align-items: center; align-self: stretch; margin: 0; padding: 0; border: 0;
+  background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 9px 0 0 9px;
+}
+.gcx-asg-chip-open .gcx-asg-chip-tx { flex: 1; }
+.gcx-asg-chip.draft:has(.gcx-asg-chip-open:hover) { background: var(--gcx-bg2); border-color: color-mix(in srgb, var(--c, var(--gcx-link)) 40%, var(--gcx-border)); }
+.gcx-asg-chip-open:hover b { text-decoration: underline; }
+.gcx-asg-chip-open:focus-visible { outline: 2px solid var(--gcx-link); outline-offset: -2px; }
 
 /* Canvas's similarity pledge (the school's), when it has one */
 .gcx-asg-pledge { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 12px; line-height: 1.45; color: var(--gcx-muted); cursor: pointer; }

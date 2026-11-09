@@ -1062,6 +1062,37 @@ html.gcx-topic [data-testid="message_title"] {
 }
 html.gcx-topic [data-testid="discussion-topic-container"] .userMessage { font-size: 15px; line-height: 1.6; }
 @media (max-width: 700px) { html.gcx-topic [data-testid="discussion-topic-container"] > :first-child > div:first-child { padding: 16px 16px 12px !important; } }
+/* Canvas draws the post's role labels, its bookmark / options buttons and the reply toolbar with
+   Instructure UI, whose styles are hashed classes BetterCanvas's dark mode never reaches: they kept
+   InstUI's navy text and white fills on a dark page. Here they follow the page's own colors. */
+html.gcx-topic [data-testid="pill-container"] { display: flex !important; flex-wrap: wrap; gap: 4px; margin: 0 !important; padding: 0 !important; }
+html.gcx-topic [data-testid="pill-container"] > li { margin: 0 !important; padding: 0 !important; }
+html.gcx-topic [data-testid="pill-container"] [class*="inlineListItem__delimiter"] { display: none !important; }
+html.gcx-topic [data-testid="pill-container"] [data-testid^="mobile-"] {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px !important; font-weight: 600 !important; line-height: 1.6 !important;
+  letter-spacing: 0.04em; color: var(--gcx-muted) !important; background: color-mix(in srgb, var(--gcx-muted) 14%, transparent);
+}
+html.gcx-topic :is([data-testid="subscribeToggle"], [data-testid="discussion-post-menu-trigger"]) { color: var(--gcx-muted) !important; }
+html.gcx-topic :is([data-testid="subscribeToggle"], [data-testid="discussion-post-menu-trigger"]) :is(span, svg) { color: inherit !important; fill: currentColor; }
+html.gcx-topic :is([data-testid="subscribeToggle"], [data-testid="discussion-post-menu-trigger"]) [class*="baseButton__content"] { background: transparent !important; border-color: transparent !important; }
+html.gcx-topic :is([data-testid="subscribeToggle"], [data-testid="discussion-post-menu-trigger"]):hover { color: var(--gcx-text) !important; }
+html.gcx-topic :is([data-testid="subscribeToggle"], [data-testid="discussion-post-menu-trigger"]):hover [class*="baseButton__content"] { background: color-mix(in srgb, var(--gcx-text) 10%, transparent) !important; }
+html.gcx-topic [data-testid="subscribeToggle"]:has(svg[name="IconBookmarkSolid"]) { color: var(--gcx-cc, var(--gcx-link)) !important; }
+/* any outline Canvas draws inside the post card takes the card's own border color, not a bright one */
+html.gcx-topic [data-testid="discussion-topic-container"] > :first-child > div:first-child [class*="-view"] { border-color: var(--gcx-border) !important; }
+/* the search / filter / sort bar and its buttons: the page's card color instead of a white fill */
+html.gcx-topic #module_sequence_footer_container > :has([data-testid="toggle-filter-menu"]):not(:has([data-testid="discussion-topic-container"])) { background: transparent !important; }
+html.gcx-topic #module_sequence_footer_container [class*="textInput__facade"] { background: var(--gcx-card) !important; color: var(--gcx-text) !important; border-color: var(--gcx-border) !important; }
+html.gcx-topic #module_sequence_footer_container :is([data-testid="search-filter"], [data-testid="sort-order-select"], [data-testid="toggle-filter-menu"] input) { background: transparent !important; color: var(--gcx-text) !important; }
+html.gcx-topic #module_sequence_footer_container [data-testid="search-filter"]::placeholder { color: var(--gcx-muted) !important; }
+html.gcx-topic #module_sequence_footer_container [class*="textInput__facade"] svg { color: var(--gcx-muted) !important; }
+html.gcx-topic :is([data-testid="splitscreenButton"], [data-testid="ExpandCollapseThreads-button"], [data-testid="discussion-topic-reply"]) [class*="baseButton__content"] {
+  background: var(--gcx-card) !important; color: var(--gcx-text) !important; border-color: var(--gcx-border) !important;
+}
+html.gcx-topic :is([data-testid="splitscreenButton"], [data-testid="ExpandCollapseThreads-button"], [data-testid="discussion-topic-reply"]):hover [class*="baseButton__content"] { background: var(--gcx-bg2) !important; }
+/* An announcement has few replies (often none): the search / filter / sort bar is clutter there.
+   Discussions keep it. Whatever level the bar sits at, only boxes that hold the bar and not the post are hidden. */
+html.gcx-topic body.announcements #module_sequence_footer_container :is(div, span):has([data-testid="toggle-filter-menu"]):not(:has([data-testid="discussion-topic-container"], [data-testid="discussion-root-entry-container"])) { display: none !important; }
 
 /* ---------- global announcements on the dashboard: small cards, not banners */
 html.gcx-dash #announcementWrapper { margin: 12px 0 0; }

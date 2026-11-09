@@ -1007,7 +1007,7 @@
         <input class="gcx-asg-in" data-url type="url" inputmode="url" placeholder="https://" aria-label="Link to your work" autocomplete="off" spellcheck="false"></div>`);
     if (d.type === 'file')
       d.files.forEach((f, i) =>
-        items.push(`<div class="gcx-asg-chip small draft" title="${esc(f.file.name)}"><span class="gcx-asg-chip-ic">${gcx.fileTile ? gcx.fileTile(f.file.name, 24) : svg('file', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.file.name)}</b><small>${esc(fmtSize(f.file.size))}${f.id ? ' · uploaded' : ''}</small></span>
+        items.push(`<div class="gcx-asg-chip small draft"><button type="button" class="gcx-asg-chip-open" data-open-file="${i}" title="Preview ${esc(f.file.name)}"><span class="gcx-asg-chip-ic">${gcx.fileTile ? gcx.fileTile(f.file.name, 24) : svg('file', 18)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.file.name)}</b><small>${esc(fmtSize(f.file.size))}${f.id ? ' · uploaded' : ''}</small></span></button>
           <button type="button" class="gcx-asg-x" data-rm-file="${i}" aria-label="Remove ${esc(f.file.name)}"${S.busy ? ' disabled' : ''}>${svg('close', 18)}</button></div>`),
       );
 
@@ -1098,6 +1098,13 @@
         saveDraft();
         renderWork();
         work.querySelector('[data-add]')?.focus();
+      }),
+    );
+    // A picked file opens in the viewer from its own bytes, before anything is uploaded.
+    work.querySelectorAll('[data-open-file]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const f = S.draft.files[+b.dataset.openFile];
+        if (f && gcx.openLocalFile) gcx.openLocalFile(f.file);
       }),
     );
     work.querySelectorAll('[data-rm-file]').forEach((b) =>

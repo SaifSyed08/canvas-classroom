@@ -172,6 +172,44 @@
     return true;
   }
 
+  // A file he picked to turn in but hasn't uploaded: shown from the File itself, so nothing
+  // leaves the computer. PDFs and text go to the viewer frame as bytes (it asks with 'want');
+  // images and media use a blob URL that closeNow() revokes.
+  let localSeq = 0;
+  async function openLocalFile(file) {
+    if (!file || typeof file.arrayBuffer !== 'function') return false;
+    const fid = `local-${Date.now().toString(36)}-${++localSeq}`; // unique per page load: history.state outlives a reload
+    const replacing = !!(ov && state && state.pushed && history.state && history.state.gcxfv === state.fid);
+    if (ov) closeNow(true);
+    const name = file.name || 'File';
+    const meta = { display_name: name, filename: name, size: file.size, 'content-type': file.type || '' };
+    ov = build(name);
+    state = { fid, cid: '', meta, kind: kindOf(meta), file, zoom: 1, page: 1, pages: 0, fit: 'auto', returnFocus: document.activeElement, pushed: false, fallback: '' };
+    const me = state;
+    document.body.append(ov);
+    document.documentElement.classList.add('gcx-fv-open');
+    wire(ov);
+    requestAnimationFrame(() => ov && ov.classList.add('in'));
+    ov.querySelector('.gcx-fv-close').focus({ preventScroll: true });
+    try {
+      if (replacing) history.replaceState({ ...(history.state || {}), gcxfv: fid }, '');
+      else history.pushState({ ...(history.state || {}), gcxfv: fid }, '');
+      state.pushed = true;
+    } catch {}
+    const k = me.kind === 'office' ? officeIcon(meta) : KIND[me.kind] || KIND.other;
+    const type = ov.querySelector('.gcx-fv-type');
+    type.innerHTML = icon(k.icon, 22);
+    type.style.color = k.color;
+    ov.querySelector('.gcx-fv-name').textContent = name;
+    ov.querySelector('.gcx-fv-name').title = name;
+    ov.setAttribute('aria-label', name);
+    // Details, Download and Copy link describe a Canvas file; this one isn't on Canvas yet.
+    if (me.kind === 'office') card(me, 'Word, PowerPoint and Excel files preview once they’re turned in.');
+    else await show(me);
+    return true;
+  }
+  gcx.openLocalFile = openLocalFile;
+
   async function publicUrl(fid, ver = '') {
     try {
       const r = await api(`/files/${fid}/public_url${ver ? `?${ver.slice(1)}` : ''}`);
@@ -190,10 +228,13 @@
     };
     // Reuse the signed URL requested alongside the metadata, if there was one.
     const pub = () => me.pub || (me.pub = publicUrl(me.fid, me.ver));
+    // A picked (not yet uploaded) file: its own bytes or a blob URL, never a Canvas address.
+    const blob = () => me.blob || (me.blob = URL.createObjectURL(me.file));
     if (kind === 'pdf' || kind === 'text') {
-      const src = await pub();
+      const src = me.file ? '' : await pub();
       if (state !== me) return;
       const q = new URLSearchParams({ src, alt: meta.url || '', mode: kind, o: location.origin, name: meta.display_name || '' });
+      if (me.file) q.set('local', '1');
       const frame = document.createElement('iframe');
       frame.className = 'gcx-fv-frame';
       frame.title = meta.display_name || 'File preview';
@@ -216,7 +257,7 @@
       me.frame = frame;
       stage.append(frame);
     } else if (kind === 'image') {
-      const src = (await pub()) || meta.url;
+      const src = me.file ? blob() : (await pub()) || meta.url;
       if (state !== me) return;
       const wrap = document.createElement('div');
       wrap.className = 'gcx-fv-imgwrap';
@@ -241,7 +282,7 @@
       stage.classList.add('scroll');
       enableImagePan(stage, me);
     } else if (kind === 'video' || kind === 'audio') {
-      const src = (await pub()) || meta.url;
+      const src = me.file ? blob() : (await pub()) || meta.url;
       if (state !== me) return;
       const media = document.createElement(kind);
       media.className = `gcx-fv-${kind}`;
@@ -536,7 +577,10 @@
     state = null;
     if (!root) return;
     document.documentElement.classList.remove('gcx-fv-open');
-    const finish = () => root.remove();
+    const finish = () => {
+      root.remove();
+      if (st && st.blob) URL.revokeObjectURL(st.blob);
+    };
     if (instant || reduced()) finish();
     else {
       root.classList.remove('in');
@@ -572,6 +616,15 @@
       if (bar) bar.style.width = `${Math.round((m.ratio || 0) * 100)}%`;
     } else if (m.type === 'error') {
       card(state, m.message || 'This file couldn’t be opened.');
+    } else if (m.type === 'want' && state.file) {
+      // The frame asks for a picked file's bytes (only ours, only for a local file).
+      const me = state;
+      const src = e.source;
+      const origin = e.origin;
+      me.file
+        .arrayBuffer()
+        .then((buf) => state === me && src.postMessage({ gcxfv: 1, type: 'data', bytes: buf }, origin, [buf]))
+        .catch(() => card(me, 'This file couldn’t be read.'));
     } else if (m.type === 'key' && m.key === 'Escape') close();
     else if (m.type === 'backdrop') close();
   });
