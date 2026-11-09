@@ -489,7 +489,8 @@
   // in-class and on-paper work is past due without being flagged until it's graded).
   function plannerStatus(i, markedDone) {
     const past = !!(i.due && new Date(i.due) < new Date());
-    const done = !!(markedDone || i.submitted || i.excused || i.graded || (i.noSub && past));
+    // Canvas zeroing missing work (a school's missing-work policy) makes it graded and still missing.
+    const done = !!(markedDone || i.excused || (!i.canvasMissing && (i.submitted || i.graded || (i.noSub && past))));
     return { ...i, done, missing: !done && (past || !!i.canvasMissing), flagged: !done && !!i.canvasMissing };
   }
   function normPlanner(it) {
@@ -533,6 +534,7 @@
       done,
       missing: !done && (!!(due && due < new Date()) || !!s.missing),
       flagged: !done && !!s.missing,
+      canvasMissing: !!s.missing,
       graded: s.workflow_state === 'graded',
       late: !!s.late,
       submitted: !!s.submitted_at,
@@ -1609,7 +1611,7 @@
       <div class="gcx-home-cols">
         <div class="gcx-home-side">
           <aside class="gcx-card gcx-upc"><div class="gcx-upc-h">Upcoming</div><div class="gcx-upc-list">${skeleton(3)}</div>
-            <div class="gcx-upc-foot"><a class="gcx-upc-all" href="/courses/${id}/modules">View all</a></div></aside>
+            <div class="gcx-upc-foot"><a class="gcx-upc-all" href="/?gcx=todo&course=${id}">View all</a></div></aside>
           <aside class="gcx-card gcx-links"></aside>
         </div>
         <section class="gcx-stream">${`<div class="gcx-card gcx-ann">${skeleton(4)}</div>`.repeat(2)}</section>
@@ -1623,8 +1625,6 @@
       fresh.replaceWith(earlyBanner);
     }
 
-    const classworkTab = document.querySelector('#gcx-cbar .gcx-tabs a:nth-child(2)');
-    if (classworkTab) view.querySelector('.gcx-upc-all').href = classworkTab.href;
     const paintBanner = (c) => {
       view.style.setProperty('--c', c.color);
       const banner = view.querySelector('.gcx-banner');
@@ -1808,8 +1808,8 @@
 
   // ----- Pinned links under Upcoming: any course tool or URL, saved per course
   function renderLinks(box, id) {
-    const key = 'links:' + id;
-    const links = () => store.get(key, []);
+    const key = cardLinksKey(id);
+    const links = () => classLinks(id);
     const draw = (animateIdx = -1) => {
       const list = links();
       box.innerHTML = `
@@ -1822,7 +1822,7 @@
                   <button type="button" class="gcx-link-x" data-i="${i}" title="Remove ${esc(l.label)}" aria-label="Remove ${esc(l.label)}">${svg('close', 16)}</button></div>`,
                 )
                 .join('')
-            : '<div class="gcx-links-empty">Pin course tools you use a lot, like Instapoll or the original home page.</div>'
+            : '<div class="gcx-links-empty">Pin course tools you use a lot, like the original home page. Pins also show as shortcuts on the class card on your dashboard.</div>'
         }</div>`;
     };
     draw();
@@ -2531,7 +2531,7 @@
       view.innerHTML = `
       <div class="gcx-cw-head">
         <a class="gcx-chip" href="/courses/${id}/grades">${gradeChip(c)}</a>
-        ${missing ? `<span class="gcx-chip warn">${missing} missing</span>` : ''}
+        ${missing ? `<a class="gcx-chip warn" href="/?gcx=todo&tab=missing&course=${id}">${missing} missing</a>` : ''}
         ${dueThisWeek ? `<span class="gcx-chip">${dueThisWeek} due this week</span>` : ''}
         <span class="gcx-sync" ${fromCache ? '' : 'hidden'}>${svg('sync', 18)}Updating</span>
         <label class="gcx-filter">${svg('search', 18)}<input type="text" placeholder="Filter classwork" aria-label="Filter classwork"></label>
@@ -2802,12 +2802,14 @@
     const nameOf = new Map(courses.map((c) => [c.id, prettyName(c)]));
     const select = view.querySelector('select');
     select.insertAdjacentHTML('beforeend', courses.map((c) => `<option value="${c.id}">${esc(prettyName(c))}</option>`).join(''));
+    // A class that isn't on his dashboard (opened from its own Classwork) still filters.
+    if (/^\d+$/.test(courseFilter) && !courses.some((c) => String(c.id) === courseFilter)) select.insertAdjacentHTML('beforeend', `<option value="${courseFilter}">This class</option>`);
     select.value = courseFilter;
     if (select.value !== courseFilter) courseFilter = '';
 
     const fetchItems = async (tally) => {
       const list = await coursesReady;
-      const [dated, undated] = await Promise.all([
+      const [dated, undated, flagged] = await Promise.all([
         planner(-120, 120),
         Promise.all(
           list.map((c) =>
@@ -2821,9 +2823,20 @@
               .catch(softFail(false, [], tally)),
           ),
         ).then((x) => x.flat()),
+        // Canvas's own missing list: whatever the planner leaves out (older work, say) still counts.
+        api('/users/self/missing_submissions?filter[]=submittable&include[]=course&per_page=100', true).catch(softFail(false, [], tally)),
       ]);
+      const byId = new Map(list.map((c) => [c.id, c]));
+      const missing = (flagged || [])
+        .filter((a) => a.course_id)
+        .map((a) => ({
+          // (Also a class that isn't on his dashboard.)
+          ...normAssignment({ ...a, submission: { missing: true } }, byId.get(a.course_id) || { id: a.course_id, name: (a.course && a.course.name) || '' }),
+          // The planner's key for the same work, so it's listed once.
+          key: a.quiz_id ? `quiz:${a.quiz_id}` : a.discussion_topic ? `discussion_topic:${a.discussion_topic.id}` : `assignment:${a.id}`,
+        }));
       const seen = new Set();
-      return [...dated, ...undated].filter((i) => !seen.has(i.key) && seen.add(i.key));
+      return [...dated, ...undated, ...missing].filter((i) => !seen.has(i.key) && seen.add(i.key));
     };
 
     const thisWeek = weekStart(0);
@@ -2852,15 +2865,18 @@
         ['Earlier', (i) => i.due && i.due < lastWeek],
       ],
     };
+    // Canvas calling it missing outranks a check-off: it's still not handed in, so it stays on the
+    // Missing tab (the check-off still clears it from the dashboard's lists).
+    const stillMissing = (i) => i.missing || (i.canvasMissing && !i.submitted && !i.excused);
     const inTab = {
       assigned: (i) => !i.done && !i.missing,
-      missing: (i) => i.missing,
-      done: (i) => i.done,
+      missing: stillMissing,
+      done: (i) => i.done && !stillMissing(i),
     };
     const meta = (i) => {
       if (tab === 'missing') {
         const when = i.due ? ` · ${shortDate(i.due)}` : '';
-        return i.flagged ? { text: `Missing${when}`, cls: 'missing' } : { text: `Past due${when}`, cls: '' };
+        return i.flagged || i.canvasMissing ? { text: `Missing${when}`, cls: 'missing' } : { text: `Past due${when}`, cls: '' };
       }
       if (tab === 'done') return { text: i.graded ? 'Graded' : i.submitted ? (i.late ? 'Turned in late' : 'Turned in') : 'Done', cls: i.graded ? 'graded' : '' };
       if (!i.due) return { text: '', cls: '' };
@@ -2904,7 +2920,7 @@
           <div class="gcx-grp-rows gcx-collapse"><div class="gcx-collapse-in">${l
             .map((i) => {
               const m = meta(i);
-              return `<a class="gcx-row${i.done ? ' done' : ''}" href="${esc(i.url)}" style="--c:${esc(colorOf.get(i.courseId) || '#5f6368')};--i:${Math.min(n++, 12)}">
+              return `<a class="gcx-row${i.done && tab !== 'missing' ? ' done' : ''}" href="${esc(i.url)}" style="--c:${esc(colorOf.get(i.courseId) || '#5f6368')};--i:${Math.min(n++, 12)}">
                 <span class="gcx-row-ic">${svg(TYPE_ICON[i.type] || 'assignment', 20)}</span>
                 <span class="gcx-row-main"><span class="gcx-row-title">${esc(i.title)}</span><span class="gcx-row-sub">${esc(nameOf.get(i.courseId) || i.courseName || 'Personal to-do')}</span></span>
                 <span class="gcx-row-meta ${m.cls}">${esc(m.text)}</span></a>`;
@@ -3127,9 +3143,21 @@
   }
   // ----- a card's own shortcuts (⋮ › Add shortcut): straight to one of the class's pages
   const cardLinksKey = (id) => `cardlinks:${PAGE_USER || 'anon'}:${id}`;
+  // Pins on a class's Home and shortcuts on its dashboard card are one list. (They were two: an old
+  // pin list is merged in the first time it's read.) The card has room for four; the rest are in ⋮.
+  const CARD_SHORTCUTS = 4;
+  function classLinks(id) {
+    const list = store.get(cardLinksKey(id), []);
+    const old = store.get('links:' + id, null);
+    if (!old) return list;
+    for (const l of old) if (!list.some((x) => x.href === l.href)) list.push(l);
+    store.set(cardLinksKey(id), list);
+    store.set('links:' + id, null);
+    return list;
+  }
   function drawCardLinks(acts, id) {
     const box = acts.querySelector('.gcx-card-links');
-    const list = store.get(cardLinksKey(id), []);
+    const list = classLinks(id).slice(0, CARD_SHORTCUTS);
     const markup = list
       .map((l) => `<a class="gcx-iconbtn gcx-card-link" href="${esc(l.href)}" title="${esc(l.label)}" aria-label="${esc(l.label)}">${svg(l.icon || tabIcon(l.href), 18)}</a>`)
       .join('');
@@ -3241,10 +3269,76 @@
     });
     pop.querySelector('[role="menuitem"]')?.focus({ preventScroll: true });
   }
+  // The class's color in Canvas itself (the same one Canvas's dashboard color picker changes).
+  let closeClassColor = null;
+  function openClassColor(btn, c) {
+    closeClassColor?.();
+    const name = prettyName(c);
+    const hex = /^#[\da-f]{6}$/i.test(c.color) ? c.color : '#1a73e8';
+    const pop = el(`<div class="gcx-look gcx-pop-panel gcx-colorpop" role="dialog" aria-label="Color for ${esc(name)}">
+      <div class="gcx-look-colors">${LOOK_COLORS.filter(Boolean).map((k) => `<button type="button" data-hex="${k}" title="${k}" aria-label="${k}" style="--sw:${k}"></button>`).join('')}</div>
+      <label class="gcx-colorpop-own">Any color<input type="color" value="${hex}" aria-label="Any color"></label>
+      ${html.classList.contains('gcx-uniform') ? '<small>Your theme colors every class right now. Turn off "Classes take the theme color" in Settings to see this one.</small>' : ''}
+    </div>`);
+    document.body.append(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 12)) + 'px';
+    pop.style.top = Math.max(12, Math.min(r.bottom + 6, innerHeight - pop.offsetHeight - 12)) + 'px';
+    const card = btn.closest('.ic-DashboardCard');
+    const show = (v) => {
+      c.color = v;
+      const known = (COURSES || []).find((x) => x.id === c.id);
+      if (known) known.color = v;
+      const ov = card && card.querySelector('.gcx-card-ov');
+      const body = card && card.querySelector('.gcx-card-body');
+      ov?.style.setProperty('--c', v);
+      card?.querySelector('.ic-DashboardCard__header_hero')?.style.setProperty('background-color', v);
+      if (body) {
+        body.dataset.color = v;
+        body.style.setProperty('--c', v);
+        if (dashItems) fillCardDue(body);
+      }
+      queueRail();
+    };
+    let latest = 0;
+    const setColor = async (v) => {
+      const was = c.color;
+      const run = ++latest;
+      show(v);
+      try {
+        await canvasReq('PUT', `/users/self/colors/course_${c.id}`, `hexcode=${encodeURIComponent(v.slice(1))}`);
+        if (run !== latest) return;
+        store.set('courses', COURSES);
+        saveSnapshot();
+        toast(`Changed the color of ${name}`);
+      } catch (err) {
+        if (run !== latest) return;
+        show(was);
+        toast(`Couldn't change the color: ${err.message}`);
+      }
+    };
+    pop.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-hex]');
+      if (b) setColor(b.dataset.hex);
+    });
+    pop.querySelector('input').addEventListener('change', (e) => setColor(e.target.value));
+    const close = () => {
+      if (closeClassColor === close) closeClassColor = null;
+      pop.classList.add('gcx-out');
+      setTimeout(() => pop.remove(), 160);
+      document.removeEventListener('mousedown', outside, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+    closeClassColor = close;
+    const outside = (e) => !pop.contains(e.target) && !e.target.closest?.('.gcx-toast') && close();
+    const onKey = (e) => e.key === 'Escape' && close();
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+  }
   function openCardMenu(btn, c) {
     const id = c.id;
     const acts = btn.closest('.gcx-card-acts');
-    const list = store.get(cardLinksKey(id), []);
+    const list = classLinks(id);
     const items = [
       {
         label: 'Add shortcut',
@@ -3252,13 +3346,13 @@
         run: () =>
           openLinkPicker(
             btn,
-            courseOptions(id).then((o) => o.filter((x) => !store.get(cardLinksKey(id), []).some((l) => l.href === x.href))),
+            courseOptions(id).then((o) => o.filter((x) => !classLinks(id).some((l) => l.href === x.href))),
             'Add shortcut',
             (o) => {
-              const l = store.get(cardLinksKey(id), []);
+              const l = classLinks(id);
               if (l.some((x) => x.href === o.href)) return toast(`${o.label} is already a shortcut`);
               l.push({ label: o.label, href: o.href, icon: o.icon });
-              store.set(cardLinksKey(id), l.slice(-4));
+              store.set(cardLinksKey(id), l);
               drawCardLinks(acts, id);
               saveSnapshot();
               toast(`Added ${o.label} to ${prettyName(c)}`);
@@ -3272,13 +3366,14 @@
         remove: () => {
           store.set(
             cardLinksKey(id),
-            store.get(cardLinksKey(id), []).filter((x) => x.href !== l.href),
+            classLinks(id).filter((x) => x.href !== l.href),
           );
           drawCardLinks(acts, id);
           saveSnapshot();
           toast(`Removed ${l.label}`);
         },
       })),
+      { label: 'Class color', icon: 'palette', run: () => openClassColor(btn, c) },
       { sep: true },
       {
         label: 'Hide from dashboard',
@@ -3424,12 +3519,16 @@
 
   // ----- "Hey Saif!" greeting, picked from what's going on. Settings can turn it off or change its tone.
   const PREF_DEFAULTS = {
-    greeting: true, tone: 'normal', font: 'fredoka', ask: true, hotkey: true, routing: true, suggest: true, confetti: true, motion: true, annReveal: true, bell: true,
-    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: false, dim: 0, uniform: true, dashGap: 0,
-    uiFont: '', art: '', artAmt: 18,
+    v: 2, greeting: true, tone: 'normal', ask: false, hotkey: true, suggest: true, confetti: true, motion: true, annReveal: true, bell: true,
+    school: false, theme: '', shade: 1, cardRipple: true, tint: true, tintAmt: 55, gray: true, dim: 0, uniform: true, dashGap: 0,
+    uiFont: '', art: '', artAmt: 18, palette: '', todoOnly: false,
   };
+  // Saving writes every setting, so settings saved before the defaults changed hold the old ones.
+  (() => {
+    const saved = store.get('prefs', null);
+    if (saved && !(saved.v >= 2)) store.set('prefs', { ...saved, v: 2, ask: false, gray: true });
+  })();
   const prefs = () => ({ ...PREF_DEFAULTS, ...store.get('prefs', {}) });
-  const applyFontPref = () => (html.dataset.gcxFont = prefs().font);
   // How dark the course images get behind their white titles (cards and the class banner).
   const SHADES = [
     ['Light', 0],
@@ -3463,6 +3562,7 @@
   const THEMES = [
     ['', 'Default', ''],
     ['school', 'School', ''],
+    ['bc', 'Your theme color', ''],
     ['deepblue', 'Deep blue', '#1e3a8a'],
     ['forest', 'Forest', '#166534'],
     ['blossom', 'Blossom', '#c2457a'],
@@ -3472,18 +3572,55 @@
     ['slate', 'Slate', '#334155'],
   ];
   const themeOf = (p) => p.theme || (p.school ? 'school' : '');
+  // BetterCanvas's dark themes color links cyan or teal: blue reads better. It's their variable, so
+  // everything that uses it follows.
+  function fixDarkLinks() {
+    const nodes = [html, document.body].filter(Boolean);
+    nodes.forEach((n) => n.style.removeProperty('--bclinks'));
+    const h = hueOf(getComputedStyle(html).getPropertyValue('--bclinks'));
+    if (h == null || h < 160 || h > 205 || !pageIsDark()) return;
+    nodes.forEach((n) => n.style.setProperty('--bclinks', '#8ab4f8', 'important'));
+  }
+  // The hue (0-360) of a #hex or rgb() color; null if it's unreadable or close to gray.
+  function hueOf(color) {
+    const t = String(color).trim();
+    const hex = t.match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+    let c;
+    if (hex) {
+      const h = hex[1].length === 3 ? hex[1].replace(/./g, (x) => x + x) : hex[1];
+      c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    } else if (/^rgba?\(/.test(t)) c = t.match(/[\d.]+/g).slice(0, 3).map(Number);
+    else return null;
+    const [r, g, b] = c.map((v) => v / 255);
+    const max = Math.max(r, g, b);
+    const d = max - Math.min(r, g, b);
+    if (d < 0.15) return null;
+    const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  }
   function applySchoolPref() {
+    fixDarkLinks();
     const theme = themeOf(prefs());
-    const on = !!theme;
+    const on = !!theme && theme !== 'bc';
     html.classList.toggle('gcx-school', on);
     rail.querySelector('.gcx-rail-logo')?.remove();
     document.querySelector('.gcx-school-mark')?.remove();
+    schoolMarkWatch?.disconnect();
+    schoolMarkWatch = null;
     html.classList.remove('gcx-themed', 'gcx-uniform');
     if (!on) {
       html.style.removeProperty('--gcx-school');
       html.style.removeProperty('--gcx-school-fg');
       html.style.removeProperty('--gcx-link');
       html.style.removeProperty('--gcx-accent');
+      html.style.removeProperty('--gcx-fill');
+      // Their theme as it is; only the classes take its color.
+      if (theme === 'bc' && prefs().uniform !== false) {
+        const c = getComputedStyle(html).getPropertyValue('--bclinks').trim() || '#1a73e8';
+        html.style.setProperty('--gcx-accent', c);
+        html.style.setProperty('--gcx-fill', c);
+        html.classList.add('gcx-uniform');
+      }
       return;
     }
     const cs = getComputedStyle(html);
@@ -3509,6 +3646,8 @@
     const accent = readable ? nav : `color-mix(in oklab, ${nav} 55%, ${bg < 0.4 ? 'white' : 'black'})`;
     html.style.setProperty('--gcx-link', accent);
     html.style.setProperty('--gcx-accent', accent);
+    // Text needs the lifted color; a filled card or banner keeps nearly all of the theme's own.
+    html.style.setProperty('--gcx-fill', readable ? nav : `color-mix(in oklab, ${nav} 86%, ${bg < 0.4 ? 'white' : 'black'})`);
     html.classList.add('gcx-themed');
     html.classList.toggle('gcx-uniform', prefs().uniform !== false);
     if (preset) return; // logos only come with the school theme
@@ -3518,16 +3657,81 @@
       a.style.backgroundImage = `url(${JSON.stringify(logo)})`;
       rail.prepend(a);
     }
-    // The school's wordmark, the one Canvas puts at the top of the dashboard sidebar.
-    const mark = document.querySelector('.ic-sidebar-logo__image');
+    placeSchoolMark();
+  }
+  // The school's wordmark, the one Canvas puts at the top of the dashboard sidebar. Canvas can fill
+  // that sidebar after we run (coming back from a class, with everything cached, it does), so the
+  // last one seen is used right away and we watch for the real one.
+  let schoolMarkWatch = null;
+  function placeSchoolMark() {
+    if (!html.classList.contains('gcx-dash')) return;
+    const live = document.querySelector('.ic-sidebar-logo__image');
     const side = document.getElementById('right-side-wrapper');
-    if (html.classList.contains('gcx-dash') && mark && mark.src && side) {
-      const box = el('<div class="gcx-school-mark"><img alt=""></div>');
-      box.querySelector('img').src = mark.src;
-      box.querySelector('img').alt = mark.alt || 'School logo';
-      side.prepend(box);
+    if (live && live.src) store.set('schoolMark', { src: live.src, alt: live.alt });
+    const mark = live && live.src ? { src: live.src, alt: live.alt } : store.get('schoolMark', null);
+    if (side && mark && /^https:/.test(mark.src)) {
+      let box = document.querySelector('.gcx-school-mark');
+      if (!box) {
+        box = el('<div class="gcx-school-mark"><img alt=""></div>');
+        side.prepend(box);
+      }
+      const img = box.querySelector('img');
+      if (img.getAttribute('src') !== mark.src) img.src = mark.src;
+      img.alt = mark.alt || 'School logo';
+    }
+    if (live && side) return;
+    if (schoolMarkWatch) return;
+    const mo = new MutationObserver(
+      debounce(() => {
+        if (schoolMarkWatch !== mo) return;
+        if (document.querySelector('.ic-sidebar-logo__image') && document.getElementById('right-side-wrapper')) {
+          mo.disconnect();
+          schoolMarkWatch = null;
+          placeSchoolMark();
+        }
+      }, 80),
+    );
+    schoolMarkWatch = mo;
+    mo.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => {
+      mo.disconnect();
+      if (schoolMarkWatch === mo) schoolMarkWatch = null;
+    }, 20000);
+  }
+  // Page colors, from the welcome or Settings: '' leaves BetterCanvas's own. They're its variables,
+  // so its dark mode and everything of ours follow; early.js puts them in before the first paint.
+  // Background, second and third surfaces, cards, text (strong, muted, faint), borders, links.
+  const PALETTES = {
+    day: { dark: false, vars: ['#ffffff', '#f1f3f4', '#e8eaed', '#ffffff', '#1f1f1f', '#5f6368', '#80868b', '#dadce0', '#1a73e8'] },
+    night: { dark: true, vars: ['#161616', '#1f1f1f', '#2a2a2a', '#242424', '#f1f3f4', '#b0b3b8', '#8a8d91', '#3a3a3a', '#8ab4f8'] },
+  };
+  const PALETTE_VARS = ['--bcbackground-0', '--bcbackground-1', '--bcbackground-2', '--bccards', '--bctext-0', '--bctext-1', '--bctext-2', '--bcborders', '--bclinks'];
+  function paletteCss(k) {
+    const p = PALETTES[k];
+    if (!p) return '';
+    const d = PALETTE_VARS.map((v, i) => `${v}: ${p.vars[i]} !important`);
+    d.push(`--bcbackground-0-ungradient: ${p.vars[0]} !important`, '--bcbackground-image: initial !important', '--bcbackground-image-layer: initial !important', `color-scheme: ${p.dark ? 'dark' : 'light'}`);
+    return `:root.gcx, :root.gcx body { ${d.join('; ')} } html.gcx :is(body, #application.ic-app) { background-color: ${p.vars[0]}; color: ${p.vars[4]}; }`;
+  }
+  function applyPalette(changed = false) {
+    const css = paletteCss(prefs().palette);
+    let st = document.getElementById('gcx-palette');
+    if (css) {
+      if (!st) {
+        st = document.createElement('style');
+        st.id = 'gcx-palette';
+        html.append(st);
+      }
+      if (st.textContent !== css) st.textContent = css;
+    } else st?.remove();
+    store.set('palette', css || null);
+    if (changed) {
+      checkFlatSurface();
+      refreshInlineColors();
+      saveThemeVars();
     }
   }
+  const bcDarkOff = () => (document.getElementById('darkcss')?.textContent || '').length < 2000;
   // The font for everything and the background. (A page-colors style from an earlier version is
   // cleared out.)
   function applyLook() {
@@ -3888,22 +4092,14 @@
 
   // ----- Settings live in a "Classroom" tab inside BetterCampus's own settings panel (its gear,
   // top right of the dashboard's to-do list).
-  const FONTS = [
-    ['fredoka', 'Round'],
-    ['poppins', 'Bold'],
-    ['playfair', 'Serif'],
-    ['caveat', 'Script'],
-    ['grotesk', 'Clean'],
-    ['canvas', 'Plain'],
-  ];
-  // A background choice's preview: the picture (a drawing a little stronger than on the page, so
-  // it reads that small) over the page color.
+  // A background choice's preview: the picture at the strength it'll have, over the page color, in
+  // the shape of this window.
   function artThumb(k) {
     const url =
       k === 'theme' ? bcPicture() : k === 'mine' ? (typeof bgMine === 'string' ? bgMine : '') : k !== 'none' ? chrome.runtime.getURL(`art/${k}-${pageIsDark() ? 'dark' : 'light'}.svg`) : '';
     if (!url || url.includes('"')) return { cls: k === 'mine' ? 'add' : '', style: '' };
     const pos = (ARTS.find((a) => a[0] === k) || [])[2] || 'center';
-    return { cls: k === 'theme' || k === 'mine' ? 'pic' : '', style: `--tn:url("${url}");--tn-pos:${pos}` };
+    return { cls: k === 'theme' ? 'pic' : '', style: `--tn:url("${url}");--tn-pos:${pos}` };
   }
   const UI_FONTS = [
     ['', 'Canvas'],
@@ -3928,23 +4124,25 @@
           <div class="gcx-set-tone" role="radiogroup" aria-label="Greeting style">${['calm', 'normal', 'extra']
             .map((t) => `<button type="button" role="radio" data-tone="${t}" aria-checked="${p.tone === t}">${t === 'calm' ? 'Calm' : t === 'normal' ? 'Normal' : 'Extra 🎉'}</button>`)
             .join('')}</div>
-          <div class="gcx-set-lbl">Font</div>
-          <div class="gcx-set-fonts" role="radiogroup" aria-label="Greeting font">${FONTS.map(
-            ([k, label]) => `<button type="button" role="radio" data-font="${k}" aria-checked="${p.font === k}"><span class="gcx-font-${k}">Aa</span><small>${label}</small></button>`,
-          ).join('')}</div>
         </div>
         <div class="gcx-set-sub gcx-set-gap">
           <div class="gcx-set-lbl">Space between the menu rail and your classes <span class="gcx-set-val">${p.dashGap}px</span></div>
           <input type="range" class="gcx-set-range" data-range="dashGap" data-unit="px" min="0" max="${DASH_GAP_MAX}" step="8" value="${p.dashGap}" aria-label="Space between the menu rail and your classes">
         </div>
+        ${toggle('todoOnly', 'To-do list only', "Hides BetterCanvas's Announcements and Done tabs, progress ring and streak beside your classes")}
         ${toggle('bell', 'Notifications bell', 'New messages and announcements, next to the greeting')}
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden. Ctrl + Shift + Space brings back your last chat')}
-        ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
-        ${toggle('suggest', 'Suggestions in Inbox', 'Gray text suggests how a message goes on, or a whole reply when the box is empty. Tab takes it, Ctrl + → takes a word, Esc hides it. The conversation and your draft are sent to OpenAI to write it')}
+        ${toggle('suggest', 'Suggestions in Inbox', 'Gray text suggests how a message goes on. Every few seconds it also reads what you have so far and offers a polished version; you can even just write what you want to say, like "tell her I can\'t make it". Tab takes it, Esc hides it. The conversation and your draft are sent to OpenAI to write these')}
       </div>
       ${head('look', 'Look')}
       ${card('look')}
+        <div class="gcx-set-sub">
+          <div class="gcx-set-lbl">Page colors</div>
+          <div class="gcx-set-tone" role="radiogroup" aria-label="Page colors">${[['', 'My BetterCanvas'], ['day', 'Day'], ['night', 'Night']]
+            .map(([k, label]) => `<button type="button" role="radio" data-palette="${k}" aria-checked="${(p.palette || '') === k}">${label}</button>`)
+            .join('')}</div>
+        </div>
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Theme <span class="gcx-set-val gcx-theme-name">${(THEMES.find((t) => t[0] === themeOf(p)) || THEMES[0])[1]}</span></div>
           <div class="gcx-set-themes" role="radiogroup" aria-label="Theme">${THEMES.map(
@@ -3961,7 +4159,7 @@
         </div>
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Background</div>
-          <div class="gcx-set-arts" role="radiogroup" aria-label="Background">${ARTS.map(([k, label]) =>
+          <div class="gcx-set-arts" role="radiogroup" aria-label="Background" style="--tn-amt:${p.artAmt}%;--tn-ar:${innerWidth} / ${Math.max(1, innerHeight)}">${ARTS.map(([k, label]) =>
             k === 'theme' && !bcPicture()
               ? ''
               : `<button type="button" role="radio" data-art="${k}" aria-checked="${artOf(p) === k}" title="${label}"><span class="gcx-art-tn ${artThumb(k).cls}" style="${esc(artThumb(k).style)}"></span><small>${label}</small></button>`,
@@ -3992,6 +4190,7 @@
             ([label, v]) => `<button type="button" role="radio" data-shade="${v}" aria-checked="${p.shade === v}">${label}</button>`,
           ).join('')}</div>
         </div>
+        <div class="gcx-set-row gcx-set-try-row"><button type="button" class="gcx-set-try gcx-set-rewelcome">Show the welcome again</button></div>
       </div>
       ${head('motion', 'Motion')}
       ${card('motion')}
@@ -4006,21 +4205,22 @@
         <div class="gcx-set-pets"></div>
       </div>`;
   }
+  function savePrefs(patch) {
+    store.set('prefs', { ...prefs(), ...patch });
+    applyWelcomePrefs();
+    applyShadePref();
+    applyLayoutPref();
+    if ('palette' in patch) applyPalette(true);
+    if ('school' in patch || 'uniform' in patch || 'theme' in patch || 'palette' in patch) applySchoolPref();
+    if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch || 'palette' in patch) applyLook();
+    html.classList.toggle('gcx-still', !prefs().motion);
+    window.dispatchEvent(new CustomEvent('gcx:prefs'));
+  }
   function bindSettings(box) {
     // pets.js fills its own controls into .gcx-set-pets (same content-script world, so the event's
     // detail is the live element).
     setTimeout(() => window.dispatchEvent(new CustomEvent('gcx:settings', { detail: box })), 0);
-    const save = (patch) => {
-      store.set('prefs', { ...prefs(), ...patch });
-      applyWelcomePrefs();
-      applyFontPref();
-      applyShadePref();
-      applyLayoutPref();
-      if ('school' in patch || 'uniform' in patch || 'theme' in patch) applySchoolPref();
-      if ('uiFont' in patch || 'art' in patch || 'artAmt' in patch) applyLook();
-      html.classList.toggle('gcx-still', !prefs().motion);
-      window.dispatchEvent(new CustomEvent('gcx:prefs'));
-    };
+    const save = savePrefs;
     const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? !['none', 'theme'].includes(artOf()) : prefs()[k]);
     // The strip of backgrounds starts scrolled to the one he has (once it's showing).
     const arts = box.querySelector('.gcx-set-arts');
@@ -4114,6 +4314,24 @@
         go.textContent = 'Make it';
       }
     });
+    // The welcome can be opened from here and changes what these show.
+    const afterWelcome = () => {
+      if (!box.isConnected) return removeEventListener('gcx:welcome-closed', afterWelcome);
+      const p = prefs();
+      const mark = (attr, val) => box.querySelectorAll(`[${attr}]`).forEach((b) => b.setAttribute('aria-checked', String(b.getAttribute(attr) === val)));
+      mark('data-palette', p.palette || '');
+      mark('data-theme', themeOf(p));
+      mark('data-art', artOf(p));
+      const u = box.querySelector('[data-k="uniform"]');
+      if (u) u.checked = p.uniform !== false;
+      const name = box.querySelector('.gcx-theme-name');
+      if (name) name.textContent = (THEMES.find((t) => t[0] === themeOf(p)) || THEMES[0])[1];
+      const mine = box.querySelector('.gcx-set-bgmine');
+      if (mine) mine.hidden = artOf(p) !== 'mine';
+      syncAmt();
+      sync();
+    };
+    addEventListener('gcx:welcome-closed', afterWelcome);
     const sync = () => box.querySelectorAll('[data-needs]').forEach((n) => n.classList.toggle('off', !needs(n.dataset.needs)));
     sync();
     box.addEventListener('change', (e) => {
@@ -4126,17 +4344,22 @@
       const k = e.target.dataset && e.target.dataset.range;
       if (!k) return;
       save({ [k]: Number(e.target.value) });
+      if (k === 'artAmt') arts?.style.setProperty('--tn-amt', `${e.target.value}%`);
       const val = e.target.parentElement.querySelector('.gcx-set-val');
       if (val) val.textContent = `${e.target.value}${e.target.dataset.unit || '%'}`;
     });
     box.addEventListener('click', (e) => {
       const t = e.target.closest('[data-tone]');
-      const f = e.target.closest('[data-font]');
       const sh = e.target.closest('[data-shade]');
       const th = e.target.closest('[data-theme]');
       const uf = e.target.closest('[data-uifont]');
       const ar = e.target.closest('[data-art]');
-      if (uf) {
+      const pal = e.target.closest('[data-palette]');
+      if (pal) {
+        save({ palette: pal.dataset.palette });
+        box.querySelectorAll('[data-palette]').forEach((b) => b.setAttribute('aria-checked', String(b === pal)));
+        if (pal.dataset.palette === 'night' && bcDarkOff()) toast('For the rest of Canvas to go dark too, turn on dark mode in BetterCanvas.');
+      } else if (uf) {
         save({ uiFont: uf.dataset.uifont });
         box.querySelectorAll('[data-uifont]').forEach((b) => b.setAttribute('aria-checked', String(b === uf)));
       } else if (ar) {
@@ -4162,10 +4385,8 @@
         save({ tone: t.dataset.tone });
         box.querySelectorAll('[data-tone]').forEach((b) => b.setAttribute('aria-checked', String(b === t)));
         if (welcomeCtx) setHello(greeting(welcomeCtx.name, welcomeCtx.items, welcomeCtx.lastVisit), true);
-      } else if (f) {
-        save({ font: f.dataset.font });
-        box.querySelectorAll('[data-font]').forEach((b) => b.setAttribute('aria-checked', String(b === f)));
-        if (welcomeCtx) reveal(welcomeCtx.wel.querySelector('.gcx-hello'));
+      } else if (e.target.closest('.gcx-set-rewelcome')) {
+        openWelcome();
       } else if (e.target.closest('.gcx-set-try') && !e.target.closest('.gcx-set-bggen')) confetti();
     });
   }
@@ -4431,11 +4652,11 @@
       color: var(--gcx-muted, #71717a); font: inherit; cursor: pointer; }
     .gcx-set-arts small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; text-align: center; }
     .gcx-set-arts button[aria-checked="true"] small { color: var(--gcx-text, #18181b); font-weight: 700; }
-    .gcx-art-tn { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 10; border-radius: 8px; color: var(--gcx-muted, #71717a); font-size: 20px;
-      background: linear-gradient(color-mix(in srgb, var(--gcx-bg, #fff) 40%, transparent), color-mix(in srgb, var(--gcx-bg, #fff) 40%, transparent)),
-        var(--tn, none) var(--tn-pos, center) / cover no-repeat, var(--gcx-bg, #fff);
+    .gcx-art-tn { position: relative; overflow: hidden; display: grid; place-items: center; width: 100%; aspect-ratio: var(--tn-ar, 16 / 10); border-radius: 8px; color: var(--gcx-muted, #71717a); font-size: 20px;
+      background: var(--bcbackground-0, var(--gcx-bg, #fff));
       box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); transition: transform .12s ease, box-shadow .12s ease; }
-    .gcx-art-tn.pic { background: var(--tn) center / cover no-repeat, var(--gcx-bg, #fff); }
+    .gcx-art-tn::before { content: ""; position: absolute; inset: 0; background: var(--tn, none) var(--tn-pos, center) / cover no-repeat; opacity: var(--tn-amt, 18%); }
+    .gcx-art-tn.pic::before { opacity: 1; }
     .gcx-art-tn.add::after { content: "+"; }
     .gcx-set-arts button:hover .gcx-art-tn { transform: scale(1.04); }
     .gcx-set-arts button[aria-checked="true"] .gcx-art-tn { box-shadow: 0 0 0 2px var(--gcx-card, #fff), 0 0 0 4px var(--gcx-link, #4f46e5); }
@@ -4450,14 +4671,9 @@
     .gcx-set-themes button[aria-checked="true"] { border-color: var(--gcx-link, #4f46e5); }
     .gcx-sw { width: 26px; height: 26px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
     .gcx-sw-default { background: linear-gradient(135deg, #fff 50%, #e8eaed 50%); }
+    .gcx-sw-bc { background: var(--bclinks, #1a73e8); }
     .gcx-sw-school { background: conic-gradient(var(--ic-brand-global-nav-bgd, #bf5700) 0 50%, var(--ic-brand-primary, #2b7abc) 0); }
     .gcx-set-fonts small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--gcx-muted, #71717a); }
-    .gcx-font-fredoka { font-family: 'GCX Fredoka', sans-serif; font-weight: 700; }
-    .gcx-font-poppins { font-family: 'GCX Poppins', sans-serif; font-weight: 800; }
-    .gcx-font-playfair { font-family: 'GCX Playfair', serif; font-weight: 800; }
-    .gcx-font-caveat { font-family: 'GCX Caveat', cursive; font-weight: 700; }
-    .gcx-font-grotesk { font-family: 'GCX Grotesk', sans-serif; font-weight: 700; }
-    .gcx-font-canvas { font-family: inherit; font-weight: 700; }
     .gcx-set-try-row { cursor: default; padding-top: 0; border-top: 0 !important; }
     .gcx-set-try-row:hover { background: none; }
     .gcx-set-try { height: 30px; padding: 0 14px; border: 1px solid var(--gcx-border, #e4e4e7); border-radius: 15px; background: none; color: var(--gcx-link, #4f46e5); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -4668,8 +4884,9 @@
     }
   `;
 
-  // BetterCampus's to-do sidebar lives in an open shadow root. Hide the streak, the
-  // progress ring and the Day/Week/Month picker, and cut the list off at two weeks.
+  // BetterCampus's to-do sidebar lives in an open shadow root. Its tabs, progress ring and streak
+  // are his to turn on or off there; we hide its Sync upsell and the Day/Week/Month picker, and cut
+  // the To-do list off at two weeks. Other things in BetterCampus's shadow roots get the page font.
   const DUE_RE = /Due\s+(\d{1,2})\/(\d{1,2})/;
   let monthForced = false;
   function tweakBcTodo() {
@@ -4688,19 +4905,21 @@
         [data-gcx-new]{animation:gcx-bc-in .32s cubic-bezier(.2,.7,.2,1) both}
         @keyframes gcx-bc-in{from{opacity:0;transform:translateY(-4px)}}
         :host-context(html.gcx-uniform) .group{--bc-course-ring:var(--gcx-accent) !important;--bc-course-text:var(--gcx-accent) !important}
-        :host-context(html.gcx-uniform) .group > [aria-label][class*="pointer-events-none"]{background-color:var(--gcx-accent) !important}
+        :host-context(html.gcx-uniform) .group > [aria-label][class*="pointer-events-none"]{background-color:var(--gcx-fill,var(--gcx-accent)) !important}
         ${BC_CLASSROOM_CSS}`;
       sr.append(st);
       let lastSig = '';
       new MutationObserver(
         debounce(() => {
           const list = sr.getElementById('bettercanvas-todo-list');
-          const sig = list ? `${list.querySelectorAll('.group').length}|${list.textContent.length}|${list.childElementCount}` : '';
+          // (The tab that's open shows in a class name.)
+          const tab = list ? [...list.querySelectorAll('button[data-slot="tooltip-trigger"]')].findIndex((b) => /rounded-t-xl/.test(b.className)) : -1;
+          const sig = list ? `${list.querySelectorAll('.group').length}|${list.textContent.length}|${list.childElementCount}|${tab}` : '';
           if (sig === lastSig) return;
           lastSig = sig;
           applyBcTodo(sr);
         }, 60),
-      ).observe(sr, { childList: true, subtree: true, characterData: true });
+      ).observe(sr, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
     }
     applyBcTodo(sr);
     return true;
@@ -4712,32 +4931,68 @@
   };
   const BC_CAP = 6;
   let bcExpanded = false;
+  // The page font inside BetterCampus's shadow roots (a page's styles stop at their edge).
+  const BC_FONT_CSS = `:host-context(html[data-gcx-ui]) *:not(i, code, pre, kbd, samp, svg, svg *, [class*="icon"], [class^="gcx-ui-"], [style*="font-family" i]){font-family:var(--gcx-uifont) !important}`;
+  const BC_HOSTS = 'bettercampus-element, bettercampus-todo-list, bettercampus-components, bettercampus-shared-components, bettercanvas-portal, bettercanvas-dashboard-widgets, bettercanvas-new-dash-widgets, bettercanvas-reminders, bettercanvas-global-widget-manager, test-element';
+  function fontBcShadows() {
+    for (const host of document.querySelectorAll(BC_HOSTS)) {
+      const sr = host.shadowRoot;
+      if (!sr || sr.getElementById('gcx-bc-font')) continue;
+      const st = document.createElement('style');
+      st.id = 'gcx-bc-font';
+      st.textContent = BC_FONT_CSS;
+      sr.append(st);
+    }
+  }
   let bcTabTries = 0;
+  addEventListener('gcx:prefs', () => {
+    const sr = document.querySelector('bettercampus-todo-list')?.shadowRoot;
+    if (!sr) return;
+    bcTabTries = 0;
+    applyBcTodo(sr);
+  });
   function applyBcTodo(sr) {
     const list = sr.getElementById('bettercanvas-todo-list');
     if (!list) return;
     // The premium "Sync" button in the header.
     for (const b of list.querySelectorAll('button')) if ([...b.querySelectorAll('p')].some((p) => p.textContent.trim() === 'Sync')) setHidden(b, true);
-    // Announcements / To-do / Completed tabs: keep him on To-do and hide the tabs.
+    // Its tabs: Announcements first, Completed last, To-do (and an educator's to-do) between them.
     const bar = [...list.querySelectorAll('div')].find(
-      (d) => d.children.length === 3 && [...d.children].every((b) => b.tagName === 'BUTTON' && b.dataset.slot === 'tooltip-trigger'),
+      (d) => d.children.length >= 2 && d.children.length <= 5 && [...d.children].every((b) => b.tagName === 'BUTTON' && b.dataset.slot === 'tooltip-trigger'),
     );
     let panel = null;
+    let onTodo = true;
+    // His setting: nothing but the to-do list.
+    const only = !!prefs().todoOnly;
     if (bar) {
-      setHidden(bar, true);
       const tabs = [...bar.children];
       const active = tabs.findIndex((b) => /rounded-t-xl/.test(b.className));
-      if (active !== 1 && active !== -1 && bcTabTries++ < 5) tabs[1].click();
+      // (A teacher's Needs Grading sits between too; with the tabs hidden it has to be the real To-do.)
+      onTodo = active === -1 || (only ? active === tabs.length - 2 : active !== 0 && active !== tabs.length - 1);
+      // (The tabs only go once it's really on To-do, so he can't get stuck on another one.)
+      setHidden(bar, only && onTodo);
+      if (only && !onTodo && bcTabTries++ < 5) tabs[tabs.length - 2].click();
       panel = bar.nextElementSibling;
     }
     for (const ch of list.children) {
-      const h3 = ch.querySelector('h3');
       const picker = ch.querySelector('button[aria-haspopup="menu"]');
-      if (h3 && /streak/i.test(h3.textContent)) setHidden(ch, true);
+      const h3 = ch.querySelector('h3');
+      if (h3 && /streak/i.test(h3.textContent)) setHidden(ch, only);
       else if (picker) {
-        setHidden(ch, true);
-        forceMonth(picker);
-      } else if (ch.matches('[data-todo-section]') && !ch.querySelector('a[href]') && /\d+%/.test(ch.textContent)) setHidden(ch, true);
+        setHidden(ch, onTodo);
+        if (onTodo) forceMonth(picker);
+      } else if (ch.matches('[data-todo-section]') && !ch.querySelector('a[href]') && /\d+%/.test(ch.textContent)) setHidden(ch, only);
+    }
+    // The other tabs are BetterCampus's as they are: no cutoff, no cap.
+    if (!onTodo) {
+      list.querySelectorAll('[data-gcx-cap]').forEach((n) => n.removeAttribute('data-gcx-cap'));
+      list.querySelectorAll('.group').forEach((g) => setHidden(g.parentElement, false));
+      list.querySelectorAll('[data-todo-section], .relative').forEach((n) => setHidden(n, false));
+      list.querySelector('#gcx-bc-more')?.remove();
+      if (bcGhost && bcLive(sr)) releaseBcGhost();
+      // A save queued from the To-do tab mustn't capture this one.
+      clearTimeout(bcSaveTimer);
+      return;
     }
     // Two-week horizon: BetterCampus's free ranges are a day, a week or a month.
     const horizon = horizonEnd();
@@ -5024,6 +5279,7 @@
     if (m < 24 * 60) return `${Math.round(m / 60)}h ago`;
     return `${Math.round(m / 1440)}d ago`;
   };
+  const BELL_EMPTY = `<div class="gcx-bell-empty">You're all caught up.<button type="button" class="gcx-bell-past">Show the past 7 days</button></div>`;
   const fmtPts = (x) => String(Math.round(x * 100) / 100);
   const gradeText = (g) => (!g.graded ? '' : g.score != null && g.pts ? `${fmtPts(g.score)}/${fmtPts(g.pts)}` : g.grade);
   // Grades and comments he cleared from the bell (by assignment and time, so a new one comes back).
@@ -5071,6 +5327,254 @@
       throw err;
     }
     return r.json().catch(() => null);
+  }
+  // Global announcements on the dashboard: Canvas's big colored banners, as small cards that fit the
+  // page. Long ones are cut to a few lines with Show more. The message and Canvas's dismiss button
+  // stay as they are (only styled, classroom.css).
+  function mountGlobalNotices() {
+    const setup = (wrap) =>
+      wrap.querySelectorAll('.ic-notification').forEach((n) => {
+        const body = n.querySelector('.notification_message') || n.querySelector('.ic-notification__message');
+        if (!body || body.classList.contains('gcx-gn-body')) return;
+        body.classList.add('gcx-gn-body');
+        const more = el(`<button type="button" class="gcx-gn-more" aria-expanded="false" hidden>Show more</button>`);
+        body.after(more);
+        const measure = () => {
+          if (n.classList.contains('gcx-gn-open')) return;
+          const cut = body.scrollHeight > body.clientHeight + 2;
+          body.classList.toggle('gcx-gn-cut', cut);
+          more.hidden = !cut;
+        };
+        more.addEventListener('click', () => {
+          const open = n.classList.toggle('gcx-gn-open');
+          more.textContent = open ? 'Show less' : 'Show more';
+          more.setAttribute('aria-expanded', String(open));
+          body.classList.toggle('gcx-gn-cut', !open);
+          if (!open) measure();
+        });
+        // A picture in the message makes it longer once it loads.
+        body.addEventListener('load', measure, true);
+        addEventListener('load', measure, { once: true });
+        measure();
+      });
+    const now = document.getElementById('announcementWrapper');
+    if (now) return setup(now);
+    const mo = new MutationObserver(() => {
+      const wrap = document.getElementById('announcementWrapper');
+      if (!wrap) return;
+      mo.disconnect();
+      setup(wrap);
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => mo.disconnect(), 15000);
+  }
+  // /grades: classes he doesn't care about can be hidden from the list (remembered here only).
+  function mountGradesHide() {
+    if (!/^\/grades\/?$/.test(location.pathname)) return;
+    const key = `gradesHidden:${PAGE_USER || 'anon'}`;
+    const rows = new Map();
+    document.querySelectorAll('#content a[href*="/courses/"]').forEach((a) => {
+      const id = (a.getAttribute('href').match(/\/courses\/(\d+)\/grades(?:[/?#]|$)/) || [])[1];
+      const tr = a.closest('tr');
+      if (id && tr && !rows.has(id)) rows.set(id, { tr, a, name: a.textContent.trim() || 'this class' });
+    });
+    if (!rows.size) return;
+    let showing = false;
+    const note = el(`<div class="gcx-grade-note" hidden><span></span><button type="button"></button></div>`);
+    rows.values().next().value.tr.closest('table').before(note);
+    const hidden = () => new Set(store.get(key, []) || []);
+    const draw = () => {
+      const off = hidden();
+      const n = [...rows.keys()].filter((id) => off.has(id)).length;
+      if (!n) showing = false;
+      for (const [id, r] of rows) {
+        const isOff = off.has(id);
+        r.tr.toggleAttribute('data-gcx-grade-off', isOff && !showing);
+        r.tr.classList.toggle('gcx-grade-dim', isOff && showing);
+        r.btn.textContent = isOff ? 'Unhide' : 'Hide';
+        r.btn.setAttribute('aria-label', `${isOff ? 'Unhide' : 'Hide'} ${r.name}`);
+      }
+      note.hidden = !n;
+      note.querySelector('span').textContent = `${n} ${n === 1 ? 'class' : 'classes'} hidden`;
+      note.querySelector('button').textContent = showing ? 'Hide them again' : 'Show them';
+    };
+    for (const [id, r] of rows) {
+      r.btn = el('<button type="button" class="gcx-grade-btn"></button>');
+      r.a.after(r.btn);
+      r.btn.addEventListener('click', () => {
+        const off = hidden();
+        if (off.has(id)) off.delete(id);
+        else off.add(id);
+        store.set(key, [...off]);
+        draw();
+      });
+    }
+    note.querySelector('button').addEventListener('click', () => {
+      showing = !showing;
+      draw();
+    });
+    draw();
+  }
+  // The welcome: a first look to pick, then (skippable) an OpenAI key for class pictures and the
+  // assistant. Only for someone brand new, or with ?gcx-welcome=1, or from Settings.
+  function maybeWelcome(firstRun) {
+    const force = new URLSearchParams(location.search).has('gcx-welcome');
+    if (!force && store.get('welcomed', false)) return;
+    store.set('welcomed', true);
+    if (force || firstRun) setTimeout(openWelcome, 600);
+  }
+  function openWelcome() {
+    if (document.querySelector('.gcx-wz')) return;
+    const sample = (COURSES || []).slice(0, 3).map((c) => c.color);
+    for (const x of ['#1a73e8', '#188038', '#e8710a']) if (sample.length < 3) sample.push(x);
+    const mini = (cls, colors) => `<span class="gcx-wz-pv ${cls}" aria-hidden="true"><i></i>${colors.map((c) => `<b style="--cc:${esc(c)}"></b>`).join('')}</span>`;
+    const CHOICES = {
+      classroom: { palette: 'day', theme: '', art: 'none' },
+      mine: { palette: '', theme: '', art: '' },
+      one: { palette: '', theme: 'bc', uniform: true, art: '' },
+    };
+    const choice = (k, title, sub, pv) =>
+      `<button type="button" class="gcx-wz-style" data-style="${k}" role="radio" aria-checked="false">${pv}<b>${title}</b><small>${sub}</small></button>`;
+    const sw = THEMES.filter((t) => t[0] !== 'bc');
+    const box = el(`<div class="gcx-wz" role="dialog" aria-modal="true" aria-labelledby="gcx-wz-title">
+      <div class="gcx-wz-card">
+        <button type="button" class="gcx-wz-x" aria-label="Close" title="Close">${svg('close', 20)}</button>
+        <div class="gcx-wz-step" data-step="1">
+          <h2 id="gcx-wz-title">Welcome to Even Better Canvas!</h2>
+          <p>Pick a look to start with. You can change all of it later in Settings.</p>
+          <div class="gcx-wz-styles" role="radiogroup" aria-label="Look">
+            ${choice('classroom', 'Classroom', 'Clean and white, just like Google Classroom', mini('day', sample))}
+            ${choice('mine', 'Your style', 'Keeps your BetterCanvas theme and class colors', mini('theme', sample))}
+            ${choice('one', 'Your style, one color', 'Your theme, with every class in its color', mini('theme', ['var(--bclinks, #1a73e8)', 'var(--bclinks, #1a73e8)', 'var(--bclinks, #1a73e8)']))}
+          </div>
+          <div class="gcx-wz-own">
+            <button type="button" class="gcx-wz-ownh" aria-expanded="false">Or try your own${svg('chevron', 18)}</button>
+            <div class="gcx-wz-ownb" hidden>
+              <div class="gcx-wz-dn" role="radiogroup" aria-label="Day or night"><button type="button" role="radio" data-dn="day" aria-checked="true">Day</button><button type="button" role="radio" data-dn="night" aria-checked="false">Night</button></div>
+              <div class="gcx-wz-sws" role="radiogroup" aria-label="Color">${sw
+                .map(([k, label, c]) => `<button type="button" role="radio" data-sw="${k}" aria-checked="${k === ''}" title="${label}" aria-label="${label}"><span class="${k === '' ? 'def' : k === 'school' ? 'school' : ''}"${c ? ` style="--sw:${c}"` : ''}></span></button>`)
+                .join('')}</div>
+              <small class="gcx-wz-note" hidden>For the rest of Canvas to go dark too, turn on dark mode in BetterCanvas.</small>
+            </div>
+          </div>
+          <div class="gcx-wz-foot"><button type="button" class="gcx-wz-next">Continue</button></div>
+        </div>
+        <div class="gcx-wz-step" data-step="2" hidden>
+          <h2>Want AI too?</h2>
+          <p>Add your own OpenAI key and Even Better Canvas can:</p>
+          <ul><li>Draw a picture for each of your classes</li><li>Open an assistant anywhere with Ctrl + Space, one that can read your assignments and help with them</li></ul>
+          <small class="gcx-wz-fine">Your key stays in this extension and only goes to OpenAI, who bill you for what you use.</small>
+          <div class="gcx-wz-status" role="status"></div>
+          <div class="gcx-wz-foot"><button type="button" class="gcx-wz-skip">Skip for now</button><button type="button" class="gcx-wz-draw" hidden></button><button type="button" class="gcx-wz-key">Add my OpenAI key</button></div>
+        </div>
+      </div>
+    </div>`);
+    document.body.append(box);
+    const q = (s) => box.querySelector(s);
+    const own = { palette: 'day', theme: '' };
+    let picked = null;
+    const applyOwn = () => savePrefs({ palette: own.palette, theme: own.theme, school: false, uniform: true, art: 'none' });
+    const markStyle = (k) => box.querySelectorAll('[data-style]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.style === k)));
+    markStyle('classroom');
+    const pickStyle = (k) => {
+      picked = k;
+      markStyle(k);
+      savePrefs({ ...CHOICES[k], school: false });
+    };
+    const close = () => {
+      document.removeEventListener('keydown', onKey, true);
+      removeEventListener('focus', checkKey);
+      box.classList.add('gcx-out');
+      dispatchEvent(new Event('gcx:welcome-closed'));
+      setTimeout(() => box.remove(), 160);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        close();
+      } else if (e.key === 'Tab') {
+        const all = [...box.querySelectorAll('button, input')].filter((n) => n.offsetParent);
+        const at = all.indexOf(document.activeElement);
+        const next = e.shiftKey ? (at <= 0 ? all.length - 1 : at - 1) : at === all.length - 1 ? 0 : at + 1;
+        e.preventDefault();
+        all[next]?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    let drawing = false;
+    const checkKey = async () => {
+      if (!box.isConnected || q('[data-step="2"]').hidden || drawing) return;
+      const r = await chrome.runtime.sendMessage({ type: 'gcxHasKey' }).catch(() => null);
+      if (!r || !r.has || !box.isConnected) return;
+      const list = (COURSES || (await coursesReady) || []).filter((c) => !covers[coverKey(c.id)]);
+      q('.gcx-wz-status').textContent = 'Your key is saved. Ctrl + Space is ready.';
+      q('.gcx-wz-key').hidden = true;
+      q('.gcx-wz-skip').textContent = 'Done';
+      const d = q('.gcx-wz-draw');
+      d.hidden = !list.length;
+      d.textContent = `Draw pictures for my ${list.length} ${list.length === 1 ? 'class' : 'classes'}`;
+      q('.gcx-wz-fine').textContent = 'Drawing costs a few cents per picture on your OpenAI account.';
+    };
+    addEventListener('focus', checkKey);
+    const drawCovers = async () => {
+      if (drawing) return;
+      drawing = true;
+      const list = (COURSES || (await coursesReady) || []).filter((c) => !covers[coverKey(c.id)]);
+      const d = q('.gcx-wz-draw');
+      d.disabled = true;
+      let made = 0;
+      for (const c of list) {
+        q('.gcx-wz-status').textContent = `Drawing ${made + 1} of ${list.length}: ${prettyName(c)}`;
+        try {
+          const r = await chrome.runtime.sendMessage({ type: 'genCover', prompt: `A picture that suits a class called ${prettyName(c)}`, course: prettyName(c) });
+          if (!r || !r.data) throw new Error((r && r.error) || 'no picture came back');
+          saveCover(c.id, { data: await shrinkImage(await (await fetch(r.data)).blob()) });
+          made++;
+        } catch (err) {
+          drawing = false;
+          q('.gcx-wz-status').textContent = `Couldn't draw that one: ${err.message || err}`;
+          d.disabled = false;
+          return;
+        }
+      }
+      drawing = false;
+      q('.gcx-wz-status').textContent = `Drew ${made} ${made === 1 ? 'picture' : 'pictures'}. You can change any of them from the class's page.`;
+      d.hidden = true;
+    };
+    box.addEventListener('click', (e) => {
+      const t = e.target;
+      const st = t.closest('[data-style]');
+      const dn = t.closest('[data-dn]');
+      const s = t.closest('[data-sw]');
+      if (st) pickStyle(st.dataset.style);
+      else if (dn || s) {
+        if (dn) {
+          own.palette = dn.dataset.dn;
+          box.querySelectorAll('[data-dn]').forEach((b) => b.setAttribute('aria-checked', String(b === dn)));
+          q('.gcx-wz-note').hidden = !(own.palette === 'night' && bcDarkOff());
+        } else {
+          own.theme = s.dataset.sw;
+          box.querySelectorAll('[data-sw]').forEach((b) => b.setAttribute('aria-checked', String(b === s)));
+        }
+        picked = 'own';
+        markStyle('');
+        applyOwn();
+      } else if (t.closest('.gcx-wz-ownh')) {
+        const b = q('.gcx-wz-ownb');
+        b.hidden = !b.hidden;
+        q('.gcx-wz-ownh').setAttribute('aria-expanded', String(!b.hidden));
+      } else if (t.closest('.gcx-wz-next')) {
+        if (!picked) pickStyle('classroom');
+        q('[data-step="1"]').hidden = true;
+        q('[data-step="2"]').hidden = false;
+        checkKey();
+        q('.gcx-wz-key').focus({ preventScroll: true });
+      } else if (t.closest('.gcx-wz-key')) {
+        chrome.runtime.sendMessage({ type: 'openOptions' }).catch(() => {});
+      } else if (t.closest('.gcx-wz-draw')) drawCovers();
+      else if (t.closest('.gcx-wz-skip, .gcx-wz-x')) close();
+    });
+    q('.gcx-wz-next').focus({ preventScroll: true });
   }
   // Canvas's help tray (ask your instructor, report a problem, the school's help links): its nav
   // is hidden, so a small see-through icon in the dashboard's bottom right corner opens it.
@@ -5159,7 +5663,7 @@
         const next = sec.nextElementSibling;
         if (!(next && (next.classList.contains('gcx-bell-item') || next.classList.contains('gcx-bell-more')))) sec.remove();
       });
-      if (!list.querySelector('.gcx-bell-item, .gcx-bell-more')) list.innerHTML = `<div class="gcx-bell-empty">You're all caught up.</div>`;
+      if (!list.querySelector('.gcx-bell-item, .gcx-bell-more')) list.innerHTML = BELL_EMPTY;
     };
     // Fold a row away: from its height to nothing (the height is applied before the fold starts).
     function fold(item) {
@@ -5176,6 +5680,23 @@
     }
     // Messages, announcements and the inbox count as they are after something was marked read
     // (also over a list that was fetched before he marked them, which news() has just saved).
+    async function showPast(pop) {
+      const list = pop.querySelector('.gcx-bell-list');
+      if (!list || pop.dataset.past) return;
+      pop.dataset.past = '1';
+      list.innerHTML = `<div class="gcx-bell-empty">Loading…</div>`;
+      let items;
+      try {
+        items = await loadPastWeek();
+      } catch {
+        if (!pop.isConnected) return;
+        delete pop.dataset.past;
+        list.innerHTML = `<div class="gcx-bell-empty">Couldn't load the past 7 days.</div>`;
+        return;
+      }
+      if (!pop.isConnected) return;
+      list.innerHTML = items.length ? `<div class="gcx-bell-sec">Past 7 days</div>${items.map((i) => i.html).join('')}` : `<div class="gcx-bell-empty">Nothing from the past 7 days.</div>`;
+    }
     function saveRead() {
       if (!data) return;
       const d = scrub(data);
@@ -5371,7 +5892,7 @@
       paint();
       const pop = livePop();
       const list = pop && pop.querySelector('.gcx-bell-list');
-      if (list && data) list.innerHTML = bellList(data, store.get('bellSeen', 0));
+      if (list && data && !pop.dataset.past) list.innerHTML = bellList(data, store.get('bellSeen', 0));
       if (res.includes(false)) toast(res.includes(true) ? "Couldn't put some of them back" : "Couldn't put them back. Are you still signed in?");
       else if (!d && (msgIds.length || u.ann.length)) toast("Put back. They'll show once the list refreshes");
       else toast('Put back');
@@ -5387,6 +5908,12 @@
           e.preventDefault();
           e.stopPropagation();
           checkAll(pop);
+          return;
+        }
+        if (e.target.closest('.gcx-bell-past')) {
+          e.preventDefault();
+          e.stopPropagation();
+          showPast(pop);
           return;
         }
         const done = e.target.closest('.gcx-bell-done');
@@ -5407,7 +5934,7 @@
           data = d;
           saveRead();
           paint();
-          if (!list) return;
+          if (!list || pop.dataset.past) return;
           list.innerHTML = bellList(data, store.get('bellSeen', 0));
           syncAll(pop);
           seenUpTo(data);
@@ -5415,19 +5942,51 @@
       else setTimeout(() => seenUpTo(shown), 600);
     });
   }
+  // act: [kind, id, label] for the check that shows on hover (none for Due soon).
+  const bellRow = (icon, title, sub, url, isNew, c, act) =>
+    `<div class="gcx-bell-item"><a class="gcx-bell-row${isNew ? ' new' : ''}" href="${esc(url)}"${c ? ` style="--c:${esc(c)}"` : ''}><span class="gcx-bell-ic">${svg(icon, 18)}</span><span class="gcx-bell-tx"><b>${esc(title)}</b><small>${esc(sub)}</small></span></a>${
+      act
+        ? `<button type="button" class="gcx-bell-done" data-kind="${act[0]}" data-id="${esc(act[1])}" title="${act[2]}" aria-label="${act[2]}: ${esc(title)}">${svg('check', 18)}</button>`
+        : ''
+    }</div>`;
+  // Everything from the last week, read or not (only asked for when he clicks for it).
+  async function loadPastWeek() {
+    const week = Date.now() - 7 * DAY;
+    const [stream, convos] = await Promise.all([
+      api('/users/self/activity_stream?only_active_courses=true&per_page=100'),
+      api('/conversations?per_page=30').catch(() => []),
+    ]);
+    const course = (id) => (COURSES || []).find((c) => c.id === Number(id));
+    const name = (id) => (course(id) ? prettyName(course(id)) : '');
+    const color = (id) => (course(id) ? course(id).color : '');
+    const out = [];
+    for (const m of convos || []) {
+      const at = Date.parse(m.last_message_at) || 0;
+      if (at <= week) continue;
+      const from = (m.participants || []).length === 2 ? ((m.participants || []).find((x) => String(x.id) !== String(PAGE_USER)) || {}).name || '' : '';
+      out.push({ at, html: bellRow('chat', m.subject || 'No subject', [from, String(m.last_message || '').slice(0, 140)].filter(Boolean).join(': ') || ago(at), '/conversations', false, '') });
+    }
+    for (const x of stream || []) {
+      if (x.type === 'Announcement') {
+        const at = Date.parse(x.created_at) || 0;
+        if (at > week) out.push({ at, html: bellRow('announce', x.title || 'Announcement', [name(x.course_id), ago(at)].filter(Boolean).join(' · '), x.html_url || '/', false, color(x.course_id)) });
+      } else if (x.type === 'Submission' && x.workflow_state === 'graded' && (x.score != null || x.grade)) {
+        const a = x.assignment || {};
+        const at = Date.parse(x.posted_at || x.graded_at || x.updated_at) || 0;
+        const cid = x.course_id || a.course_id;
+        const g = gradeText({ graded: true, score: x.score != null ? Number(x.score) : null, pts: a.points_possible != null ? Number(a.points_possible) : null, grade: x.grade != null ? String(x.grade) : '' });
+        if (at > week) out.push({ at, html: bellRow('grade', a.name || x.title || 'Assignment', [name(cid), g ? `Graded ${g}` : 'Graded', ago(at)].filter(Boolean).join(' · '), x.html_url || a.html_url || '/', false, color(cid)) });
+      }
+    }
+    return out.sort((u, v) => v.at - u.at).slice(0, 40);
+  }
   function bellList(d, seen) {
     if (!d) return `<div class="gcx-bell-empty">Loading…</div>`;
     const color = (id) => {
       const c = id && (COURSES || []).find((x) => x.id === Number(id));
       return c ? c.color : '';
     };
-    // act: [kind, id, label] for the check that shows on hover (none for Due soon).
-    const row = (icon, title, sub, url, isNew, c, act) =>
-      `<div class="gcx-bell-item"><a class="gcx-bell-row${isNew ? ' new' : ''}" href="${esc(url)}"${c ? ` style="--c:${esc(c)}"` : ''}><span class="gcx-bell-ic">${svg(icon, 18)}</span><span class="gcx-bell-tx"><b>${esc(title)}</b><small>${esc(sub)}</small></span></a>${
-        act
-          ? `<button type="button" class="gcx-bell-done" data-kind="${act[0]}" data-id="${esc(act[1])}" title="${act[2]}" aria-label="${act[2]}: ${esc(title)}">${svg('check', 18)}</button>`
-          : ''
-      }</div>`;
+    const row = bellRow;
     const gone = bellCleared();
     const sec = (label, rows) => (rows.length ? `<div class="gcx-bell-sec">${esc(label)}</div>${rows.join('')}` : '');
     const more = d.unread > d.msgs.length ? [`<a class="gcx-bell-more" href="/conversations">${d.unread - d.msgs.length} more in Inbox</a>`] : [];
@@ -5470,7 +6029,7 @@
           .slice(0, 4)
           .map((i) => row(TYPE_ICON[i.type] || 'assignment', i.title, [i.course, dueText(new Date(i.due))].filter(Boolean).join(' · '), i.url, false, color(i.courseId))),
       );
-    return html0 || `<div class="gcx-bell-empty">You're all caught up.</div>`;
+    return html0 || BELL_EMPTY;
   }
   let closeBell = null;
   function openBell(btn, d) {
@@ -5832,9 +6391,9 @@
     if (document.readyState === 'complete') barDone();
     else addEventListener('load', barDone, { once: true });
   }
-  applyFontPref();
   applyShadePref();
   applyLayoutPref();
+  applyPalette();
   applySchoolPref();
   applyLook();
   html.classList.toggle('gcx-still', !prefs().motion);
@@ -5842,10 +6401,14 @@
   // refreshes and redraws don't replay it.
   setTimeout(() => html.classList.remove('gcx-enter'), 1600);
   paintHidden();
+  mountGradesHide();
   if (html.classList.contains('gcx-dash')) {
+    const firstRun = !store.get('lastVisit', 0) && !store.get('prefs', null);
     mountWelcome();
     mountGhosts();
     mountHelp();
+    mountGlobalNotices();
+    maybeWelcome(firstRun);
   }
   hookBcSettings();
   watchSubmissions();
@@ -5979,6 +6542,12 @@
     setTimeout(() => mo.disconnect(), 5000);
   }
   mountBcGhost();
+  fontBcShadows();
+  {
+    // They come and go with what BetterCampus is showing, so this one keeps watching.
+    const mo = new MutationObserver(debounce(fontBcShadows, 300));
+    mo.observe(document.body, { childList: true, subtree: true });
+  }
 
   // The BetterCampus sidebar can show up on any page; watch for it until it does.
   if (!tweakBcTodo()) {

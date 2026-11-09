@@ -62,7 +62,7 @@ Enter. It also finds assignments, quizzes, pages and files across your classes: 
 ![Course home](docs/screenshots/course-home.jpg)
 
 **Home** has the banner (name, instructor, grade), an Upcoming panel (missing work from the last two weeks
-plus the next two weeks), a **Pinned** panel where **+ Add** pins any course tool (Instapoll, the original
+plus the next two weeks), a **Pinned** panel where **+ Add** pins any course tool (the original
 home page, ...) or any link, and the stream: announcements, plus Classroom-style posts like "Su Chen posted
 a new assignment: HW 5" and "posted 3 new materials" (file chips open in place) from the last three weeks.
 Past the first two, items fade and slide up as you scroll to them.
@@ -130,8 +130,7 @@ it's a chat.
 It answers from your Canvas (courses, assignments, grades, feedback, modules, files including PDFs, slides
 and docs, announcements, quizzes, discussions, pages, the syllabus, people and the inbox) and links what it
 cites. Ask it to "take me to my Genetics grades" and it opens the page. It only reads and navigates; it never
-submits, posts or changes anything. Quick lookups go to a smaller, cheaper model and anything that needs
-reading, explaining or planning goes to the full one (settings can turn that off).
+submits, posts or changes anything.
 
 ![Ask anything](docs/screenshots/ask.jpg)
 
@@ -199,9 +198,8 @@ Settings are a **Classroom** tab inside BetterCampus's settings (its gear, top r
 open them from the palette button in any course's top bar. Like BetterCampus's own tabs, it keeps the live
 dashboard preview beside it, so you see each change as you make it:
 
-- greeting on or off, tone and font, and how much room there is between the menu rail and your classes
-- the AI button and the Ctrl + Space shortcut, separately; the quick model for simple questions; Inbox
-  suggestions
+- greeting on or off and its tone, and how much room there is between the menu rail and your classes
+- the AI button (off by default) and the Ctrl + Space shortcut, separately; Inbox suggestions
 - the theme (Default, School, Deep blue, Forest, Plum, Crimson, Teal, Slate), a course-color wash over class
   images and how strong it is, black-and-white or dimmed images, and how dark class images get behind their
   white titles
@@ -280,6 +278,6 @@ unpacked.
 - Without BetterCampus, a Settings item appears at the bottom of the rail instead of the Classroom tab.
 - To turn it off, disable the extension in `chrome://extensions`. BetterCampus goes back to normal; only the
   Month setting stays.
-- Fonts (Fredoka, Poppins, Playfair Display, Caveat, Space Grotesk) are bundled under the SIL Open Font
+- Fonts (Fredoka, Nunito, Lexend, Lora, Pixelify Sans) are bundled under the SIL Open Font
   License; see `fonts/`. PDF rendering uses Mozilla's pdf.js (Apache 2.0), bundled under `viewer/pdfjs/`.
   Pets are made by their authors on codex-pets.net.

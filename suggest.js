@@ -4,6 +4,11 @@
 // The model runs in background.js; this file reads the thread off the Compose dialog and draws
 // the gray text in a layer laid exactly over Canvas's textarea (a textarea can't style part of
 // its own text), so Canvas's React state is only ever changed by real typing or insertText.
+//
+// Every few seconds, if the draft has changed in substance, it also goes to the model as a whole
+// ("he's mid-reply, here's the thread"): when it can tell what he's trying to say (or he just
+// wrote what he wants said, like "tell her I can't make it") a card under the box offers the
+// finished message. Tab uses it, replacing what he's written so far; Esc dismisses it.
 (() => {
   'use strict';
   if (window.top !== window) return;
@@ -14,6 +19,8 @@
   const on = () => gcx.prefs().suggest !== false;
   const WAIT_TYPING = 650;
   const WAIT_FOCUS = 200;
+  const POLL_EVERY = 6000; // how often the whole draft is looked at
+  const POLL_QUIET = 900; // not while he's in the middle of a burst of typing
 
   let ta = null; // the message box being written in
   let ghost = ''; // the suggestion still on offer
@@ -29,6 +36,14 @@
   let painted = null; // the textarea we made see-through, to put back
   let eatEscUp = false; // an Esc we used: its keyup mustn't close the dialog either
   let waits = 0; // tries left for a reply's earlier messages to show up
+  let pollTimer = 0;
+  let pollSeq = 0;
+  let polled = ''; // the draft as of the last look
+  let typedAt = 0;
+  let offer = ''; // the finished message on offer in the card
+  let offerFor = ''; // the draft it was written for
+  let offerAfter = ''; // what was after the cursor then (typing doesn't change it; moving the cursor does)
+  let card = null;
 
   // ---------------------------------------------------------------- what the model is told
   // The dialog shows the earlier messages under the box ("past-messages") and the course, people
@@ -44,6 +59,118 @@
     return { thread: thread.slice(0, 8000), header: header.slice(0, 1200) };
   }
 
+  // Enough words came or went for the model's answer to be different. Punctuation and a typo fixed
+  // don't count.
+  function substantive(prev, now) {
+    const bag = (s) => {
+      const m = new Map();
+      for (const w of s.toLowerCase().match(/[\p{L}\p{N}']+/gu) || []) m.set(w, (m.get(w) || 0) + 1);
+      return m;
+    };
+    const a = bag(prev);
+    const b = bag(now);
+    let d = 0;
+    for (const [w, n] of b) d += Math.max(0, n - (a.get(w) || 0));
+    for (const [w, n] of a) d += Math.max(0, n - (b.get(w) || 0));
+    return d >= 3 || (!prev.trim() && d >= 2);
+  }
+  async function poll() {
+    const t = ta;
+    if (!t || dead || !on() || !t.isConnected || document.activeElement !== t || t.disabled || t.readOnly) return;
+    if (Date.now() - typedAt < POLL_QUIET || t.selectionStart !== t.selectionEnd) return;
+    const pos = t.selectionStart;
+    const before = t.value.slice(0, pos);
+    if (!before.trim() || !substantive(polled, before)) return;
+    const was = polled;
+    polled = before;
+    const afterNow = t.value.slice(pos);
+    const id = ++pollSeq;
+    const { thread, header } = context(t);
+    let res;
+    try {
+      const me = gcx.getMe && gcx.getMe();
+      res = await chrome.runtime.sendMessage({ type: 'gcxSuggest', mode: 'polish', me: (me && me.name) || '', thread, header, before: before.slice(-4000), after: t.value.slice(pos, pos + 1500) });
+    } catch {
+      res = null;
+    }
+    if (id !== pollSeq || ta !== t || !t.isConnected) return;
+    if (!res || res.error || res.code) {
+      if (res && /nokey|badkey/.test(res.code || '')) dead = true;
+      // Not an answer: this draft can be tried again.
+      polled = was;
+      return;
+    }
+    const text = (res.text || '').trim();
+    if (!text) return hideCard();
+    // He's written on a good way since: it no longer fits, and the next look will ask again.
+    if (document.activeElement !== t) {
+      polled = was;
+      return;
+    }
+    // The cursor moved or text got selected: Tab would replace the wrong part. Ask again next look.
+    if (t.selectionStart !== t.selectionEnd || t.value.slice(t.selectionStart) !== afterNow) {
+      polled = was;
+      return;
+    }
+    if (substantive(before, t.value.slice(0, t.selectionStart))) return;
+    showCard(text, before);
+  }
+  function showCard(text, draft) {
+    seq++;
+    clearTimeout(timer);
+    hide();
+    offer = text;
+    offerFor = draft;
+    offerAfter = ta.value.slice(ta.selectionStart);
+    if (!card || !card.isConnected) {
+      card = document.createElement('div');
+      card.id = 'gcx-sg-card';
+      card.innerHTML =
+        '<div class="gcx-sg-card-h"><b>Suggested message</b><button type="button" data-act="use">Use it <kbd>Tab</kbd></button><button type="button" data-act="no">Dismiss <kbd>Esc</kbd></button></div><div class="gcx-sg-card-t"></div>';
+      // Clicking it leaves the cursor in the message box.
+      card.addEventListener('mousedown', (e) => e.preventDefault());
+      card.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        e.preventDefault();
+        if (b.dataset.act === 'use') useOffer();
+        else hideCard();
+      });
+      (ta.closest('label') || ta.parentElement).after(card);
+    }
+    card.querySelector('.gcx-sg-card-t').textContent = text;
+  }
+  function hideCard() {
+    offer = '';
+    offerFor = '';
+    offerAfter = '';
+    if (card) card.remove();
+    card = null;
+  }
+  // Replaces what's before the cursor (the text after it, usually a signature, stays). Goes
+  // through insertText, so Ctrl+Z brings back what he had.
+  function useOffer() {
+    if (!offer || !ta) return;
+    const text = offer;
+    hideCard();
+    pollSeq++; // a look still on its way was about the text this replaces
+    seq++;
+    clearTimeout(timer);
+    hide();
+    ta.focus();
+    ta.setSelectionRange(0, ta.selectionEnd);
+    insert(text);
+    const v = ta.value;
+    const pos = ta.selectionStart;
+    polled = v.slice(0, pos);
+    asked = polled + '\u0000' + v.slice(pos);
+    clearTimeout(timer);
+  }
+  function startPolling() {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(poll, POLL_EVERY);
+  }
+
   function schedule(ms) {
     clearTimeout(timer);
     timer = setTimeout(ask, ms);
@@ -52,7 +179,7 @@
   async function ask() {
     const t = ta;
     if (!t || dead || !on() || !t.isConnected || document.activeElement !== t || t.disabled || t.readOnly) return;
-    if (t.selectionStart !== t.selectionEnd) return;
+    if (t.selectionStart !== t.selectionEnd || offer) return;
     const v = t.value;
     const pos = t.selectionStart;
     const before = v.slice(0, pos);
@@ -235,8 +362,19 @@
         seq++;
         return hide();
       }
-      if (!ghost) return;
       const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+      if (offer && e.key === 'Tab' && plain) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return useOffer();
+      }
+      if (offer && e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        eatEscUp = true;
+        return hideCard();
+      }
+      if (!ghost) return;
       if (e.key === 'Tab' && plain) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -278,6 +416,8 @@
       }
       const v = ta.value;
       const pos = ta.selectionStart;
+      typedAt = Date.now();
+      if (offer && substantive(offerFor, v.slice(0, pos))) hideCard();
       if (ghost && pos > at && pos === ta.selectionEnd) {
         const typed = v.slice(at, pos);
         if (ghost.startsWith(typed) && v === base.slice(0, at) + typed + base.slice(at)) {
@@ -300,10 +440,16 @@
     (e) => {
       const t = e.target;
       if (!(t instanceof HTMLTextAreaElement) || !t.matches(BODY)) return;
-      if (ta !== t) asked = '';
+      if (ta !== t) {
+        asked = '';
+        polled = '';
+        pollSeq++;
+        hideCard();
+      }
       ta = t;
       waits = 5;
       schedule(WAIT_FOCUS);
+      startPolling();
     },
     true,
   );
@@ -312,6 +458,7 @@
     (e) => {
       if (e.target !== ta) return;
       clearTimeout(timer);
+      clearInterval(pollTimer);
       seq++;
       eatEscUp = false;
       hide();
@@ -321,6 +468,8 @@
   // The caret moved (a click, arrow keys): the suggestion no longer fits there; ask afresh.
   document.addEventListener('selectionchange', () => {
     if (!ta || document.activeElement !== ta) return;
+    // The card replaces what's before the cursor: moved somewhere else, that's not the draft it read.
+    if (offer && (ta.selectionStart !== ta.selectionEnd || ta.value.slice(ta.selectionStart) !== offerAfter || substantive(offerFor, ta.value.slice(0, ta.selectionStart)))) hideCard();
     if ((ghost || loading) && (ta.selectionStart !== at || ta.selectionEnd !== at) && ta.value === base) {
       seq++;
       hide();
@@ -330,7 +479,9 @@
   addEventListener('gcx:prefs', () => {
     if (!on()) {
       seq++;
+      pollSeq++;
       hide();
+      hideCard();
     }
   });
 })();

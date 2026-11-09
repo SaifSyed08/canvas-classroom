@@ -582,22 +582,6 @@
   ];
   const TOOL_BY = new Map(TOOLS.map((t) => [t.name, t]));
 
-  // Model routing: short, factual lookups go to the small model; anything that needs reading,
-  // explaining, planning or writing goes to the full one. Settings can turn this off.
-  // Only clear, short lookups ("when is HW 8 due?", "any unread messages?", "take me to my
-  // grades") go to the small model; anything else, and short follow-ups to a full-model turn,
-  // goes to the full one.
-  const QUICK = /^(?:(?:when|what time|where)\b|(?:what(?:'s| is)) (?:due|my (?:next|latest))\b|is (?:there|it|.+) due\b|(?:due|deadline)s?\b|(?:do i have|any) (?:new |unread )?(?:messages?|announcements?|inbox)|(?:open|go to|take me|bring me|show me)\b|(?:link|url) (?:to|for)\b|how many (?:unread|messages|assignments are due))/i;
-  const DEEP = /\b(summar|explain|why|how (?:do|does|did|should|can|would|much)|compare|analy[sz]|plan|study|strateg|quiz me|practice|write|draft|essay|feedback|improve|understand|mean|read|pdf|slides?|lecture|notes?|file|syllabus|rubric|calculat|need|grade|points?|score|pass|predict|help|advice|should i|teach|walk me|step|topics?|exam|midterm|final|cover|requirement|prompt|break down|go over|problem)/i;
-  let lastTier = 'smart';
-  const routeTier = (q) => {
-    if (gcx.prefs().routing === false) return 'smart';
-    const followUp = q.length < 40 && /^(and|what about|how about|also|ok|okay|same|now|then)\b|\?$/i.test(q) && !QUICK.test(q);
-    if (followUp && lastTier === 'smart') return 'smart';
-    return q.length <= 90 && QUICK.test(q) && !DEEP.test(q) ? 'fast' : 'smart';
-  };
-  // Tools that read course content: once one has run, the rest of the answer uses the full model.
-  const READING = new Set(['read_file', 'get_page', 'get_syllabus', 'get_discussion', 'get_assignment', 'get_grades', 'get_feedback', 'list_announcements']);
   // Set by the open_page tool; followed once the answer has finished, but only if his own
   // question asked to go somewhere (navAllowed). Otherwise it becomes a link under the reply.
   let navRequest = null;
@@ -1335,8 +1319,7 @@
       };
       // Created first so Stop / New chat work even while the course list is still loading.
       const me = (run = { cancelled: false, discard: false, resolve: null, onCancel: null });
-      let tier = routeTier(q);
-      lastTier = tier;
+      const tier = 'smart';
       // Only navigate when he asked to go somewhere; otherwise the page is offered as a button.
       const wantsNav = NAV_ASK.test(q);
       navAllowed = wantsNav;
@@ -1455,7 +1438,6 @@
           break;
         }
         status('Thinking');
-        if (tier === 'fast' && res.calls.some((c) => READING.has(c.name))) tier = lastTier = 'smart';
         req = { type: 'continue', tier, instructions: instr, tools: TOOL_DEFS, previous_response_id: res.response_id, outputs };
       }
       clearTimeout(raf);

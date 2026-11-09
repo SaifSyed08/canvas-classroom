@@ -12,11 +12,14 @@
     .row { display: flex; gap: 8px; margin-top: 12px; }
     button { height: 38px; padding: 0 18px; border: 0; border-radius: 19px; background: #1a73e8; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
     button.quiet { background: none; color: #1a73e8; border: 1px solid #dadce0; }
+    .help { margin: 14px 0 0; font-size: 14px; }
+    a { color: #1a73e8; }
     #status { margin-top: 14px; font-size: 14px; color: #188038; min-height: 1.5em; }
     @media (prefers-color-scheme: dark) {
       body { background: #202124; color: #e8eaed; }
       p { color: #9aa0a6; }
       input { background: #303134; color: #e8eaed; border-color: #5f6368; }
+      a { color: #8ab4f8; }
     }
   </style>
 </head>
@@ -26,6 +29,7 @@
   <label for="key">OpenAI API key</label>
   <input id="key" type="password" placeholder="sk-…" autocomplete="off">
   <div class="row"><button id="save" type="button">Save key</button><button id="clear" class="quiet" type="button">Remove saved key</button></div>
+  <p class="help">Don't have a key? <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">Get one here</a>. OpenAI bills your account for what you use.</p>
   <div id="status"></div>
   <script src="options.js"></script>
 </body>

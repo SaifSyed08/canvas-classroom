@@ -12,5 +12,14 @@
   display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid currentColor; border-radius: 4px;
   font: 600 10px/14px system-ui, sans-serif; letter-spacing: 0.02em; vertical-align: 1px; color: var(--sg-ink); opacity: 0.4;
 }
+#gcx-sg-card {
+  margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--gcx-border, #dadce0); border-radius: 10px;
+  background: var(--gcx-card, #fff); color: var(--gcx-text, #1f1f1f); font-size: 14px; line-height: 1.45;
+}
+#gcx-sg-card .gcx-sg-card-h { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 6px; font-size: 13px; }
+#gcx-sg-card .gcx-sg-card-h b { flex: 1; font-weight: 600; }
+#gcx-sg-card button { padding: 0; border: 0; background: none; color: var(--gcx-link, #1a73e8); font: inherit; font-weight: 600; cursor: pointer; }
+#gcx-sg-card kbd { margin-left: 2px; padding: 0 5px; border: 1px solid currentColor; border-radius: 4px; font: 600 10px/14px system-ui, sans-serif; opacity: 0.6; }
+#gcx-sg-card .gcx-sg-card-t { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 @keyframes gcx-sg-pulse { 50% { opacity: 0.2; } }
 @media (prefers-reduced-motion: reduce) { #gcx-sg .gcx-sg-wait { animation: none; } }

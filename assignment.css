@@ -49,6 +49,7 @@ html.gcx-asg #content { padding-top: 28px !important; }
 /* "100 points | Unlimited attempts | Until Nov 3": a thin rule between the facts */
 .gcx-asg-sep { display: inline-block; width: 1px; height: 14px; margin: 0 10px; background: var(--gcx-border); }
 .gcx-asg-body { margin: 18px 0 0 60px; line-height: 1.55; overflow-wrap: anywhere; }
+.gcx-asg-body:empty { display: none; }
 .gcx-asg-body img { max-width: 100%; height: auto; }
 .gcx-asg-body iframe { max-width: 100%; border: 0; border-radius: 8px; }
 .gcx-asg-body table { max-width: 100%; }
@@ -263,6 +264,11 @@ button.gcx-asg-original { padding: 0; border: 0; background: none; font-family: 
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); overflow-x: auto;
   }
   html.gcx-asg.gcx-asg-split .gcx-asg-canvas [data-testid="assignments-2-student-view"] { max-width: none; margin: 0; }
+  /* An assignment that's a tool (a JoVE video): the tool sits where the instructions would, by CSS
+     alone (moving an iframe in the page would reload it and lose its launch). */
+  html.gcx-asg.gcx-asg-split.gcx-asg-tool .gcx-asg-main { grid-row: 1; }
+  html.gcx-asg.gcx-asg-split.gcx-asg-tool .gcx-asg-side { grid-row: 1 / span 2; }
+  html.gcx-asg.gcx-asg-split.gcx-asg-tool #content > .gcx-asg-canvas { grid-column: 1; grid-row: 2; margin: 16px 0 0 60px; }
 }
 /* Brought into view (and pointed at) by the Your work button */
 .gcx-asg-pulse { animation: gcx-asg-pulse 1.4s ease-out 0.35s; border-radius: 12px; scroll-margin-top: 80px; }

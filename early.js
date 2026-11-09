@@ -22,6 +22,16 @@
       html.append(st);
     }
   } catch {}
+  // Page colors from the welcome or Settings (classroom.js saves the style), over BetterCanvas's.
+  try {
+    const css = JSON.parse(localStorage.getItem('gcx:palette') || 'null');
+    if (typeof css === 'string' && css.startsWith(':root.gcx') && !css.includes('<')) {
+      const st = document.createElement('style');
+      st.id = 'gcx-palette';
+      st.textContent = css;
+      html.append(st);
+    }
+  } catch {}
   // The page background: a built-in drawing (its address is saved) or his own picture (in
   // chrome.storage, read as soon as it can be).
   try {

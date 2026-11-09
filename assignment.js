@@ -317,7 +317,7 @@
 
   const giveUp = () => {
     view.remove();
-    html.classList.remove('gcx-asg', 'gcx-asg-split', 'gcx-asg-own', 'gcx-asg-reveal', 'gcx-asg-cmts');
+    html.classList.remove('gcx-asg', 'gcx-asg-split', 'gcx-asg-own', 'gcx-asg-reveal', 'gcx-asg-cmts', 'gcx-asg-tool');
   };
   // The classic (pre-"Assignments 2") page is already rendered by now: leave it as is.
   if (document.querySelector('#assignment_show, .student-assignment-overview, #submit_assignment')) {
@@ -424,6 +424,8 @@
     const types = a.submission_types || [];
     const kind = a.quiz_id || types.includes('online_quiz') ? 'quiz' : a.discussion_topic || types.includes('discussion_topic') ? 'discussion' : types.includes('external_tool') ? 'tool' : 'assignment';
     Object.assign(S, { a, s, kind, c });
+    // A tool's page (a JoVE video, say) is the assignment: it goes in the main column, not the side.
+    html.classList.toggle('gcx-asg-tool', kind === 'tool');
     S.ours = types.map((t) => OURS[t]).filter(Boolean);
     S.elsewhere = types.filter((t) => ELSEWHERE[t]);
     view.querySelector('.gcx-asg-ic').innerHTML = svg(kind, 24);
@@ -480,7 +482,7 @@
               <span class="gcx-asg-chip-ic">${gcx.fileTile ? gcx.fileTile(f.name, 30) : svg('file', 22)}</span><span class="gcx-asg-chip-tx"><b>${esc(f.name)}</b><small>File</small></span></a>`,
           )
           .join('');
-    } else bodyEl.innerHTML = lockNote || '<p class="gcx-asg-empty">No instructions.</p>';
+    } else bodyEl.innerHTML = lockNote || (kind === 'tool' ? '' : '<p class="gcx-asg-empty">No instructions.</p>');
 
     // Our own turn-in flow covers this assignment: Canvas's block steps aside (its Previous/Next
     // footer stays). Media and annotation stay one click away in the Add or create menu.
