@@ -2876,7 +2876,9 @@
     const meta = (i) => {
       if (tab === 'missing') {
         const when = i.due ? ` · ${shortDate(i.due)}` : '';
-        return i.flagged || i.canvasMissing ? { text: `Missing${when}`, cls: 'missing' } : { text: `Past due${when}`, cls: '' };
+        // Checked off on his planner but still not handed in: worth a look, not a mistake.
+        const off = i.done ? ' · checked off' : '';
+        return i.flagged || i.canvasMissing ? { text: `Missing${when}${off}`, cls: 'missing' } : { text: `Past due${when}${off}`, cls: '' };
       }
       if (tab === 'done') return { text: i.graded ? 'Graded' : i.submitted ? (i.late ? 'Turned in late' : 'Turned in') : 'Done', cls: i.graded ? 'graded' : '' };
       if (!i.due) return { text: '', cls: '' };
