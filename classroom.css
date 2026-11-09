@@ -553,6 +553,13 @@ html[data-gcx-font="canvas"] .gcx-hello { font-family: inherit !important; font-
 .gcx-welcome:not(.no-ask) .gcx-bell { margin-left: -8px; }
 .gcx-welcome.no-ask .gcx-bell { margin-left: auto; }
 .gcx-welcome.no-bell .gcx-bell { display: none; }
+/* Help: a small see-through icon in the dashboard's bottom right corner */
+.gcx-help-fab {
+  position: fixed; right: 14px; bottom: 14px; z-index: 900; display: grid; place-items: center; width: 32px; height: 32px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; color: var(--gcx-muted); opacity: .45; cursor: pointer;
+  transition: opacity .15s ease, background-color .15s ease;
+}
+.gcx-help-fab:hover, .gcx-help-fab:focus-visible { opacity: 1; background: color-mix(in srgb, var(--gcx-text) 8%, transparent); }
 .gcx-bell-n {
   position: absolute; top: 5px; right: 4px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px;
   background: var(--gcx-link); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; box-shadow: 0 0 0 2px var(--gcx-bg);
@@ -561,7 +568,14 @@ html[data-gcx-font="canvas"] .gcx-hello { font-family: inherit !important; font-
 .gcx-bell-n.dot { top: 11px; right: 11px; min-width: 10px; width: 10px; height: 10px; padding: 0; }
 .gcx-bell-n[hidden] { display: none; }
 .gcx-bell-panel { display: flex; flex-direction: column; width: 360px; max-width: calc(100vw - 24px); max-height: min(560px, calc(100vh - 110px)); overflow: hidden; }
-.gcx-bell-h { padding: 14px 16px 4px; font-size: 16px; font-weight: 600; }
+.gcx-bell-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; padding: 10px 10px 2px 16px; font-size: 16px; font-weight: 600; }
+.gcx-bell-all {
+  flex: none; padding: 6px 10px; border: 0; border-radius: 16px; background: transparent; color: var(--gcx-link); cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600;
+}
+.gcx-bell-all:hover, .gcx-bell-all:focus-visible { background: color-mix(in srgb, var(--gcx-link) 10%, transparent); }
+.gcx-bell-all:disabled { opacity: .6; cursor: default; }
+.gcx-bell-all[hidden] { display: none; }
 .gcx-bell-list { overflow: auto; overscroll-behavior: contain; padding: 0 6px 6px; }
 .gcx-bell-sec { padding: 10px 10px 4px; font-size: 12px; font-weight: 600; color: var(--gcx-muted); }
 .gcx-bell-row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 10px; border-radius: 10px; color: var(--gcx-text) !important; text-decoration: none !important; }

@@ -603,7 +603,6 @@
         if (JSON.stringify(gs) === JSON.stringify(myGroups)) return;
         myGroups = gs;
         store.set('groups', gs);
-        queueRail();
       })
       .catch(() => {});
 
@@ -631,17 +630,6 @@
           <button type="button" class="gcx-ri-dots" title="Customize icon" aria-label="Customize icon for ${esc(prettyName(c))}" aria-haspopup="dialog">${svg('more', 20)}</button></a>`;
       })
       .join('');
-    const ids = new Set((courses || []).map((c) => c.id));
-    const groupItems = (myGroups || [])
-      .filter((g) => ids.has(g.courseId))
-      .map((g) => {
-        const c = courses.find((x) => x.id === g.courseId);
-        const on = new RegExp(`^/groups/${g.id}(/|$)`).test(location.pathname);
-        return `<a class="gcx-ri${on ? ' on' : ''}" href="/groups/${g.id}" title="${esc(g.name)}"><span class="gcx-ri-ic">${svg('people')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">${esc(
-          g.name,
-        )}</span><span class="gcx-ri-sub">${esc((c && c.code) || '')}</span></span></a>`;
-      })
-      .join('');
     const avatarUrl = me && me.avatar_url && !/avatar-50\.png/.test(me.avatar_url) ? me.avatar_url : '';
     rail.innerHTML = `
       <div class="gcx-rail-top">
@@ -655,12 +643,10 @@
         <div class="gcx-rail-label">Enrolled</div>
         ${courseItems}
         ${item('all', '/courses', 'list', 'All courses')}
-        ${groupItems ? `<div class="gcx-rail-sep"></div><div class="gcx-rail-label">Groups</div>${groupItems}` : ''}
       </div>
       <div class="gcx-rail-bottom">
         ${item('calendar', '/calendar', 'calendar', 'Calendar')}
         ${item('inbox', '/conversations', 'inbox', 'Inbox', `<span class="gcx-badge" ${unread ? '' : 'hidden'}>${unread}</span>`)}
-        <button class="gcx-ri gcx-help" type="button" title="Help"><span class="gcx-ri-ic">${svg('help')}</span><span class="gcx-ri-tx"><span class="gcx-ri-name">Help</span><span class="gcx-ri-sub">Ask your instructor, report a problem</span></span></button>
         <button class="gcx-ri gcx-account" type="button" title="Account">
           <span class="gcx-me">${avatarUrl ? '' : esc(firstChar(me && me.name).toUpperCase())}</span>
           <span class="gcx-ri-tx"><span class="gcx-ri-name">${esc((me && me.name) || 'Account')}</span><span class="gcx-ri-sub">Account &amp; settings</span></span>
@@ -761,11 +747,6 @@
       store.set('pinned', on);
       renderRail(COURSES);
       toast(on ? 'Menu pinned open' : 'Menu collapses again');
-    } else if (e.target.closest('.gcx-help')) {
-      // Canvas's help tray (ask your instructor, report a problem, the school's help links).
-      const link = document.getElementById('global_nav_help_link');
-      if (link) link.click();
-      else toast("Canvas's help menu isn't on this page");
     } else if (e.target.closest('.gcx-account')) {
       // Canvas's own account tray (profile, settings, log out) still works with its nav hidden.
       const link = document.getElementById('global_nav_profile_link');
@@ -3934,9 +3915,13 @@
     const p = prefs();
     const toggle = (k, label, sub) =>
       `<label class="gcx-set-row"><span><b>${label}</b>${sub ? `<small>${sub}</small>` : ''}</span><input type="checkbox" class="gcx-switch" data-k="${k}" ${p[k] ? 'checked' : ''}></label>`;
+    const closed = store.get('setClosed', []) || [];
+    const head = (k, label) =>
+      `<button type="button" class="gcx-set-h" data-sec="${k}" aria-expanded="${!closed.includes(k)}">${label}${svg('chevron', 18)}</button>`;
+    const card = (k) => `<div class="gcx-set-card" data-sec="${k}"${closed.includes(k) ? ' hidden' : ''}>`;
     return `
-      <div class="gcx-set-h">Dashboard</div>
-      <div class="gcx-set-card">
+      ${head('dashboard', 'Dashboard')}
+      ${card('dashboard')}
         ${toggle('greeting', 'Greeting', 'The hello at the top of the dashboard')}
         <div class="gcx-set-sub" data-needs="greeting">
           <div class="gcx-set-lbl">Style</div>
@@ -3958,8 +3943,8 @@
         ${toggle('routing', 'Quick model for simple questions', 'Quick lookups use a smaller, cheaper model; reading, explaining and planning use the full one')}
         ${toggle('suggest', 'Suggestions in Inbox', 'Gray text suggests how a message goes on, or a whole reply when the box is empty. Tab takes it, Ctrl + → takes a word, Esc hides it. The conversation and your draft are sent to OpenAI to write it')}
       </div>
-      <div class="gcx-set-h">Look</div>
-      <div class="gcx-set-card">
+      ${head('look', 'Look')}
+      ${card('look')}
         <div class="gcx-set-sub">
           <div class="gcx-set-lbl">Theme <span class="gcx-set-val gcx-theme-name">${(THEMES.find((t) => t[0] === themeOf(p)) || THEMES[0])[1]}</span></div>
           <div class="gcx-set-themes" role="radiogroup" aria-label="Theme">${THEMES.map(
@@ -4008,14 +3993,14 @@
           ).join('')}</div>
         </div>
       </div>
-      <div class="gcx-set-h">Motion</div>
-      <div class="gcx-set-card">
+      ${head('motion', 'Motion')}
+      ${card('motion')}
         ${toggle('motion', 'Page animations', 'Slides between tabs, pages easing in')}
         ${toggle('cardRipple', 'Ripple on class cards', 'The circle that spreads from where you click a class card')}
         ${toggle('annReveal', 'Reveal announcements as you scroll', 'Past the first two, each one fades and slides up as it comes into view')}
       </div>
-      <div class="gcx-set-h">Fun</div>
-      <div class="gcx-set-card">
+      ${head('fun', 'Fun')}
+      ${card('fun')}
         ${toggle('confetti', 'Confetti when you submit', 'Goes seasonal on holidays')}
         <div class="gcx-set-row gcx-set-try-row"><button type="button" class="gcx-set-try">Try confetti</button></div>
         <div class="gcx-set-pets"></div>
@@ -4037,10 +4022,30 @@
       window.dispatchEvent(new CustomEvent('gcx:prefs'));
     };
     const needs = (k) => (k === 'theme' ? !!themeOf(prefs()) : k === 'art' ? !['none', 'theme'].includes(artOf()) : prefs()[k]);
-    // The strip of backgrounds starts scrolled to the one he has.
+    // The strip of backgrounds starts scrolled to the one he has (once it's showing).
     const arts = box.querySelector('.gcx-set-arts');
-    const on = arts && arts.querySelector('[aria-checked="true"]');
-    if (on) requestAnimationFrame(() => (arts.scrollLeft = Math.max(0, on.offsetLeft - arts.offsetLeft - 8)));
+    const scrollArts = () => {
+      const on = arts && arts.querySelector('[aria-checked="true"]');
+      if (on) requestAnimationFrame(() => (arts.scrollLeft = Math.max(0, on.offsetLeft - arts.offsetLeft - 8)));
+    };
+    scrollArts();
+    // A section heading folds its card away or opens it again; remembered for next time.
+    box.querySelectorAll('.gcx-set-h[data-sec]').forEach((h) =>
+      h.addEventListener('click', () => {
+        const k = h.dataset.sec;
+        const c = box.querySelector(`.gcx-set-card[data-sec="${k}"]`);
+        if (!c) return;
+        const open = c.hidden;
+        c.hidden = !open;
+        h.setAttribute('aria-expanded', String(open));
+        const closed = new Set(store.get('setClosed', []) || []);
+        if (open) closed.delete(k);
+        else closed.add(k);
+        store.set('setClosed', [...closed]);
+        if (open && k === 'look') scrollArts();
+        if (box.gcxPlace) box.gcxPlace();
+      }),
+    );
     const paintMine = () => {
       const t = box.querySelector('[data-art="mine"] .gcx-art-tn');
       if (!t) return;
@@ -4339,14 +4344,17 @@
       document.body.append(pop);
       bindSettings(pop);
       const r = b ? b.getBoundingClientRect() : { right: innerWidth / 2, left: innerWidth / 2, bottom: 80 };
-      if (b && b.closest('#gcx-rail')) {
-        pop.style.left = r.right + 8 + 'px';
-        pop.style.top = Math.max(12, innerHeight - pop.offsetHeight - 12) + 'px';
-      } else {
+      const fromRail = !!(b && b.closest('#gcx-rail'));
+      // Placed again when a section opens or closes (it grows and shrinks), so it stays on screen.
+      pop.gcxPlace = () => {
+        pop.style.top = Math.max(12, fromRail ? innerHeight - pop.offsetHeight - 12 : Math.min(r.bottom + 8, innerHeight - pop.offsetHeight - 12)) + 'px';
+      };
+      if (fromRail) pop.style.left = r.right + 8 + 'px';
+      else {
         pop.style.left = Math.max(12, Math.min(r.right - pop.offsetWidth, innerWidth - pop.offsetWidth - 12)) + 'px';
-        pop.style.top = Math.max(12, Math.min(r.bottom + 8, innerHeight - pop.offsetHeight - 12)) + 'px';
         pop.style.transformOrigin = 'top right';
       }
+      pop.gcxPlace();
       if (b) b.setAttribute('aria-expanded', 'true');
       const close = () => {
         pop.classList.add('gcx-out');
@@ -4377,8 +4385,13 @@
     .gcx-bc-tab:hover { opacity: 1; }
     .gcx-bc-tab.gcx-on { opacity: 1; }
     .gcx-bc-tab.gcx-on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -10px; height: 3px; border-radius: 3px; background: currentColor; }
-    .gcx-set-h { font-size: 13px; font-weight: 600; opacity: .6; margin: 18px 4px 8px; }
+    .gcx-set-h { display: flex; align-items: center; gap: 4px; width: calc(100% - 8px); margin: 18px 4px 8px; padding: 2px 0; border: 0; background: none;
+      font: inherit; font-size: 13px; font-weight: 600; color: inherit; opacity: .6; text-align: left; cursor: pointer; }
+    .gcx-set-h:hover, .gcx-set-h:focus-visible { opacity: .9; }
     .gcx-set-h:first-child { margin-top: 4px; }
+    .gcx-set-h .gcx-svg { fill: currentColor; transition: transform .18s ease; }
+    .gcx-set-h[aria-expanded="false"] .gcx-svg { transform: rotate(-90deg); }
+    .gcx-set-card[hidden] { display: none; }
     .gcx-set-card { border-radius: 16px; background: var(--gcx-card, #fff); border: 1px solid var(--gcx-border, #e4e4e7); overflow: hidden; }
     .gcx-set-row { display: flex; align-items: center; gap: 14px; padding: 12px 16px; cursor: pointer; margin: 0; font-weight: 400; }
     .gcx-set-row + .gcx-set-row, .gcx-set-sub + .gcx-set-row, .gcx-set-row + .gcx-set-sub { border-top: 1px solid var(--gcx-border, #e4e4e7); }
@@ -4916,7 +4929,7 @@
         .then((n) => {
           if (gen === newsGen) store.set('news', n);
           // The rail's Inbox count too, while we're at it.
-          if (n.unread !== unread) {
+          if (gen === newsGen && n.unread !== unread) {
             unread = n.unread;
             store.set('unread', unread);
             store.set('unreadAt', Date.now());
@@ -5053,6 +5066,18 @@
     }
     return r.json().catch(() => null);
   }
+  // Canvas's help tray (ask your instructor, report a problem, the school's help links): its nav
+  // is hidden, so a small see-through icon in the dashboard's bottom right corner opens it.
+  function mountHelp() {
+    if (document.querySelector('.gcx-help-fab')) return;
+    const b = el(`<button type="button" class="gcx-help-fab" title="Help: ask your instructor, report a problem" aria-label="Help">${svg('help', 20)}</button>`);
+    b.addEventListener('click', () => {
+      const link = document.getElementById('global_nav_help_link');
+      if (link) link.click();
+      else toast("Canvas's help menu isn't on this page");
+    });
+    document.body.append(b);
+  }
   function mountBell(wel) {
     const btn = el(
       `<button type="button" class="gcx-bell" aria-haspopup="dialog" aria-expanded="false" title="Notifications" aria-label="Notifications">${svg('bell', 24)}<span class="gcx-bell-n" hidden></span></button>`,
@@ -5060,14 +5085,15 @@
     wel.append(btn);
     let data = store.get('news', null);
     if (data && (data.user !== PAGE_USER || data.v !== NEWS_V)) data = null;
-    const marked = { msg: new Map(), ann: new Map() }; // id -> when he marked it read
+    const marked = { msg: new Map(), ann: new Map(), allMsgs: 0 }; // id -> when he marked it read; allMsgs: his whole inbox
     const scrub = (d) => {
       if (!d) return d;
       const old = (kind, id) => marked[kind].has(String(id)) && d.at < marked[kind].get(String(id));
-      const msgs = d.msgs.filter((m) => !old('msg', m.id));
+      const allRead = d.at < marked.allMsgs;
+      const msgs = allRead ? [] : d.msgs.filter((m) => !old('msg', m.id));
       const anns = d.anns.filter((a) => !old('ann', a.id));
-      if (msgs.length === d.msgs.length && anns.length === d.anns.length) return d;
-      return { ...d, msgs, anns, unread: Math.max(0, d.unread - (d.msgs.length - msgs.length)) };
+      if (!allRead && msgs.length === d.msgs.length && anns.length === d.anns.length) return d;
+      return { ...d, msgs, anns, unread: allRead ? 0 : Math.max(0, d.unread - (d.msgs.length - msgs.length)) };
     };
     const paint = () => {
       const n = bellCount(data);
@@ -5082,12 +5108,12 @@
     };
     paint();
     news().then((d) => {
-      if (d) (data = scrub(d)), paint();
+      if (d) (data = d), saveRead(), paint();
     });
     window.addEventListener('gcx:news-stale', () => {
       if (btn.isConnected)
         news(true).then((d) => {
-          if (d) (data = scrub(d)), paint();
+          if (d) (data = d), saveRead(), paint();
         });
     });
     // Something crossing into its last day turns the badge red without a reload.
@@ -5099,12 +5125,77 @@
       store.set('bellSeen', d.at);
       paint();
     };
+    const pending = new Set(); // "kind:id" of checks on their way to Canvas
+    let allBusy = false; // "mark all read" under way
+    let inboxBusy = false; // his whole inbox being marked read
+    const livePop = () => document.querySelector('.gcx-bell-panel:not(.gcx-out)');
+    const rowOf = (pop, kind, id) => {
+      const d = pop && [...pop.querySelectorAll('.gcx-bell-done')].find((x) => x.dataset.kind === kind && x.dataset.id === String(id));
+      return d ? d.closest('.gcx-bell-item') : null;
+    };
+    // Rows on their way to Canvas show it (also in a list drawn again meanwhile); "Mark all read"
+    // shows while there's something left to check off.
+    const syncAll = (pop) => {
+      if (!pop) return;
+      pop.querySelectorAll('.gcx-bell-done').forEach((d) => {
+        if (pending.has(`${d.dataset.kind}:${d.dataset.id}`) || (inboxBusy && d.dataset.kind === 'msg')) d.closest('.gcx-bell-item').classList.add('gcx-going');
+      });
+      const b = pop.querySelector('.gcx-bell-all');
+      if (b) {
+        b.hidden = !pop.querySelector('.gcx-bell-item:not(.gcx-going) .gcx-bell-done');
+        b.disabled = allBusy;
+      }
+    };
+    // Headings with nothing left under them go (the "more in Inbox" link counts as a row).
+    const tidyList = (list) => {
+      if (!list) return;
+      list.querySelectorAll('.gcx-bell-sec').forEach((sec) => {
+        const next = sec.nextElementSibling;
+        if (!(next && (next.classList.contains('gcx-bell-item') || next.classList.contains('gcx-bell-more')))) sec.remove();
+      });
+      if (!list.querySelector('.gcx-bell-item, .gcx-bell-more')) list.innerHTML = `<div class="gcx-bell-empty">You're all caught up.</div>`;
+    };
+    // Fold a row away: from its height to nothing (the height is applied before the fold starts).
+    function fold(item) {
+      const pop = item.closest('.gcx-bell-panel');
+      item.style.height = item.offsetHeight + 'px';
+      void item.offsetHeight;
+      item.classList.add('gcx-gone');
+      setTimeout(() => {
+        const list = item.parentElement;
+        item.remove();
+        tidyList(list);
+        syncAll(pop);
+      }, 220);
+    }
+    // Messages, announcements and the inbox count as they are after something was marked read
+    // (also over a list that was fetched before he marked them, which news() has just saved).
+    function saveRead() {
+      if (!data) return;
+      const d = scrub(data);
+      if (d === data) return;
+      // A fetch that started before this can't save the old list (or Inbox count) over it.
+      newsGen++;
+      store.set('news', d);
+      data = d;
+      if (data.unread !== unread) {
+        unread = data.unread;
+        store.set('unread', unread);
+        store.set('unreadAt', Date.now());
+        queueRail();
+      }
+    }
     // One row checked off: it folds away and the count drops; if Canvas says no, it comes back.
-    async function check(done) {
+    // Quiet (from "mark all read"): no toast of its own. True when it worked.
+    async function check(done, quiet = false) {
       const item = done.closest('.gcx-bell-item');
+      const pop = done.closest('.gcx-bell-panel');
       const { kind, id } = done.dataset;
-      if (!item || !data || item.classList.contains('gcx-going')) return;
+      const key = `${kind}:${id}`;
+      if (!item || !data || item.classList.contains('gcx-going') || pending.has(key)) return;
       item.classList.add('gcx-going');
+      pending.add(key);
+      syncAll(pop);
       try {
         if (kind === 'msg') {
           await canvasPut(`/conversations/${encodeURIComponent(id)}`, 'conversation%5Bworkflow_state%5D=read');
@@ -5123,41 +5214,84 @@
           store.set('bellCleared', gone);
         }
       } catch (err) {
+        pending.delete(key);
+        const now = livePop();
+        const row = rowOf(now, kind, id);
+        if (row) row.classList.remove('gcx-going');
         item.classList.remove('gcx-going');
-        toast(`Couldn't mark it read: ${err.message}`);
-        return;
+        syncAll(now);
+        if (!quiet) toast(`Couldn't mark it read: ${err.message}`);
+        return false;
       }
+      pending.delete(key);
       // Off the current list (whichever it is by now) and the saved copy.
-      if (kind !== 'grade' && data) {
-        data = scrub(data);
-        store.set('news', data);
-        if (data.unread !== unread) {
-          unread = data.unread;
-          store.set('unread', unread);
-          store.set('unreadAt', Date.now());
-          queueRail();
-        }
-      }
+      if (kind !== 'grade') saveRead();
       paint();
-      // Fold it away: from its height to nothing (the height is applied before the fold starts).
-      item.style.height = item.offsetHeight + 'px';
-      void item.offsetHeight;
-      item.classList.add('gcx-gone');
-      setTimeout(() => {
-        const list = item.parentElement;
-        const sec = item.previousElementSibling && item.previousElementSibling.classList.contains('gcx-bell-sec') ? item.previousElementSibling : null;
-        item.remove();
-        // The section's last row (the "more in Inbox" link counts): its heading goes too.
-        const next = sec && sec.nextElementSibling;
-        if (sec && !(next && (next.classList.contains('gcx-bell-item') || next.classList.contains('gcx-bell-more')))) sec.remove();
-        if (list && !list.querySelector('.gcx-bell-item, .gcx-bell-more')) list.innerHTML = `<div class="gcx-bell-empty">You're all caught up.</div>`;
-      }, 220);
+      // The row as it is now: the list may have been drawn again, or the panel opened again,
+      // while Canvas answered.
+      const row = rowOf(livePop(), kind, id) || item;
+      if (row.isConnected) fold(row);
+      return true;
+    }
+    // His whole inbox read in one go (the list shows only a few messages; the count is all of them).
+    async function readAllMsgs(pop) {
+      const msgRows = () => [...((livePop() || pop).querySelectorAll('.gcx-bell-done[data-kind="msg"]'))].map((d) => d.closest('.gcx-bell-item'));
+      inboxBusy = true;
+      syncAll(pop);
+      try {
+        await canvasReq('POST', '/conversations/mark_all_as_read');
+      } catch {
+        inboxBusy = false;
+        // Back, except rows whose own check is still on its way.
+        msgRows().forEach((i) => !pending.has(`msg:${i.querySelector('.gcx-bell-done').dataset.id}`) && i.classList.remove('gcx-going'));
+        syncAll(livePop());
+        return false;
+      }
+      inboxBusy = false;
+      marked.allMsgs = Date.now();
+      saveRead();
+      paint();
+      // The rows as they are now (the list may have been drawn again meanwhile).
+      const now = livePop();
+      if (!now) return true;
+      now.querySelector('.gcx-bell-more')?.remove();
+      msgRows().forEach(fold);
+      tidyList(now.querySelector('.gcx-bell-list'));
+      return true;
+    }
+    // Everything with a check: messages and announcements read in Canvas, grades cleared here.
+    async function checkAll(pop) {
+      const dones = [...pop.querySelectorAll('.gcx-bell-item:not(.gcx-going) .gcx-bell-done')];
+      if (!dones.length || !data || allBusy) return;
+      allBusy = true;
+      const inbox = data.unread > data.msgs.length;
+      const jobs = dones.filter((d) => !(inbox && d.dataset.kind === 'msg')).map((d) => check(d, true));
+      if (inbox) jobs.push(readAllMsgs(pop));
+      syncAll(pop);
+      let res = [];
+      try {
+        res = await Promise.all(jobs.map((j) => j.catch(() => false)));
+      } finally {
+        allBusy = false;
+      }
+      pop = livePop();
+      const bad = res.filter((r) => r === false).length;
+      if (bad) toast(bad === res.length ? "Couldn't mark them read. Are you still signed in?" : "Couldn't mark some of them read");
+      syncAll(pop);
     }
     btn.addEventListener('click', () => {
       if (closeBell) return closeBell();
       const shown = data;
       const pop = openBell(btn, shown);
+      syncAll(pop);
       pop.addEventListener('click', (e) => {
+        const all = e.target.closest('.gcx-bell-all');
+        if (all) {
+          e.preventDefault();
+          e.stopPropagation();
+          checkAll(pop);
+          return;
+        }
         const done = e.target.closest('.gcx-bell-done');
         if (!done) return;
         e.preventDefault();
@@ -5173,10 +5307,12 @@
             else if (list) seenUpTo(shown);
             return;
           }
-          data = scrub(d);
+          data = d;
+          saveRead();
           paint();
           if (!list) return;
           list.innerHTML = bellList(data, store.get('bellSeen', 0));
+          syncAll(pop);
           seenUpTo(data);
         });
       else setTimeout(() => seenUpTo(shown), 600);
@@ -5242,7 +5378,7 @@
   let closeBell = null;
   function openBell(btn, d) {
     const pop = el(`<div class="gcx-bell-panel gcx-pop-panel" role="dialog" aria-label="Notifications">
-      <div class="gcx-bell-h">Notifications</div>
+      <div class="gcx-bell-h"><span>Notifications</span><button type="button" class="gcx-bell-all" title="Marks your messages and announcements read in Canvas and clears grades from this list" hidden>Mark all read</button></div>
       <div class="gcx-bell-list">${bellList(d, store.get('bellSeen', 0))}</div>
       <div class="gcx-bell-foot"><a href="/conversations">Inbox</a><a href="/?gcx=todo">To-do</a></div>
     </div>`);
@@ -5611,6 +5747,7 @@
   if (html.classList.contains('gcx-dash')) {
     mountWelcome();
     mountGhosts();
+    mountHelp();
   }
   hookBcSettings();
   watchSubmissions();
