@@ -4820,7 +4820,7 @@
   // ---------------------------------------------------------------- toast
   let toastEl = null;
   let toastTimer = 0;
-  function toast(msg, actionLabel, action) {
+  function toast(msg, actionLabel, action, ms) {
     if (!toastEl) {
       toastEl = el('<div class="gcx-toast" role="status" aria-live="polite"></div>');
       document.body.append(toastEl);
@@ -4829,6 +4829,8 @@
     if (actionLabel && action) {
       const b = el(`<button type="button" class="gcx-toast-btn">${esc(actionLabel)}</button>`);
       b.addEventListener('click', () => {
+        if (b.disabled) return;
+        b.disabled = true;
         toastEl.classList.remove('show');
         action();
       });
@@ -4838,7 +4840,11 @@
     void toastEl.offsetWidth;
     toastEl.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toastEl.classList.remove('show'), actionLabel ? 5000 : 2600);
+    toastTimer = setTimeout(() => {
+      toastEl.classList.remove('show');
+      // Its button stays in the page (and may have focus): no pressing it once it's gone.
+      toastEl.querySelectorAll('.gcx-toast-btn').forEach((x) => (x.disabled = true));
+    }, ms || (actionLabel ? 5000 : 2600));
   }
 
   // ---------------------------------------------------------------- readable rich content in dark mode
@@ -5234,12 +5240,18 @@
       return true;
     }
     // His whole inbox read in one go (the list shows only a few messages; the count is all of them).
-    async function readAllMsgs(pop) {
+    async function readAllMsgs(pop, undo) {
       const msgRows = () => [...((livePop() || pop).querySelectorAll('.gcx-bell-done[data-kind="msg"]'))].map((d) => d.closest('.gcx-bell-item'));
       inboxBusy = true;
       syncAll(pop);
       try {
+        // Which ones were unread (all pages), so Undo can mark exactly those unread again (less any
+        // he checks off himself from now on). If the lookup fails, Undo covers the listed ones.
+        const t0 = Date.now();
+        const listed = (data ? data.msgs : []).map((m) => String(m.id));
+        const ids = await api('/conversations?scope=unread&per_page=100', true).then((cs) => cs.map((c) => String(c.id)), () => listed);
         await canvasReq('POST', '/conversations/mark_all_as_read');
+        undo.inbox = { ids, t0 };
       } catch {
         inboxBusy = false;
         // Back, except rows whose own check is still on its way.
@@ -5265,8 +5277,21 @@
       if (!dones.length || !data || allBusy) return;
       allBusy = true;
       const inbox = data.unread > data.msgs.length;
-      const jobs = dones.filter((d) => !(inbox && d.dataset.kind === 'msg')).map((d) => check(d, true));
-      if (inbox) jobs.push(readAllMsgs(pop));
+      // What worked, for Undo: message ids, announcements (with where to mark them unread), grade keys.
+      const undo = { msg: [], ann: [], grade: [], inbox: null };
+      const jobs = dones
+        .filter((d) => !(inbox && d.dataset.kind === 'msg'))
+        .map((d) => {
+          const { kind, id } = d.dataset;
+          // Looked up now: once it's read it's off the list.
+          const a = kind === 'ann' && data.anns.find((x) => String(x.id) === id);
+          const path = a ? annReadPath(a) : '';
+          return check(d, true).then((ok) => {
+            if (ok) kind === 'ann' ? path && undo.ann.push({ id, path }) : undo[kind].push(id);
+            return ok;
+          });
+        });
+      if (inbox) jobs.push(readAllMsgs(pop, undo));
       syncAll(pop);
       let res = [];
       try {
@@ -5276,8 +5301,80 @@
       }
       pop = livePop();
       const bad = res.filter((r) => r === false).length;
-      if (bad) toast(bad === res.length ? "Couldn't mark them read. Are you still signed in?" : "Couldn't mark some of them read");
+      const any = undo.msg.length || undo.ann.length || undo.grade.length || undo.inbox;
+      if (bad && !any) toast("Couldn't mark them read. Are you still signed in?");
+      else if (any) toast(bad ? "Couldn't mark some of them read" : 'Marked all read', 'Undo', () => undoAll(undo), 8000);
       syncAll(pop);
+    }
+    // Undo "mark all read": those messages and announcements unread again in Canvas, the grades back
+    // in the list, and the list fetched again and redrawn.
+    let undoBusy = false;
+    async function undoAll(u) {
+      if (undoBusy) return toast('Already putting them back');
+      if (allBusy) return toast('Still marking things read', 'Undo', () => undoAll(u), 8000);
+      allBusy = undoBusy = true;
+      syncAll(livePop());
+      try {
+        await undoRun(u);
+      } finally {
+        allBusy = undoBusy = false;
+        syncAll(livePop());
+      }
+    }
+    async function undoRun(u) {
+      // From the inbox snapshot, not ones he has checked off himself since (those he meant).
+      const inboxIds = u.inbox ? u.inbox.ids.filter((id) => !(marked.msg.get(id) >= u.inbox.t0)) : [];
+      const msgIds = [...new Set([...u.msg, ...inboxIds])];
+      if (u.grade.length) {
+        const gone = bellCleared();
+        u.grade.forEach((k) => delete gone[k]);
+        store.set('bellCleared', gone);
+      }
+      // A few at a time (Canvas turns away a burst with 403 "Rate Limit Exceeded"; one more try after
+      // a pause). Each one's mark is forgotten once Canvas has it unread again, so the fresh list keeps it.
+      const work = [
+        ...msgIds.map((id) => [() => canvasPut(`/conversations/${encodeURIComponent(id)}`, 'conversation%5Bworkflow_state%5D=unread'), () => marked.msg.delete(id)]),
+        ...u.ann.map((a) => [() => canvasReq('DELETE', a.path), () => marked.ann.delete(a.id)]),
+      ];
+      const res = [];
+      const worker = async () => {
+        for (let w; (w = work.shift()); ) {
+          try {
+            await w[0]().catch(async (err) => {
+              if (err.status !== 403) throw err;
+              await new Promise((r) => setTimeout(r, 1500));
+              return w[0]();
+            });
+            w[1]();
+            res.push(true);
+          } catch {
+            res.push(false);
+          }
+        }
+      };
+      await Promise.all([1, 2, 3, 4].map(worker));
+      // A fetch from before this can't save its list over the fresh one.
+      newsGen++;
+      store.set('news', null);
+      const d = await news(true);
+      if (d) {
+        data = d;
+        saveRead();
+        // The Inbox count from this fetch, even if something else bumped newsGen meanwhile.
+        if (data.unread !== unread) {
+          unread = data.unread;
+          store.set('unread', unread);
+          store.set('unreadAt', Date.now());
+          queueRail();
+        }
+      }
+      paint();
+      const pop = livePop();
+      const list = pop && pop.querySelector('.gcx-bell-list');
+      if (list && data) list.innerHTML = bellList(data, store.get('bellSeen', 0));
+      if (res.includes(false)) toast(res.includes(true) ? "Couldn't put some of them back" : "Couldn't put them back. Are you still signed in?");
+      else if (!d && (msgIds.length || u.ann.length)) toast("Put back. They'll show once the list refreshes");
+      else toast('Put back');
     }
     btn.addEventListener('click', () => {
       if (closeBell) return closeBell();
@@ -5397,7 +5494,8 @@
       document.removeEventListener('keydown', onKey, true);
     };
     closeBell = close;
-    const outside = (e) => !pop.contains(e.target) && !btn.contains(e.target) && close();
+    // (Undo on the toast after "mark all read" works on the panel, so it doesn't close it.)
+    const outside = (e) => !pop.contains(e.target) && !btn.contains(e.target) && !e.target.closest?.('.gcx-toast') && close();
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
       close();
