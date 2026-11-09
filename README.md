@@ -41,10 +41,11 @@ It runs on top of [BetterCampus](https://chromewebstore.google.com/detail/cndibm
   grouped under "Missing", "Due 3 PM" (anything due within 12 hours shows its time), "Due Friday", three at a
   time. Each card has an email-the-instructor button, and its **⋮** menu adds shortcuts to any of the class's
   pages next to it, or hides the card (with undo, and a way back from settings).
-  The streak, the progress ring, the Day/Week/Month picker, BetterCampus's premium Sync button and its
-  Announcements/Completed tabs are gone.
-- **To-do sidebar** restyled like Google Classroom's (overdue work keeps its red pill), cut off at two
-  weeks, six items before "Show more", with Add Task, Recent Feedback and View Grades below.
+  BetterCampus's premium Sync button is gone.
+- **To-do sidebar** restyled like Google Classroom's (overdue work keeps its red pill), six items before
+  "Show more", with Add Task, Recent Feedback and View Grades below. BetterCampus's own tabs, progress ring,
+  streak and date range stay as you set them there; **To-do list only** in settings hides those and cuts
+  the list off at two weeks.
 - **Notifications bell** next to the AI button, with a red count: unread messages, unread announcements,
   and new grades and teacher comments, plus what's due in the next two days. Click any to open it, or hover
   and click the check to mark a message or announcement read in Canvas, or clear a grade or comment.
@@ -270,14 +271,15 @@ unpacked.
   the background (Classwork and To-do show "Updating" while they do), and redraw only if something changed.
   Opening any page of a class warms its Classwork cache. Smaller things (course names, colors, rail icons,
   pinned links) live in `localStorage` under `gcx:`.
-- BetterCampus's two-week range ("Custom") is a premium feature. If BetterCampus is set to Day or Week, the
-  extension switches it to Month once (that setting sticks), then hides anything due more than 14 days out.
+- BetterCampus's two-week range ("Custom") is a premium feature. With **To-do list only** on, if BetterCampus
+  is set to Day or Week, the extension switches it to Month once (that setting sticks), then hides anything
+  due more than 14 days out.
 - "Missing" (red) means Canvas flagged it missing. "Past due" means the date passed with nothing handed in,
   which also covers in-class and on-paper work that hasn't been graded yet.
 - Courses that hide Modules still get Classwork, served from `/courses/:id?gcx=classwork`.
 - Without BetterCampus, a Settings item appears at the bottom of the rail instead of the Classroom tab.
-- To turn it off, disable the extension in `chrome://extensions`. BetterCampus goes back to normal; only the
-  Month setting stays.
+- To turn it off, disable the extension in `chrome://extensions`. BetterCampus goes back to normal (if
+  To-do list only switched it to Month, that stays).
 - Fonts (Fredoka, Nunito, Lexend, Lora, Pixelify Sans) are bundled under the SIL Open Font
   License; see `fonts/`. PDF rendering uses Mozilla's pdf.js (Apache 2.0), bundled under `viewer/pdfjs/`.
   Pets are made by their authors on codex-pets.net.

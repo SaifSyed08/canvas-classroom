@@ -4131,7 +4131,7 @@
           <div class="gcx-set-lbl">Space between the menu rail and your classes <span class="gcx-set-val">${p.dashGap}px</span></div>
           <input type="range" class="gcx-set-range" data-range="dashGap" data-unit="px" min="0" max="${DASH_GAP_MAX}" step="8" value="${p.dashGap}" aria-label="Space between the menu rail and your classes">
         </div>
-        ${toggle('todoOnly', 'To-do list only', "Hides BetterCanvas's Announcements and Done tabs, progress ring and streak beside your classes")}
+        ${toggle('todoOnly', 'To-do list only', "Just the next two weeks of to-dos beside your classes: hides BetterCanvas's Announcements and Done tabs, progress ring, streak and date picker")}
         ${toggle('bell', 'Notifications bell', 'New messages and announcements, next to the greeting')}
         ${toggle('ask', 'AI button', 'The AI button next to the greeting')}
         ${toggle('hotkey', 'Ctrl + Space anywhere', 'Opens Ask anything in the middle of any Canvas page, even with the button hidden. Ctrl + Shift + Space brings back your last chat')}
@@ -4886,9 +4886,11 @@
     }
   `;
 
-  // BetterCampus's to-do sidebar lives in an open shadow root. Its tabs, progress ring and streak
-  // are his to turn on or off there; we hide its Sync upsell and the Day/Week/Month picker, and cut
-  // the To-do list off at two weeks. Other things in BetterCampus's shadow roots get the page font.
+  // BetterCampus's to-do sidebar lives in an open shadow root. By default it's BetterCampus's as he
+  // set it up there (tabs, progress ring, streak, date range); we restyle it, hide its Sync upsell and
+  // show six items before "Show more". "To-do list only" (prefs.todoOnly) hides the tabs, ring, streak
+  // and Day/Week/Month picker and cuts the list off at two weeks. Other things in BetterCampus's
+  // shadow roots get the page font.
   const DUE_RE = /Due\s+(\d{1,2})\/(\d{1,2})/;
   let monthForced = false;
   function tweakBcTodo() {
@@ -4981,8 +4983,8 @@
       const h3 = ch.querySelector('h3');
       if (h3 && /streak/i.test(h3.textContent)) setHidden(ch, only);
       else if (picker) {
-        setHidden(ch, onTodo);
-        if (onTodo) forceMonth(picker);
+        setHidden(ch, only && onTodo);
+        if (only && onTodo) forceMonth(picker);
       } else if (ch.matches('[data-todo-section]') && !ch.querySelector('a[href]') && /\d+%/.test(ch.textContent)) setHidden(ch, only);
     }
     // The other tabs are BetterCampus's as they are: no cutoff, no cap.
@@ -5007,7 +5009,7 @@
       let due = new Date(now.getFullYear(), Number(m[1]) - 1, Number(m[2]));
       if (due - now > 180 * DAY) due = new Date(now.getFullYear() - 1, Number(m[1]) - 1, Number(m[2]));
       else if (now - due > 180 * DAY) due = new Date(now.getFullYear() + 1, Number(m[1]) - 1, Number(m[2]));
-      setHidden(item.parentElement, due >= horizon);
+      setHidden(item.parentElement, only && onTodo && due >= horizon);
     }
     // Hide a "Due Later"-style section once every item in it is past the horizon.
     for (const btn of list.querySelectorAll('button[type="button"]')) {
