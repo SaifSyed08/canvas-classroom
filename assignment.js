@@ -41,6 +41,8 @@
     send: 'M2.01 21 23 12 2.01 3 2 10l15 2-15 2z',
     mic: 'M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z',
     annotate: 'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a.996.996 0 0 0 0-1.41l-2.34-2.34a.996.996 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+    copy: 'M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z',
+    check: 'M9 16.17 4.83 12l-1.42 1.42L9 19 21 7.59 19.59 6.17z',
     more: 'M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
   };
   const svg = (name, size = 20) => `<svg class="gcx-svg" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true"><path d="${ICON[name]}"/></svg>`;
@@ -278,7 +280,8 @@
   const view = el(`<section id="gcx-asg" aria-busy="true">
     <div class="gcx-asg-main">
       <div class="gcx-asg-head"><span class="gcx-asg-ic">${svg('assignment', 24)}</span>
-        <div class="gcx-asg-titles"><h1 class="gcx-asg-title"><span class="gcx-skel w60"></span></h1><div class="gcx-asg-by"><span class="gcx-skel w40"></span></div></div></div>
+        <div class="gcx-asg-titles"><h1 class="gcx-asg-title"><span class="gcx-skel w60"></span></h1><div class="gcx-asg-by"><span class="gcx-skel w40"></span></div></div>
+        <button type="button" class="gcx-asg-copy" title="Copy assignment" aria-label="Copy the assignment and its details" hidden>${svg('copy', 20)}</button></div>
       <div class="gcx-asg-facts"><span class="gcx-asg-pts"></span><span class="gcx-asg-due"></span></div>
       <div class="gcx-asg-body"><div class="gcx-skel w80"></div><div class="gcx-skel w60"></div><div class="gcx-skel w80"></div></div>
       <div class="gcx-asg-files"></div>
@@ -420,12 +423,13 @@
     if (c && c.color) view.style.setProperty('--c', c.color);
     const types = a.submission_types || [];
     const kind = a.quiz_id || types.includes('online_quiz') ? 'quiz' : a.discussion_topic || types.includes('discussion_topic') ? 'discussion' : types.includes('external_tool') ? 'tool' : 'assignment';
-    Object.assign(S, { a, s, kind });
+    Object.assign(S, { a, s, kind, c });
     S.ours = types.map((t) => OURS[t]).filter(Boolean);
     S.elsewhere = types.filter((t) => ELSEWHERE[t]);
     view.querySelector('.gcx-asg-ic').innerHTML = svg(kind, 24);
     view.querySelector('.gcx-asg-title').textContent = a.name;
     document.title = a.name;
+    view.querySelector('.gcx-asg-copy').hidden = false;
 
     // "Goheun Kim · Oct 3 (Edited Oct 5)"
     const teacher = c && c.teachers && c.teachers.length ? c.teachers[0].name : '';
@@ -546,6 +550,286 @@
     b.textContent = on ? 'Hide rubric' : 'Rubric';
     b.setAttribute('aria-expanded', String(on));
   }
+  // ---------------------------------------------------------------- copy
+  // The whole assignment (title, class, due date, points, how to turn it in, instructions, files,
+  // rubric) on the clipboard: formatted for Docs or Notion, Markdown for anywhere that only takes
+  // plain text (an AI chat, a notes app).
+  const TYPE_NAME = {
+    online_upload: 'File upload',
+    online_text_entry: 'Text entry',
+    online_url: 'Website link',
+    media_recording: 'Media recording',
+    student_annotation: 'Annotation',
+    online_quiz: 'Quiz',
+    discussion_topic: 'Discussion',
+    external_tool: 'External tool',
+    on_paper: 'On paper',
+    none: 'Nothing to turn in online',
+  };
+  const fmtFull = (d) =>
+    d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const absUrl = (u, keepVerifier = false) => {
+    try {
+      const x = new URL(u, location.href);
+      // A file's verifier opens it without signing in; pasted somewhere else it would hand the
+      // file out. He's signed in anyway. (A picture keeps it: the app it's pasted into fetches it
+      // without his cookies, and the picture is shown there anyway.)
+      if (x.origin === location.origin && !keepVerifier) x.searchParams.delete('verifier');
+      return x.href;
+    } catch {
+      return '';
+    }
+  };
+
+  // Text that would otherwise turn into Markdown (2 * 3 * 4, <lastname>, a line starting "# of").
+  const mdEsc = (t, lineStart) => {
+    let r = t.replace(/[\\`*[\]<]/g, '\\$&').replace(/(^|[^A-Za-z0-9])_|_(?=[^A-Za-z0-9]|$)/g, (m) => m.replace('_', '\\_'));
+    if (lineStart) r = r.replace(/^(\s*)(>|#{1,6}(?=\s|$)|[-+](?=\s|$)|\d+[.)](?=\s|$))/, (m, sp, k) => sp + (/^\d/.test(k) ? `${k.slice(0, -1)}\\${k.slice(-1)}` : `\\${k}`));
+    return r;
+  };
+  // A list as Markdown; `indent` is where its markers start (nested lists line up under the
+  // text of the item they belong to, as CommonMark needs).
+  function listMd(n, indent) {
+    const ordered = n.tagName === 'OL';
+    const items = [];
+    let k = 0;
+    let sub = indent + '  ';
+    for (const li of n.children) {
+      if (li.tagName === 'LI') {
+        const mark = ordered ? `${++k}.` : '-';
+        sub = indent + ' '.repeat(mark.length + 1);
+        items.push(`${indent}${mark} ${mdOf(li, sub).trim().replace(/\n{2,}/g, '\n')}`);
+      } else if (/^(UL|OL)$/.test(li.tagName)) {
+        // A list straight inside a list (Word and Docs pastes): it belongs to the item before it.
+        const inner = listMd(li, items.length ? sub : indent);
+        if (items.length) items[items.length - 1] += `\n${inner}`;
+        else items.push(inner);
+      }
+    }
+    return items.join('\n');
+  }
+
+  // Canvas's instruction HTML as Markdown: headings, paragraphs, bold/italic, links, lists
+  // (nested), tables, code, quotes, embedded videos.
+  // `start`: this node's text begins a line (inline elements carry on where the text before them is).
+  function mdOf(node, indent = '', start = true) {
+    let s = '';
+    const here = () => (/\S/.test(s) ? /\n[ \t]*$/.test(s) : start || s.includes('\n'));
+    for (const n of node.childNodes) {
+      if (n.nodeType === 3) {
+        s += mdEsc(n.textContent.replace(/\s+/g, ' '), here());
+        continue;
+      }
+      if (n.nodeType !== 1) continue;
+      const t = n.tagName.toLowerCase();
+      const inner = () => mdOf(n, indent, /^(p|div|section|article|header|footer|figure|figcaption|dl|dt|dd|blockquote|h[1-6])$/.test(t) || here());
+      const wrap = (mark) => {
+        const b = inner();
+        const v = b.trim();
+        if (!v) return void (s += b);
+        // "**Due:**Friday" and "Due**: Fri**" don't render; with a space beside the marks they do.
+        const lead = b.match(/^\s*/)[0] || (/^[^\w\s]/.test(v) && /\w$/.test(s) ? ' ' : '');
+        const tail = b.match(/\s*$/)[0] || (/[^\w\s]$/.test(v) ? ' ' : '');
+        s += `${lead}${mark}${v}${mark}${tail}`;
+      };
+      if (/^h[1-6]$/.test(t)) s += `\n\n${'#'.repeat(Math.min(+t[1] + 2, 6))} ${inner().trim()}\n\n`;
+      else if (t === 'blockquote') s += `\n\n${inner().trim().replace(/^/gm, '> ')}\n\n`;
+      else if (/^(p|div|section|article|header|footer|figure|figcaption|dl|dt|dd)$/.test(t)) s += `\n\n${inner().trim()}\n\n`;
+      else if (t === 'br') s += '  \n';
+      else if (t === 'hr') s += '\n\n---\n\n';
+      else if (t === 'strong' || t === 'b') wrap('**');
+      else if (t === 'em' || t === 'i') wrap('*');
+      else if (t === 'pre') {
+        const fence = '`'.repeat(Math.max(3, ...(n.textContent.match(/`+/g) || []).map((x) => x.length + 1)));
+        s += `\n\n${fence}\n${n.textContent.replace(/\n$/, '')}\n${fence}\n\n`;
+      } else if (t === 'code') {
+        // Inline code stays on one line (a line starting with ``` would read as a code block).
+        const code = n.textContent.replace(/\s*\n\s*/g, ' ');
+        const ticks = '`'.repeat(Math.max(1, ...(code.match(/`+/g) || []).map((x) => x.length + 1)));
+        s += ticks.length > 1 ? `${ticks} ${code} ${ticks}` : `\`${code}\``;
+      }
+      else if (t === 'a') {
+        const href = absUrl(n.getAttribute('href') || '');
+        const b = inner().trim();
+        s += href && /^https?:/.test(href) ? (b && b !== href ? `[${b}](${href})` : href) : b;
+      } else if (t === 'img') {
+        if (n.alt && n.alt.trim()) s += `[image: ${mdEsc(n.alt.trim())}]`;
+      } else if (t === 'iframe' || t === 'video' || t === 'audio') {
+        // An embedded video is often the instructions themselves: keep where it lives.
+        const src = absUrl(n.getAttribute('src') || n.querySelector('source[src]')?.getAttribute('src') || '');
+        if (/^https?:/.test(src)) s += `\n\n[embedded ${t === 'iframe' ? 'content' : t}: ${src}]\n\n`;
+      } else if (t === 'ul' || t === 'ol') s += `\n\n${listMd(n, indent)}\n\n`;
+      else if (t === 'table' && n.parentElement && n.parentElement.closest('table')) {
+        // A table inside a table cell: its text, since a Markdown cell can't hold a table.
+        s += [...n.rows].map((tr) => [...tr.cells].map((td) => mdOf(td).trim().replace(/\s*\n\s*/g, ' ')).filter(Boolean).join(', ')).filter(Boolean).join('; ');
+      } else if (t === 'table') {
+        const rows = [...n.rows].map((tr) => [...tr.cells].map((td) => mdOf(td).trim().replace(/\s*\n\s*/g, ' ').replace(/\|/g, '\\|')));
+        if (rows.length) {
+          const w = Math.max(...rows.map((r) => r.length));
+          const line = (r) => `| ${[...r, ...Array(w - r.length).fill('')].join(' | ')} |`;
+          s += `\n\n${[line(rows[0]), line(Array(w).fill('---')), ...rows.slice(1).map(line)].join('\n')}\n\n`;
+        }
+      } else if (!/^(script|style|object|embed|button|input|select|textarea)$/.test(t)) s += inner();
+    }
+    return s;
+  }
+  // Lines trimmed, except a nested list item's indent, a line break (two trailing spaces) and
+  // code; at most one blank line in a row.
+  const tidyMd = (s) => {
+    let code = false;
+    return s
+      .split('\n')
+      .map((l) => {
+        if (/^\s*`{3,}[^`]*$/.test(l)) {
+          // A fence opens code, and the same fence (or a longer one) closes it.
+          const f = l.trim().match(/^`+/)[0];
+          if (!code) code = f;
+          else if (/^`+$/.test(l.trim()) && f.length >= code.length) code = false;
+          return l.trim();
+        }
+        if (code) return l;
+        const hard = /\S {2,}$/.test(l) ? '  ' : '';
+        return (/^\s*(- |\d+\. )/.test(l) ? l.trimEnd() : l.trim()) + hard;
+      })
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
+  function copyParts() {
+    const { a, c } = S;
+    const url = `${location.origin}/courses/${cid}/assignments/${aid}`;
+    const now = new Date();
+    const facts = [];
+    const same = c && c.name && c.code && (c.name.includes(c.code) || c.code.includes(c.name));
+    const course = c ? [c.name || c.code, c.name && c.code && !same ? `(${c.code})` : ''].filter(Boolean).join(' ') : '';
+    if (course) facts.push(['Class', course]);
+    const teacher = c && c.teachers && c.teachers.length ? c.teachers.map((t) => t.name).join(', ') : '';
+    if (teacher) facts.push([c.teachers.length > 1 ? 'Teachers' : 'Teacher', teacher]);
+    facts.push(['Due', a.due_at ? fmtFull(new Date(a.due_at)) : 'No due date']);
+    if (a.unlock_at && new Date(a.unlock_at) > now) facts.push(['Opens', fmtFull(new Date(a.unlock_at))]);
+    if (a.lock_at) facts.push([new Date(a.lock_at) > now ? 'Available until' : 'Closed', fmtFull(new Date(a.lock_at))]);
+    facts.push(['Points', a.grading_type === 'not_graded' || a.points_possible == null ? 'Ungraded' : fmtNum(+a.points_possible)]);
+    // New Quizzes arrive as an external tool.
+    const types = (a.submission_types || []).map((t) => (t === 'external_tool' && a.is_quiz_lti_assignment ? 'Quiz' : TYPE_NAME[t] || t.replace(/_/g, ' ')));
+    if (types.length) {
+      const exts = (a.allowed_extensions || []).map((x) => String(x).replace(/^\./, '')).filter(Boolean);
+      facts.push(['Turn in', `${types.join(', ')}${exts.length && (a.submission_types || []).includes('online_upload') ? ` (${exts.join(', ')} files)` : ''}`]);
+    }
+    if (a.allowed_attempts > 0) facts.push(['Attempts', String(a.allowed_attempts)]);
+    if (a.group_category_id) facts.push(['Group', a.grade_group_students_individually ? 'Group assignment, graded one by one' : 'Group assignment']);
+    facts.push(['Link', url]);
+
+    // The instructions, links and images pointing at Canvas in full (they're pasted elsewhere).
+    const body = a.description && a.description.trim() ? cleanHtml(a.description) : null;
+    if (body) {
+      body.querySelectorAll('[href]').forEach((n) => n.setAttribute('href', absUrl(n.getAttribute('href'))));
+      body.querySelectorAll('[src]').forEach((n) => n.setAttribute('src', absUrl(n.getAttribute('src'), true)));
+      body.querySelectorAll('*').forEach((n) => {
+        for (const at of [...n.attributes]) if (/^(data-|class$|id$|target$|rel$)/.test(at.name)) n.removeAttribute(at.name);
+      });
+    }
+    const mdBody = body ? tidyMd(mdOf(body)) : '';
+    if (body) {
+      // Pasted into Docs or Notion: no stray fonts and colors from Canvas's editor, and its
+      // headings sit under ours (title h2, Instructions h3).
+      body.querySelectorAll('[style]').forEach((n) => n.removeAttribute('style'));
+      body.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+        const d = h.ownerDocument.createElement(`h${Math.min(+h.tagName[1] + 3, 6)}`);
+        d.append(...h.childNodes);
+        h.replaceWith(d);
+      });
+    }
+    const files = body ? attachmentsFrom(cleanHtml(a.description)).map((f) => ({ name: f.name, href: absUrl(f.href) })) : [];
+
+    const crit = Array.isArray(a.rubric) ? a.rubric : [];
+    const hidePts = !!(a.rubric_settings && a.rubric_settings.hide_points);
+    const pts = (n) => (hidePts ? '' : `${fmtNum(+n || 0)} pt${+n === 1 ? '' : 's'}`);
+    const levels = (cr) => (cr.ratings || []).slice().sort((x, y) => (+y.points || 0) - (+x.points || 0));
+
+    // Markdown
+    const md = [`# ${mdEsc(a.name)}`, facts.map(([k, v]) => `**${k}:** ${k === 'Link' ? v : mdEsc(v)}`).join('  \n')];
+    if (a.locked_for_user && a.lock_explanation) md.push(`> ${plainText(a.lock_explanation)}`);
+    if (mdBody) md.push('## Instructions', mdBody);
+    if (files.length) md.push('## Files', files.map((f) => `- [${mdEsc(f.name)}](${f.href})`).join('\n'));
+    if (crit.length)
+      md.push(
+        '## Rubric',
+        crit
+          .map((cr) => {
+            const head = `- **${mdEsc(cr.description || 'Criterion')}**${hidePts ? '' : ` (${pts(cr.points)})`}${cr.long_description ? `: ${mdEsc(plainText(cr.long_description))}` : ''}`;
+            const lv = levels(cr).map((r) => `  - ${[pts(r.points), mdEsc(r.description || '')].filter(Boolean).join(': ')}${r.long_description ? ` (${mdEsc(plainText(r.long_description))})` : ''}`);
+            return [head, ...lv].join('\n');
+          })
+          .join('\n'),
+      );
+    const text = md.filter(Boolean).join('\n\n') + '\n';
+
+    // HTML
+    const h = [`<h2>${esc(a.name)}</h2>`, `<p>${facts.map(([k, v]) => `<b>${esc(k)}:</b> ${k === 'Link' ? `<a href="${esc(v)}">${esc(v)}</a>` : esc(v)}`).join('<br>')}</p>`];
+    if (a.locked_for_user && a.lock_explanation) h.push(`<p><i>${esc(plainText(a.lock_explanation))}</i></p>`);
+    if (body) h.push('<h3>Instructions</h3>', body.innerHTML);
+    if (files.length) h.push('<h3>Files</h3>', `<ul>${files.map((f) => `<li><a href="${esc(f.href)}">${esc(f.name)}</a></li>`).join('')}</ul>`);
+    if (crit.length)
+      h.push(
+        '<h3>Rubric</h3>',
+        `<ul>${crit
+          .map(
+            (cr) =>
+              `<li><b>${esc(cr.description || 'Criterion')}</b>${hidePts ? '' : ` (${esc(pts(cr.points))})`}${cr.long_description ? `: ${esc(plainText(cr.long_description))}` : ''}${
+                levels(cr).length
+                  ? `<ul>${levels(cr)
+                      .map((r) => `<li>${esc([pts(r.points), r.description].filter(Boolean).join(': '))}${r.long_description ? ` (${esc(plainText(r.long_description))})` : ''}</li>`)
+                      .join('')}</ul>`
+                  : ''
+              }</li>`,
+          )
+          .join('')}</ul>`,
+      );
+    return { text, html: h.join('\n') };
+  }
+
+  async function copyAssignment(btn) {
+    if (!S.a) return;
+    const { text, html: markup } = copyParts();
+    let ok = false;
+    try {
+      if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'text/plain': new Blob([text], { type: 'text/plain' }), 'text/html': new Blob([markup], { type: 'text/html' }) }),
+        ]);
+        ok = true;
+      }
+    } catch {}
+    if (!ok)
+      try {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      } catch {}
+    if (!ok) {
+      // Last resort (no clipboard permission): the old way, through a hidden text box.
+      const ta = el('<textarea style="position:fixed;opacity:0;top:0;left:0"></textarea>');
+      ta.value = text;
+      document.body.append(ta);
+      ta.select();
+      try {
+        ok = document.execCommand('copy');
+      } catch {}
+      ta.remove();
+      btn.focus();
+    }
+    if (!ok) return gcx.toast("Couldn't copy the assignment");
+    gcx.toast('Assignment copied');
+    btn.innerHTML = svg('check', 20);
+    btn.classList.add('done');
+    clearTimeout(btn._t);
+    btn._t = setTimeout(() => {
+      btn.innerHTML = svg('copy', 20);
+      btn.classList.remove('done');
+    }, 1600);
+  }
+  view.querySelector('.gcx-asg-copy').addEventListener('click', (e) => copyAssignment(e.currentTarget));
+
   // ---------------------------------------------------------------- rubric
   // The grading rubric in the assignment itself, Classroom style: each criterion with its levels and
   // points, and once it's graded, the level he got (highlighted), his points and the grader's note.

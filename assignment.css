@@ -28,6 +28,16 @@ html.gcx-asg #content { padding-top: 28px !important; }
 .gcx-asg-titles { min-width: 0; flex: 1; padding-top: 2px; }
 #gcx-asg .gcx-asg-title { font-size: 30px !important; font-weight: 400 !important; line-height: 1.2 !important; color: color-mix(in srgb, var(--c, var(--gcx-text)) 78%, var(--gcx-text)) !important; overflow-wrap: anywhere; }
 .gcx-asg-by { margin-top: 6px; font-size: 13px; color: var(--gcx-muted); }
+/* Copy the assignment, beside the title */
+.gcx-asg-copy {
+  flex: none; width: 40px; height: 40px; margin-top: 2px; border: 0; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; background: transparent; color: var(--gcx-muted); cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.gcx-asg-copy:hover, .gcx-asg-copy:focus-visible { background: color-mix(in srgb, var(--c, var(--gcx-link)) 12%, transparent); color: var(--c, var(--gcx-link)); }
+.gcx-asg-copy:focus-visible { outline: 2px solid var(--c, var(--gcx-link)); outline-offset: 2px; }
+.gcx-asg-copy.done { color: var(--c, var(--gcx-link)); }
+.gcx-asg-copy[hidden] { display: none; }
 .gcx-asg-title .gcx-skel { height: 26px; margin: 4px 0; }
 .gcx-asg-by .gcx-skel { margin: 4px 0; }
 .gcx-asg-facts {
